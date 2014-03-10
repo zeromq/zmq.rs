@@ -1,6 +1,11 @@
 use consts;
 
+
 pub trait SocketBase {
-    fn create(type_: consts::SocketType) -> ~SocketBase;
+    fn create() -> Self;
+
+    fn getsockopt(&self, option_: consts::SocketOption) -> int;
+
+    fn get_type(&self) -> consts::SocketType;
 }
 
