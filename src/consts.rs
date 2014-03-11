@@ -1,3 +1,5 @@
+use std::libc;
+
 pub enum SocketType {
     //PAIR = 0,
     //PUB = 1,
@@ -15,5 +17,9 @@ pub enum SocketType {
 
 pub enum SocketOption {
     TYPE = 16,
+}
+
+pub enum ErrorCode {
+    EINVAL = libc::EINVAL as int,
 }
 

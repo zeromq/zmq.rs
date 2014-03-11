@@ -5,6 +5,7 @@
 pub use ctx::Context;
 pub use consts::{SocketType, REQ};
 pub use consts::{SocketOption, TYPE};
+pub use consts::{ErrorCode, EINVAL};
 pub use socket_base::SocketBase;
 
 mod ctx;
@@ -29,6 +30,16 @@ mod test {
             super::REQ => (),
             //_ => assert!(false),
         }
+    }
+
+    #[test]
+    fn test_socket_bind() {
+        let c = super::Context::new();
+        let s = c.socket(super::REQ);
+        assert!(s.bind("").is_err());
+        assert!(s.bind("://127").is_err());
+        assert!(s.bind("tcp://").is_err());
+        assert!(s.bind("tcp://10.0.1.1:12345").is_ok());
     }
 }
 
