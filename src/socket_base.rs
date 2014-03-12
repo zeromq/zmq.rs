@@ -10,15 +10,14 @@ pub trait SocketBase {
 
     fn bind(&self, addr: &str) -> Result<(), consts::ErrorCode> {
         parse_uri(addr).and_then(|(protocol, address)| {
-            match protocol {
-                "tcp" => Ok(()),
-                _ => Err(consts::EINVAL),
-            }
+            check_protocol(protocol).and_then(|()| {
+                Ok(())
+            })
         })
     }
 }
 
-pub fn parse_uri<'r>(uri: &'r str) -> Result<(&'r str, &'r str), consts::ErrorCode> {
+fn parse_uri<'r>(uri: &'r str) -> Result<(&'r str, &'r str), consts::ErrorCode> {
     match uri.find_str("://") {
         Some(pos) => {
             let protocol = uri.slice_to(pos);
@@ -30,6 +29,13 @@ pub fn parse_uri<'r>(uri: &'r str) -> Result<(&'r str, &'r str), consts::ErrorCo
             }
         },
         None => Err(consts::EINVAL),
+    }
+}
+
+fn check_protocol(protocol: &str) -> Result<(), consts::ErrorCode> {
+    match protocol {
+        "tcp" => Ok(()),
+        _ => Err(consts::EPROTONOSUPPORT),
     }
 }
 
