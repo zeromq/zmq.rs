@@ -1,4 +1,4 @@
-use std::libc;
+extern crate libc;
 
 pub enum SocketType {
     //PAIR = 0,
