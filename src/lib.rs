@@ -7,11 +7,13 @@ pub use consts::{SocketType, REQ};
 pub use consts::{SocketOption, TYPE};
 pub use consts::{HAUSNUMERO, ErrorCode, EINVAL, EPROTONOSUPPORT};
 pub use socket_base::SocketBase;
+pub use result::{ZmqResult, ZmqError};
 
 mod ctx;
 mod consts;
 mod socket_base;
 mod req;
+mod result;
 
 
 #[cfg(test)]
@@ -36,11 +38,12 @@ mod test {
     fn test_socket_bind() {
         let c = super::Context::new();
         let s = c.socket(super::REQ);
-        assert_eq!(s.bind("").unwrap_err(), super::EINVAL);
-        assert_eq!(s.bind("://127").unwrap_err(), super::EINVAL);
-        assert_eq!(s.bind("tcp://").unwrap_err(), super::EINVAL);
-        assert_eq!(s.bind("tcpp://127.0.0.1:12345").unwrap_err(), super::EPROTONOSUPPORT);
+        assert_eq!(s.bind("").unwrap_err().code, super::EINVAL);
+        assert_eq!(s.bind("://127").unwrap_err().code, super::EINVAL);
+        assert_eq!(s.bind("tcp://").unwrap_err().code, super::EINVAL);
+        assert_eq!(s.bind("tcpp://127.0.0.1:12345").unwrap_err().code, super::EPROTONOSUPPORT);
         assert!(s.bind("tcp://10.0.1.1:12345").is_ok());
+        assert_eq!(s.bind("tcp://10.0.1.1:12z45").unwrap_err().code, super::EINVAL);
     }
 }
 

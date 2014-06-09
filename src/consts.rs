@@ -21,9 +21,8 @@ pub enum SocketOption {
 
 pub static HAUSNUMERO: int = 156384712;
 
-#[deriving(Eq, Show)]
+#[deriving(PartialEq, Show)]
 pub enum ErrorCode {
     EINVAL = libc::EINVAL as int,
     EPROTONOSUPPORT = HAUSNUMERO + 2,
 }
-

@@ -1,4 +1,4 @@
 *.swp
 *.so
 *.test
-
+.idea
