@@ -46,6 +46,7 @@ mod test {
         assert_eq!(s.bind("tcpp://127.0.0.1:12345").unwrap_err().code, super::EPROTONOSUPPORT);
         assert_eq!(s.bind("tcp://10.0.1.255:12345").unwrap_err().code, super::ECONNREFUSED);
         assert_eq!(s.bind("tcp://10.0.1.1:12z45").unwrap_err().code, super::EINVAL);
+        assert!(s.bind("tcp://127.0.0.1:12345").is_ok());
     }
 }
 

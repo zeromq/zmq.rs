@@ -3,6 +3,8 @@ use std::io::{Acceptor, Listener, TcpStream};
 use std::io::net::tcp::TcpAcceptor;
 use std::io::net::ip::SocketAddr;
 use result::{ZmqError, ZmqResult};
+
+use consts;
 use endpoint::Endpoint;
 
 
@@ -22,8 +24,12 @@ impl InnerTcpListener {
             match self.acceptor.accept() {
                 Ok(stream) =>
                     try!(self.chan.send_opt(Ok(stream))),
-                Err(e) =>
-                    try!(self.chan.send_opt(Err(ZmqError::from_io_error(e)))),
+                Err(e) => {
+                    let err = ZmqError::from_io_error(e);
+                    if err.code != consts::ETIMEDOUT {
+                        try!(self.chan.send_opt(Err(err)));
+                    }
+                }
             }
         }
     }
