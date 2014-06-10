@@ -1,5 +1,6 @@
 use std;
 use std::io::{Acceptor, Listener, TcpStream};
+use std::io::net::tcp::TcpAcceptor;
 use std::io::net::ip::SocketAddr;
 use result::{ZmqError, ZmqResult};
 use endpoint::Endpoint;
@@ -9,25 +10,20 @@ static ACCEPT_TIMEOUT: u64 = 1000;
 
 
 struct InnerTcpListener {
-    addr: String,
-    port: u16,
+    acceptor: TcpAcceptor,
     chan: Sender<ZmqResult<TcpStream>>,
 }
 
 
 impl InnerTcpListener {
-    fn run(&self) {
-        let listener = std::io::TcpListener::bind(self.addr.as_slice(), self.port);
-        let mut acceptor = listener.listen().unwrap();
+    fn run(&mut self) -> Result<(), ZmqResult<TcpStream>> {
         loop {
-            acceptor.set_timeout(Some(ACCEPT_TIMEOUT));
-            match acceptor.accept() {
-                Ok(stream) => {
-                    self.chan.send(Ok(stream));
-                }
-                Err(e) => {
-                    self.chan.send(Err(ZmqError::from_io_error(e)));
-                }
+            self.acceptor.set_timeout(Some(ACCEPT_TIMEOUT));
+            match self.acceptor.accept() {
+                Ok(stream) =>
+                    try!(self.chan.send_opt(Ok(stream))),
+                Err(e) =>
+                    try!(self.chan.send_opt(Err(ZmqError::from_io_error(e)))),
             }
         }
     }
@@ -38,20 +34,24 @@ pub struct TcpListener {
 }
 
 impl TcpListener {
-    pub fn new(addr: SocketAddr) -> TcpListener {
+    pub fn new(addr: SocketAddr) -> ZmqResult<TcpListener> {
+        let listener = std::io::TcpListener::bind(
+            format!("{}", addr.ip).as_slice(), addr.port);
+        let acceptor = try!(ZmqError::wrap_io_error(listener.listen()));
         let (tx, rx) = channel();
         spawn(proc() {
-            let listener = InnerTcpListener {
-                addr: format!("{}", addr.ip),
-                port: addr.port,
+            let mut listener = InnerTcpListener {
+                acceptor: acceptor,
                 chan: tx,
             };
-            listener.run();
+            match listener.run() {
+                _ => ()
+            }
         });
 
-        TcpListener{
+        Ok(TcpListener{
             chan: rx,
-        }
+        })
     }
 }
 

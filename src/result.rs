@@ -1,6 +1,6 @@
 use consts;
 use std;
-use std::io::{IoError, IoErrorKind};
+use std::io::{IoResult, IoError, IoErrorKind};
 
 
 pub type ZmqResult<T> = Result<T, ZmqError>;
@@ -37,6 +37,13 @@ impl ZmqError {
             desc: e.desc,
             detail: e.detail,
             iokind: Some(e.kind),
+        }
+    }
+
+    pub fn wrap_io_error<T>(result: IoResult<T>) -> ZmqResult<T> {
+        match result {
+            Ok(val) => Ok(val),
+            Err(e) => Err(ZmqError::from_io_error(e)),
         }
     }
 }

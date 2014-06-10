@@ -22,7 +22,7 @@ pub trait SocketBase {
             "tcp" => {
                 match from_str::<SocketAddr>(address) {
                     Some(addr) => {
-                        self.add_endpoint(box TcpListener::new(addr));
+                        self.add_endpoint(box try!(TcpListener::new(addr)));
                         Ok(())
                     }
                     None => Err(ZmqError::new(

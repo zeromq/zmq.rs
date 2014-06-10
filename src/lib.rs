@@ -5,7 +5,7 @@
 pub use ctx::Context;
 pub use consts::{SocketType, REQ};
 pub use consts::{SocketOption, TYPE};
-pub use consts::{HAUSNUMERO, ErrorCode, EINVAL, EPROTONOSUPPORT};
+pub use consts::{HAUSNUMERO, ErrorCode, EINVAL, EPROTONOSUPPORT, ECONNREFUSED};
 pub use socket_base::SocketBase;
 pub use result::{ZmqResult, ZmqError};
 
@@ -44,7 +44,7 @@ mod test {
         assert_eq!(s.bind("://127").unwrap_err().code, super::EINVAL);
         assert_eq!(s.bind("tcp://").unwrap_err().code, super::EINVAL);
         assert_eq!(s.bind("tcpp://127.0.0.1:12345").unwrap_err().code, super::EPROTONOSUPPORT);
-        assert!(s.bind("tcp://10.0.1.1:12345").is_ok());
+        assert_eq!(s.bind("tcp://10.0.1.255:12345").unwrap_err().code, super::ECONNREFUSED);
         assert_eq!(s.bind("tcp://10.0.1.1:12z45").unwrap_err().code, super::EINVAL);
     }
 }
