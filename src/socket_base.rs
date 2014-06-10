@@ -1,6 +1,8 @@
 use consts;
 use result::{ZmqError, ZmqResult};
 use std::io::net::ip::SocketAddr;
+use tcp_listener::TcpListener;
+use endpoint::Endpoint;
 
 
 pub trait SocketBase {
@@ -10,19 +12,23 @@ pub trait SocketBase {
 
     fn get_type(&self) -> consts::SocketType;
 
+    fn add_endpoint(&self, endpoint: Box<Endpoint>);
+
     fn bind(&self, addr: &str) -> ZmqResult<()> {
         let (protocol, address) = try!(parse_uri(addr));
         try!(check_protocol(protocol));
 
-        match from_str::<SocketAddr>(address) {
-            Some(_) => {
-                Ok(())
-            }
-            None => Err(ZmqError{
-                code: consts::EINVAL,
-                desc: "Invaid argument: bad address",
-                detail: None,
-            }),
+        match protocol {
+            "tcp" => {
+                match from_str::<SocketAddr>(address) {
+                    Some(addr) => {
+                        self.add_endpoint(box TcpListener::new(addr));
+                        Ok(())
+                    }
+                    None => Err(ZmqError::new(
+                        consts::EINVAL, "Invaid argument: bad address")),
+                }},
+            _ => Ok(())
         }
     }
 }
@@ -33,31 +39,22 @@ fn parse_uri<'r>(uri: &'r str) -> ZmqResult<(&'r str, &'r str)> {
             let protocol = uri.slice_to(pos);
             let address = uri.slice_from(pos + 3);
             if protocol.len() == 0 || address.len() == 0 {
-                Err(ZmqError{
-                    code: consts::EINVAL,
-                    desc: "Invalid argument: missing protocol or address",
-                    detail: None,
-                })
+                Err(ZmqError::new(
+                    consts::EINVAL,
+                    "Invalid argument: missing protocol or address"))
             } else {
                 Ok((protocol, address))
             }
         },
-        None => Err(ZmqError{
-            code: consts::EINVAL,
-            desc: "Invalid argument: missing ://",
-            detail: None,
-        }),
+        None => Err(ZmqError::new(
+            consts::EINVAL, "Invalid argument: missing ://")),
     }
 }
 
 fn check_protocol(protocol: &str) -> ZmqResult<()> {
     match protocol {
         "tcp" => Ok(()),
-        _ => Err(ZmqError{
-            code: consts::EPROTONOSUPPORT,
-            desc: "Protocol not supported",
-            detail: None,
-        }),
+        _ => Err(ZmqError::new(consts::EPROTONOSUPPORT, "Protocol not supported")),
     }
 }
 

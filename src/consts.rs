@@ -24,5 +24,14 @@ pub static HAUSNUMERO: int = 156384712;
 #[deriving(PartialEq, Show)]
 pub enum ErrorCode {
     EINVAL = libc::EINVAL as int,
+    EACCES = libc::EACCES as int,
+    ECONNREFUSED = libc::ECONNREFUSED as int,
+    ECONNRESET = libc::ECONNRESET as int,
+    ECONNABORTED = libc::ECONNABORTED as int,
+    ENOTCONN = libc::ENOTCONN as int,
+    ETIMEDOUT = libc::ETIMEDOUT as int,
+
     EPROTONOSUPPORT = HAUSNUMERO + 2,
+
+    EIOERROR = HAUSNUMERO - 1,
 }

@@ -1,5 +1,6 @@
 use consts;
 use socket_base::SocketBase;
+use endpoint::Endpoint;
 
 
 pub struct ReqSocket {
@@ -21,6 +22,9 @@ impl SocketBase for ReqSocket {
 
     fn get_type(&self) -> consts::SocketType {
         consts::REQ
+    }
+
+    fn add_endpoint(&self, endpoint: Box<Endpoint>) {
     }
 }
 
