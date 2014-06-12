@@ -25,10 +25,7 @@ impl InnerTcpListener {
                 Ok(stream) =>
                     try!(self.chan.send_opt(Ok(stream))),
                 Err(e) => {
-                    let err = ZmqError::from_io_error(e);
-                    if err.code != consts::ETIMEDOUT {
-                        try!(self.chan.send_opt(Err(err)));
-                    }
+                    try!(self.chan.send_opt(Err(ZmqError::from_io_error(e))));
                 }
             }
         }
