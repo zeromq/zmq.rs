@@ -3,7 +3,7 @@ all:
 
 tests:
 	rustc lib.rs --test -o zmq.rs.test
-	./zmq.rs.test
+	./zmq.rs.test --nocapture
 
 clean:
 	rm *.test
