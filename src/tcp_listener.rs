@@ -1,9 +1,9 @@
-use std::io::Acceptor;
-use std::io::net::tcp::TcpAcceptor;
-
 use endpoint::Endpoint;
 use result::{ZmqError, ZmqResult};
-use socket_base::{InnerSocket, SocketMessage, OnConnected};
+use socket_base::{SocketBase, SocketMessage, OnConnected};
+
+use std::io::Acceptor;
+use std::io::net::tcp::TcpAcceptor;
 
 
 static ACCEPT_TIMEOUT: u64 = 1000;
@@ -29,6 +29,7 @@ impl InnerTcpListener {
         }
     }
 }
+
 
 pub struct TcpListener {
     chan: Receiver<ZmqResult<SocketMessage>>,
@@ -58,6 +59,6 @@ impl Endpoint for TcpListener {
         &self.chan
     }
 
-    fn handle(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut InnerSocket) {
+    fn handle(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {
     }
 }

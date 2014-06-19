@@ -6,16 +6,16 @@ pub use ctx::Context;
 pub use consts::{SocketType, REQ};
 pub use consts::{SocketOption, TYPE};
 pub use consts::{HAUSNUMERO, ErrorCode, EINVAL, EPROTONOSUPPORT, ECONNREFUSED};
-pub use socket_base::SocketBase;
 pub use result::{ZmqResult, ZmqError};
+pub use socket_interface::ZmqSocket;
 
 mod ctx;
 mod consts;
-mod socket_base;
-mod req;
-mod result;
-mod tcp_listener;
 mod endpoint;
+mod result;
+mod socket_base;
+mod socket_interface;
+mod tcp_listener;
 
 
 #[cfg(test)]
