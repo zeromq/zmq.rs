@@ -59,6 +59,6 @@ impl Endpoint for TcpListener {
         &self.chan
     }
 
-    fn handle(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {
+    fn in_event(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {
     }
 }

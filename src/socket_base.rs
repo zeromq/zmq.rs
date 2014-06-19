@@ -61,7 +61,7 @@ impl SocketBase {
                     None => fail!(),
                 }
             };
-            endpoints.get_mut(index).handle(msg, self);
+            endpoints.get_mut(index).in_event(msg, self);
             self.endpoints.extend(endpoints.move_iter());
         }
     }

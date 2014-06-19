@@ -27,7 +27,7 @@ impl Endpoint for InnerZmqSocket {
         &self.rx
     }
 
-    fn handle(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {
+    fn in_event(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {
         match msg {
             Ok(DoBind(acceptor)) => {
                 socket.add_endpoint(box TcpListener::new(acceptor));
