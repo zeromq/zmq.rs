@@ -54,14 +54,18 @@ impl SocketBase {
                 match mapping.pop(&hid) {
                     Some((mut handle, index)) => {
                         match handle.recv_opt() {
-                            Ok(msg) => (msg, index),
-                            _ => break,
+                            Ok(msg) => (Some(msg), index),
+                            _ => (None, index),
                         }
                     }
                     None => fail!(),
                 }
             };
-            endpoints.get_mut(index).in_event(msg, self);
+            match msg {
+                Some(msg) => endpoints.get_mut(index).in_event(msg, self),
+                None if endpoints.get(index).is_critical() => break,
+                _ => { endpoints.remove(index); }
+            }
             self.endpoints.extend(endpoints.move_iter());
         }
     }

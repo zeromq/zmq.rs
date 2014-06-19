@@ -35,6 +35,10 @@ impl Endpoint for InnerZmqSocket {
             _ => ()
         }
     }
+
+    fn is_critical(&self) -> bool {
+        true
+    }
 }
 
 
