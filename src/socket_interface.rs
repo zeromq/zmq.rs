@@ -1,5 +1,6 @@
 use consts;
 use endpoint::Endpoint;
+use options::Options;
 use result::{ZmqError, ZmqResult};
 use socket_base::{DoBind, SocketMessage};
 use socket_base::SocketBase;
@@ -8,6 +9,7 @@ use tcp_listener::TcpListener;
 use std::io;
 use std::io::Listener;
 use std::io::net::ip::SocketAddr;
+use std::sync::{RWLock, Arc};
 
 
 struct InnerZmqSocket {
@@ -45,21 +47,25 @@ impl Endpoint for InnerZmqSocket {
 pub struct ZmqSocket {
     type_: consts::SocketType,
     tx: Sender<ZmqResult<SocketMessage>>,
+    options: Arc<RWLock<Options>>,
 }
 
 impl ZmqSocket {
     pub fn new(type_: consts::SocketType) -> ZmqSocket {
         let (tx, rx) = channel();
+        let ret = ZmqSocket {
+            type_: type_,
+            tx: tx,
+            options: Arc::new(RWLock::new(Options::new())),
+        };
+        let options_on_arc = ret.options.clone();
         spawn(proc() {
-            let mut socket = SocketBase::new();
+            let mut socket = SocketBase::new(options_on_arc);
             let endpoint = box InnerZmqSocket::new(rx);
             socket.add_endpoint(endpoint);
             socket.run();
         });
-        ZmqSocket {
-            type_: type_,
-            tx: tx,
-        }
+        ret
     }
 
     pub fn bind(&self, addr: &str) -> ZmqResult<()> {

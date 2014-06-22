@@ -1,13 +1,16 @@
 use endpoint::Endpoint;
+use options::Options;
 use result::ZmqResult;
 use socket_base::{SocketBase, SocketMessage};
 
 use std::io::TcpStream;
+use std::sync::{RWLock, Arc};
 
 
 struct InnerStreamEngine {
     chan: Sender<ZmqResult<SocketMessage>>,
     stream: TcpStream,
+    options: Arc<RWLock<Options>>,
 }
 
 impl InnerStreamEngine {
@@ -22,13 +25,14 @@ pub struct StreamEngine {
 }
 
 impl StreamEngine {
-    pub fn new(stream: TcpStream) -> StreamEngine {
+    pub fn new(stream: TcpStream, options: Arc<RWLock<Options>>) -> StreamEngine {
         let (tx, rx) = channel();
         let receiver = stream.clone();
         spawn(proc() {
             let mut engine = InnerStreamEngine {
                 chan: tx,
                 stream: receiver,
+                options: options,
             };
             engine.run();
         });

@@ -17,6 +17,7 @@ mod socket_base;
 mod socket_interface;
 mod stream_engine;
 mod tcp_listener;
+mod options;
 
 
 #[cfg(test)]

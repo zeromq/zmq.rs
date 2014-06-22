@@ -1,9 +1,11 @@
 use endpoint::Endpoint;
+use options::Options;
 
 use std::collections::{HashMap, DList, Deque};
 use std::comm::Select;
 use std::io::net::tcp::TcpAcceptor;
 use std::io::TcpStream;
+use std::sync::{RWLock, Arc};
 
 
 pub enum SocketMessage {
@@ -14,12 +16,14 @@ pub enum SocketMessage {
 
 pub struct SocketBase {
     endpoints: DList<Box<Endpoint>>,
+    options: Arc<RWLock<Options>>,
 }
 
 impl SocketBase {
-    pub fn new() -> SocketBase {
+    pub fn new(options: Arc<RWLock<Options>>) -> SocketBase {
         SocketBase {
             endpoints: DList::new(),
+            options: options,
         }
     }
 
@@ -72,5 +76,9 @@ impl SocketBase {
 
     pub fn add_endpoint(&mut self, endpoint: Box<Endpoint>) {
         self.endpoints.push_back(endpoint);
+    }
+
+    pub fn clone_options(&self) -> Arc<RWLock<Options>> {
+        self.options.clone()
     }
 }

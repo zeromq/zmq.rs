@@ -63,7 +63,8 @@ impl Endpoint for TcpListener {
     fn in_event(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {
         match msg {
             Ok(OnConnected(stream)) => {
-                socket.add_endpoint(box StreamEngine::new(stream));
+                let options = socket.clone_options();
+                socket.add_endpoint(box StreamEngine::new(stream, options));
             }
             _ => ()
         }
