@@ -45,6 +45,14 @@ impl InnerStreamEngine {
         println!(">>> Sending signature: {}", signature);
         self.sender.send(signature);
 
+        self.handshake();
+
+        loop {
+            println!(">>> {}", self.stream.read_exact(1));
+        }
+    }
+
+    fn handshake(&mut self) {
         let mut greeting_recv = [0u8, ..V2_GREETING_SIZE];
         let mut greeting_bytes_read = 0;
         let mut zeros = 0;
@@ -54,7 +62,7 @@ impl InnerStreamEngine {
                     println!("ZERO");
                     zeros += 1;
                     if zeros > NO_PROGRESS_LIMIT {
-                        return;
+                        return; // TODO: error
                     } else {
                         continue;
                     }
@@ -62,7 +70,7 @@ impl InnerStreamEngine {
                 Ok(n) => {
                     greeting_bytes_read += n;
                 }
-                _ => return,
+                _ => return, // TODO: error
             }
             println!(">>> Greeting bytes so far: {}", greeting_recv.as_slice());
 
@@ -70,7 +78,7 @@ impl InnerStreamEngine {
             //  If the first byte is not 0xff, we know that the
             //  peer is using unversioned protocol.
             if greeting_recv[0] != 0xff {
-                return;
+                return; // TODO: error or ZMTP 1.0
             }
 
             if greeting_bytes_read < SIGNATURE_SIZE {
@@ -82,7 +90,7 @@ impl InnerStreamEngine {
             //  Zero indicates this is a header of identity message
             //  (i.e. the peer is using the unversioned protocol).
             if greeting_recv[9] & 0x01 == 0 {
-                return;
+                return; // TODO: error or ZMTP 1.0
             }
 
             //  The peer is using versioned protocol.
@@ -100,10 +108,6 @@ impl InnerStreamEngine {
                     }
                 }
             }
-        }
-
-        loop {
-            println!(">>> {}", self.stream.read_exact(1));
         }
     }
 }
