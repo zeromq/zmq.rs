@@ -1,5 +1,5 @@
 pub struct Options {
-    identity_size: u8,
+    pub identity_size: u8,
     //identity: [u8,..256],
 }
 
