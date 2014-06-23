@@ -1,4 +1,5 @@
 use endpoint::Endpoint;
+use msg::Msg;
 use options::Options;
 
 use std::collections::{HashMap, DList, Deque};
@@ -11,6 +12,7 @@ use std::sync::{RWLock, Arc};
 pub enum SocketMessage {
     DoBind(TcpAcceptor),
     OnConnected(TcpStream),
+    OnMessage(Box<Msg>),
 }
 
 

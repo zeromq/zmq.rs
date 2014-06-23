@@ -76,7 +76,7 @@ impl ZmqSocket {
                     Some(addr) => {
                         let listener = io::TcpListener::bind(
                             format!("{}", addr.ip).as_slice(), addr.port);
-                        let acceptor = try!(ZmqError::wrap_io_error(listener.listen()));
+                        let acceptor = try!(listener.listen().map_err(ZmqError::from_io_error));
                         self.tx.send(Ok(DoBind(acceptor)));
                         Ok(())
                     }

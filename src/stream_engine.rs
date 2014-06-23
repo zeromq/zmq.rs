@@ -1,10 +1,11 @@
 use endpoint::Endpoint;
 use options::Options;
 use result::ZmqResult;
-use socket_base::{SocketBase, SocketMessage};
+use socket_base::{OnMessage, SocketBase, SocketMessage};
+use v2_decoder::V2Decoder;
 
 use std::io::extensions;
-use std::io::TcpStream;
+use std::io::{TcpStream, Reader};
 use std::sync::{RWLock, Arc};
 
 
@@ -30,10 +31,11 @@ fn proxy_write(chan: Receiver<Box<Vec<u8>>>, mut stream: TcpStream) {
 
 
 struct InnerStreamEngine {
-    chan: Sender<ZmqResult<SocketMessage>>,
+    chan: Sender<ZmqResult<SocketMessage>>, // TODO: replace with SyncSender
     stream: TcpStream,
     options: Arc<RWLock<Options>>,
     sender: Sender<Box<Vec<u8>>>,
+    decoder: Option<V2Decoder>,
 }
 
 impl InnerStreamEngine {
@@ -48,8 +50,16 @@ impl InnerStreamEngine {
 
         self.handshake();
 
+        assert!(self.decoder.is_some());
+
         loop {
-            println!(">>> {}", self.stream.read_exact(1).unwrap());
+            match self.decoder.get_mut_ref().decode(&mut self.stream) {
+                Ok(msg) => self.chan.send(Ok(OnMessage(msg))),
+                Err(e) => {
+                    self.chan.send(Err(e));
+                    break;
+                }
+            }
         }
     }
 
@@ -120,10 +130,10 @@ impl InnerStreamEngine {
             // TODO: error or ZMTP 1.0
         } else if greeting_recv[REVISION_POS] == ZMTP_1_0 {
             // TODO: error or ZMTP 1.0
-        } else if greeting_recv[REVISION_POS] == ZMTP_2_0 {
-            //TODO: set encoder and decoder
         } else {
-            // TODO: error or ZMTP 3.0
+            assert!(self.decoder.is_none());
+            self.decoder = Some(V2Decoder::new(self.options.read().maxmsgsize));
+            //TODO: set encoder
         }
     }
 }
@@ -146,6 +156,7 @@ impl StreamEngine {
                 stream: receiver,
                 options: options,
                 sender: stx2,
+                decoder: None,
             };
             engine.run();
             engine.stream.close_read();
@@ -168,6 +179,12 @@ impl Endpoint for StreamEngine {
     }
 
     fn in_event(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {
+        match msg {
+            Ok(OnMessage(msg)) => {
+                println!(">>> {}", msg);
+            }
+            _ => ()
+        }
     }
 
     fn is_critical(&self) -> bool {

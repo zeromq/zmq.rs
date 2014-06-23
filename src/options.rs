@@ -9,6 +9,10 @@ pub struct Options {
 
     //  Socket type.
     pub type_: int,
+
+    //  Maximal size of message to handle.
+    pub maxmsgsize: i64,
+
 }
 
 impl Options {
@@ -16,6 +20,7 @@ impl Options {
         Options {
             identity_size: 0,
             type_: -1,
+            maxmsgsize: -1,
         }
     }
 

@@ -32,6 +32,7 @@ pub enum ErrorCode {
     ETIMEDOUT = libc::ETIMEDOUT as int,
 
     EPROTONOSUPPORT = HAUSNUMERO + 2,
+    EMSGSIZE = HAUSNUMERO + 10,
 
     EIOERROR = HAUSNUMERO - 1,
 }
