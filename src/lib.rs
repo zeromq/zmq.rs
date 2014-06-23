@@ -32,10 +32,6 @@ mod test {
         let c = super::Context::new();
         let s = c.socket(super::REQ);
         assert_eq!(s.getsockopt(super::TYPE), super::REQ as int);
-        match s.get_type() {
-            super::REQ => (),
-            //_ => assert!(false),
-        }
     }
 
     #[test]

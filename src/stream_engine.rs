@@ -13,6 +13,7 @@ static NO_PROGRESS_LIMIT: uint = 1000;
 static SIGNATURE_SIZE: uint = 10;
 static ZMTP_1_0: u8 = 0;
 static ZMTP_2_0: u8 = 1;
+static REVISION_POS: uint = 10;
 
 
 fn proxy_write(chan: Receiver<Box<Vec<u8>>>, mut stream: TcpStream) {
@@ -48,7 +49,7 @@ impl InnerStreamEngine {
         self.handshake();
 
         loop {
-            println!(">>> {}", self.stream.read_exact(1));
+            println!(">>> {}", self.stream.read_exact(1).unwrap());
         }
     }
 
@@ -56,6 +57,8 @@ impl InnerStreamEngine {
         let mut greeting_recv = [0u8, ..V2_GREETING_SIZE];
         let mut greeting_bytes_read = 0;
         let mut zeros = 0;
+        let mut type_sent = false;
+
         while greeting_bytes_read < V2_GREETING_SIZE {
             match self.stream.read(greeting_recv.mut_slice_from(greeting_bytes_read)) {
                 Ok(0) => {
@@ -97,17 +100,30 @@ impl InnerStreamEngine {
             //  Send the version number.
             self.sender.send(box [1u8].into_owned());
 
-            if greeting_bytes_read > SIGNATURE_SIZE {
+            if greeting_bytes_read > SIGNATURE_SIZE && !type_sent {
+                type_sent = true;
                 match greeting_recv[10] {
                     ZMTP_1_0 | ZMTP_2_0 => {
                         println!(">>> ZMTP 2.0");
-                        // TODO: send options.type
+                        self.sender.send(box [self.options.read().type_ as u8].into_owned());
                     }
                     _ => {
                         println!(">>> ZMTP 3.0");
+                        //TODO: error or ZMTP 3.0
+                        self.sender.send(box [self.options.read().type_ as u8].into_owned());
                     }
                 }
             }
+        }
+
+        if greeting_recv[0] != 0xff || greeting_recv[9] & 0x01 == 0 {
+            // TODO: error or ZMTP 1.0
+        } else if greeting_recv[REVISION_POS] == ZMTP_1_0 {
+            // TODO: error or ZMTP 1.0
+        } else if greeting_recv[REVISION_POS] == ZMTP_2_0 {
+            //TODO: set encoder and decoder
+        } else {
+            // TODO: error or ZMTP 3.0
         }
     }
 }

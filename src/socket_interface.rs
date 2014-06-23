@@ -45,7 +45,6 @@ impl Endpoint for InnerZmqSocket {
 
 
 pub struct ZmqSocket {
-    type_: consts::SocketType,
     tx: Sender<ZmqResult<SocketMessage>>,
     options: Arc<RWLock<Options>>,
 }
@@ -54,10 +53,10 @@ impl ZmqSocket {
     pub fn new(type_: consts::SocketType) -> ZmqSocket {
         let (tx, rx) = channel();
         let ret = ZmqSocket {
-            type_: type_,
             tx: tx,
             options: Arc::new(RWLock::new(Options::new())),
         };
+        ret.options.write().type_ = type_ as int;
         let options_on_arc = ret.options.clone();
         spawn(proc() {
             let mut socket = SocketBase::new(options_on_arc);
@@ -88,14 +87,8 @@ impl ZmqSocket {
         }
     }
 
-    pub fn getsockopt(&self, option_: consts::SocketOption) -> int {
-        match option_ {
-            consts::TYPE => self.get_type() as int,
-        }
-    }
-
-    pub fn get_type(&self) -> consts::SocketType {
-        consts::REQ
+    pub fn getsockopt(&self, option: consts::SocketOption) -> int {
+        self.options.read().getsockopt(option)
     }
 }
 
