@@ -12,7 +12,7 @@ static ACCEPT_TIMEOUT: u64 = 1000;
 
 struct InnerTcpListener {
     acceptor: TcpAcceptor,
-    chan: Sender<ZmqResult<SocketMessage>>,
+    chan_to_socket: Sender<ZmqResult<SocketMessage>>,
 }
 
 
@@ -22,9 +22,9 @@ impl InnerTcpListener {
             self.acceptor.set_timeout(Some(ACCEPT_TIMEOUT));
             match self.acceptor.accept() {
                 Ok(stream) =>
-                    try!(self.chan.send_opt(Ok(OnConnected(stream)))),
+                    try!(self.chan_to_socket.send_opt(Ok(OnConnected(stream)))),
                 Err(e) => {
-                    try!(self.chan.send_opt(Err(ZmqError::from_io_error(e))));
+                    try!(self.chan_to_socket.send_opt(Err(ZmqError::from_io_error(e))));
                 }
             }
         }
@@ -33,7 +33,7 @@ impl InnerTcpListener {
 
 
 pub struct TcpListener {
-    chan: Receiver<ZmqResult<SocketMessage>>,
+    chan_from_inner: Receiver<ZmqResult<SocketMessage>>,
 }
 
 impl TcpListener {
@@ -42,7 +42,7 @@ impl TcpListener {
         spawn(proc() {
             let mut listener = InnerTcpListener {
                 acceptor: acceptor,
-                chan: tx,
+                chan_to_socket: tx,
             };
             match listener.run() {
                 _ => ()
@@ -50,14 +50,14 @@ impl TcpListener {
         });
 
         TcpListener{
-            chan: rx,
+            chan_from_inner: rx,
         }
     }
 }
 
 impl Endpoint for TcpListener {
     fn get_chan<'a>(&'a self) -> &'a Receiver<ZmqResult<SocketMessage>> {
-        &self.chan
+        &self.chan_from_inner
     }
 
     fn in_event(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {

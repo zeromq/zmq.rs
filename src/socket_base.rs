@@ -25,16 +25,16 @@ pub enum SocketMessage {
 pub struct SocketBase {
     endpoints: DList<Box<Endpoint>>,
     options: Arc<RWLock<Options>>,
-    chan: Sender<ZmqResult<SocketMessage>>,
+    chan_to_interface: Sender<ZmqResult<SocketMessage>>,
 }
 
 impl SocketBase {
     pub fn new(options: Arc<RWLock<Options>>,
-               chan: Sender<ZmqResult<SocketMessage>>) -> SocketBase {
+               chan_to_interface: Sender<ZmqResult<SocketMessage>>) -> SocketBase {
         SocketBase {
             endpoints: DList::new(),
             options: options,
-            chan: chan,
+            chan_to_interface: chan_to_interface,
         }
     }
 
@@ -94,6 +94,6 @@ impl SocketBase {
     }
 
     pub fn send_back(&self, msg: ZmqResult<SocketMessage>) {
-        self.chan.send(msg);
+        self.chan_to_interface.send(msg);
     }
 }

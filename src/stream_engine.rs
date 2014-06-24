@@ -31,7 +31,7 @@ fn proxy_write(chan: Receiver<Box<Vec<u8>>>, mut stream: TcpStream) {
 
 
 struct InnerStreamEngine {
-    chan: Sender<ZmqResult<SocketMessage>>,
+    chan_to_socket: Sender<ZmqResult<SocketMessage>>,
     stream: TcpStream,
     options: Arc<RWLock<Options>>,
     sender: Sender<Box<Vec<u8>>>,
@@ -52,13 +52,13 @@ impl InnerStreamEngine {
 
         assert!(self.decoder.is_some());
         let (tx, rx) = channel(); // TODO: replace with SyncSender
-        self.chan.send(Ok(FeedChannel(rx))) ;
+        self.chan_to_socket.send(Ok(FeedChannel(rx))) ;
 
         loop {
             match self.decoder.get_mut_ref().decode(&mut self.stream) {
                 Ok(msg) => tx.send(msg),
                 Err(e) => {
-                    self.chan.send(Err(e));
+                    self.chan_to_socket.send(Err(e));
                     break;
                 }
             }
@@ -143,7 +143,7 @@ impl InnerStreamEngine {
 
 pub struct StreamEngine {
     // the normal channel for SocketMessage
-    chan: Receiver<ZmqResult<SocketMessage>>,
+    chan_from_inner: Receiver<ZmqResult<SocketMessage>>,
 
     // a send handle
     sender: Sender<Box<Vec<u8>>>,
@@ -152,7 +152,7 @@ pub struct StreamEngine {
 impl StreamEngine {
     pub fn new(stream: TcpStream, options: Arc<RWLock<Options>>) -> StreamEngine {
         // the normal channel for SocketMessage
-        let (tx, rx) = channel();
+        let (chan_to_socket, chan_from_inner) = channel();
 
         // two handles of one TcpStream: send and recv
         let receiver = stream.clone();
@@ -163,7 +163,7 @@ impl StreamEngine {
 
         spawn(proc() {
             let mut engine = InnerStreamEngine {
-                chan: tx,
+                chan_to_socket: chan_to_socket,
                 stream: receiver,
                 options: options,
                 sender: stx2,
@@ -178,7 +178,7 @@ impl StreamEngine {
         });
 
         StreamEngine {
-            chan: rx,
+            chan_from_inner: chan_from_inner,
             sender: stx,
         }
     }
@@ -186,7 +186,7 @@ impl StreamEngine {
 
 impl Endpoint for StreamEngine {
     fn get_chan<'a>(&'a self) -> &'a Receiver<ZmqResult<SocketMessage>> {
-        &self.chan
+        &self.chan_from_inner
     }
 
     fn in_event(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {
