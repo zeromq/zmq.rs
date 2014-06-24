@@ -1,6 +1,6 @@
 #![crate_id = "zmq.rs#0.1-pre"]
 #![crate_type = "dylib"]
-#![license = "MIT"]
+#![license = "MPLv2"]
 
 pub use ctx::Context;
 pub use consts::{SocketType, REQ};
