@@ -1,6 +1,7 @@
 use endpoint::Endpoint;
 use msg::Msg;
 use options::Options;
+use result::ZmqResult;
 
 use std::collections::{HashMap, DList, Deque};
 use std::comm::Select;
@@ -10,22 +11,30 @@ use std::sync::{RWLock, Arc};
 
 
 pub enum SocketMessage {
+    // command message to SocketBase from interface
     DoBind(TcpAcceptor),
+
+    // message to SocketBase from normal endpoints
     OnConnected(TcpStream),
-    OnMessage(Box<Msg>),
+
+    // message from SocketBase to interface
+    FeedChannel(Receiver<Box<Msg>>),
 }
 
 
 pub struct SocketBase {
     endpoints: DList<Box<Endpoint>>,
     options: Arc<RWLock<Options>>,
+    chan: Sender<ZmqResult<SocketMessage>>,
 }
 
 impl SocketBase {
-    pub fn new(options: Arc<RWLock<Options>>) -> SocketBase {
+    pub fn new(options: Arc<RWLock<Options>>,
+               chan: Sender<ZmqResult<SocketMessage>>) -> SocketBase {
         SocketBase {
             endpoints: DList::new(),
             options: options,
+            chan: chan,
         }
     }
 
@@ -82,5 +91,9 @@ impl SocketBase {
 
     pub fn clone_options(&self) -> Arc<RWLock<Options>> {
         self.options.clone()
+    }
+
+    pub fn send_back(&self, msg: ZmqResult<SocketMessage>) {
+        self.chan.send(msg);
     }
 }

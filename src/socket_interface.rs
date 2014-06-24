@@ -1,11 +1,14 @@
 use consts;
 use endpoint::Endpoint;
+use msg::Msg;
 use options::Options;
 use result::{ZmqError, ZmqResult};
-use socket_base::{DoBind, SocketMessage};
+use socket_base::{DoBind, FeedChannel, SocketMessage};
 use socket_base::SocketBase;
 use tcp_listener::TcpListener;
 
+use std::collections::HashMap;
+use std::comm::Select;
 use std::io;
 use std::io::Listener;
 use std::io::net::ip::SocketAddr;
@@ -14,14 +17,6 @@ use std::sync::{RWLock, Arc};
 
 struct InnerZmqSocket {
     rx: Receiver<ZmqResult<SocketMessage>>,
-}
-
-impl InnerZmqSocket {
-    fn new(rx: Receiver<ZmqResult<SocketMessage>>) -> InnerZmqSocket {
-        InnerZmqSocket {
-            rx: rx,
-        }
-    }
 }
 
 impl Endpoint for InnerZmqSocket {
@@ -46,21 +41,28 @@ impl Endpoint for InnerZmqSocket {
 
 pub struct ZmqSocket {
     tx: Sender<ZmqResult<SocketMessage>>,
+    rx: Receiver<ZmqResult<SocketMessage>>,
+    msg_channels: Vec<Receiver<Box<Msg>>>,
     options: Arc<RWLock<Options>>,
 }
 
 impl ZmqSocket {
     pub fn new(type_: consts::SocketType) -> ZmqSocket {
         let (tx, rx) = channel();
+        let (out_tx, out_rx) = channel();
         let ret = ZmqSocket {
             tx: tx,
+            rx: out_rx,
+            msg_channels: Vec::new(),
             options: Arc::new(RWLock::new(Options::new())),
         };
         ret.options.write().type_ = type_ as int;
         let options_on_arc = ret.options.clone();
         spawn(proc() {
-            let mut socket = SocketBase::new(options_on_arc);
-            let endpoint = box InnerZmqSocket::new(rx);
+            let mut socket = SocketBase::new(options_on_arc, out_tx);
+            let endpoint = box InnerZmqSocket {
+                rx: rx,
+            };
             socket.add_endpoint(endpoint);
             socket.run();
         });
@@ -89,6 +91,62 @@ impl ZmqSocket {
 
     pub fn getsockopt(&self, option: consts::SocketOption) -> int {
         self.options.read().getsockopt(option)
+    }
+
+    pub fn msg_recv(&mut self) -> Box<Msg> {
+        loop {
+            let to_remove = {
+                self.sync();
+                let selector = Select::new();
+                let mut mapping = HashMap::new();
+                let mut index = 0;
+                for chan in self.msg_channels.iter() {
+                    let handle = box selector.handle(chan);
+                    let hid = handle.id();
+                    mapping.insert(hid, (handle, index));
+                    let handle = mapping.get_mut(&hid).mut0();
+                    unsafe {
+                        handle.add();
+                    }
+                    index += 1;
+                }
+                let hid = selector.wait();
+                match mapping.pop(&hid) {
+                    Some((mut handle, index)) => {
+                        match handle.recv_opt() {
+                            Ok(msg) => return msg,
+                            _ => index,
+                        }
+                    }
+                    None => fail!(),
+                }
+            };
+            self.msg_channels.remove(to_remove);
+        }
+    }
+
+    fn sync(&mut self) {
+        loop {
+            if self.msg_channels.len() == 0 {
+                match self.rx.recv_opt() {
+                    Ok(msg) => self.handle_msg(msg),
+                    Err(_) => continue,
+                }
+            }
+            match self.rx.try_recv() {
+                Ok(msg) => self.handle_msg(msg),
+                Err(_) => break,
+            }
+        }
+    }
+
+    fn handle_msg(&mut self, msg: ZmqResult<SocketMessage>) {
+        match msg {
+            Ok(FeedChannel(chan)) => {
+                self.msg_channels.push(chan);
+            }
+            _ => (),
+        }
     }
 }
 

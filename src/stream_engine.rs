@@ -1,7 +1,7 @@
 use endpoint::Endpoint;
 use options::Options;
 use result::ZmqResult;
-use socket_base::{OnMessage, SocketBase, SocketMessage};
+use socket_base::{FeedChannel, SocketBase, SocketMessage};
 use v2_decoder::V2Decoder;
 
 use std::io::extensions;
@@ -31,7 +31,7 @@ fn proxy_write(chan: Receiver<Box<Vec<u8>>>, mut stream: TcpStream) {
 
 
 struct InnerStreamEngine {
-    chan: Sender<ZmqResult<SocketMessage>>, // TODO: replace with SyncSender
+    chan: Sender<ZmqResult<SocketMessage>>,
     stream: TcpStream,
     options: Arc<RWLock<Options>>,
     sender: Sender<Box<Vec<u8>>>,
@@ -51,10 +51,12 @@ impl InnerStreamEngine {
         self.handshake();
 
         assert!(self.decoder.is_some());
+        let (tx, rx) = channel(); // TODO: replace with SyncSender
+        self.chan.send(Ok(FeedChannel(rx))) ;
 
         loop {
             match self.decoder.get_mut_ref().decode(&mut self.stream) {
-                Ok(msg) => self.chan.send(Ok(OnMessage(msg))),
+                Ok(msg) => tx.send(msg),
                 Err(e) => {
                     self.chan.send(Err(e));
                     break;
@@ -140,16 +142,25 @@ impl InnerStreamEngine {
 
 
 pub struct StreamEngine {
+    // the normal channel for SocketMessage
     chan: Receiver<ZmqResult<SocketMessage>>,
+
+    // a send handle
     sender: Sender<Box<Vec<u8>>>,
 }
 
 impl StreamEngine {
     pub fn new(stream: TcpStream, options: Arc<RWLock<Options>>) -> StreamEngine {
+        // the normal channel for SocketMessage
         let (tx, rx) = channel();
+
+        // two handles of one TcpStream: send and recv
         let receiver = stream.clone();
+
+        // the channel for sending data
         let (stx, srx) = channel();
         let stx2 = stx.clone();
+
         spawn(proc() {
             let mut engine = InnerStreamEngine {
                 chan: tx,
@@ -180,14 +191,8 @@ impl Endpoint for StreamEngine {
 
     fn in_event(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {
         match msg {
-            Ok(OnMessage(msg)) => {
-                println!(">>> {}", msg);
-            }
+            Ok(FeedChannel(rx)) => socket.send_back(Ok(FeedChannel(rx))),
             _ => ()
         }
-    }
-
-    fn is_critical(&self) -> bool {
-        false
     }
 }

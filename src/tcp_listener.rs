@@ -69,8 +69,4 @@ impl Endpoint for TcpListener {
             _ => ()
         }
     }
-
-    fn is_critical(&self) -> bool {
-        false
-    }
 }
