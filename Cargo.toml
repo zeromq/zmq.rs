@@ -1,0 +1,10 @@
+[package]
+
+name = "zmq"
+version = "0.1.0-pre"
+authors = ["fantix.king@gmail.com"]
+
+[[lib]]
+
+name = "zmq"
+

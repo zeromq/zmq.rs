@@ -1,8 +1,8 @@
 all:
-	rustc lib.rs
+	rustc zmq.rs
 
 tests:
-	rustc lib.rs --test -o zmq.rs.test
+	rustc zmq.rs --test -o zmq.rs.test
 	./zmq.rs.test --nocapture
 
 clean:

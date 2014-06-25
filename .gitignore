@@ -2,3 +2,4 @@
 *.so
 *.test
 .idea
+target

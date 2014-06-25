@@ -1,4 +1,5 @@
-#![crate_id = "zmq.rs#0.1-pre"]
+#![crate_id = "zmq#0.1.0-pre"]
+#![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![license = "MPLv2"]
 
