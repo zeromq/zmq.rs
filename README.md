@@ -25,7 +25,6 @@ Under C4.1 process, you are more than welcome to help us by:
 To run the test suite:
 
 ```bash
-cd src
 make tests
 ```
 

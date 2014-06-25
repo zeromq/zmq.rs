@@ -1,5 +1,4 @@
 *.swp
-*.so
 *.test
 .idea
 target
