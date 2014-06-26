@@ -5,6 +5,7 @@ use result::ZmqResult;
 
 use std::collections::{HashMap, DList, Deque};
 use std::comm::Select;
+use std::io::net::ip::SocketAddr;
 use std::io::net::tcp::TcpAcceptor;
 use std::io::TcpStream;
 use std::sync::{RWLock, Arc};
@@ -13,9 +14,10 @@ use std::sync::{RWLock, Arc};
 pub enum SocketMessage {
     // command message to SocketBase from interface
     DoBind(TcpAcceptor),
+    DoConnect(SocketAddr),
 
     // message to SocketBase from normal endpoints
-    OnConnected(TcpStream),
+    OnConnected(TcpStream, Option<Sender<u8>>),
 
     // message from SocketBase to interface
     FeedChannel(Receiver<Box<Msg>>),

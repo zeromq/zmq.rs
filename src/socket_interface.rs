@@ -3,8 +3,9 @@ use endpoint::Endpoint;
 use msg::Msg;
 use options::Options;
 use result::{ZmqError, ZmqResult};
-use socket_base::{DoBind, FeedChannel, SocketMessage};
+use socket_base::{DoBind, DoConnect, FeedChannel, SocketMessage};
 use socket_base::SocketBase;
+use tcp_connecter::TcpConnecter;
 use tcp_listener::TcpListener;
 
 use std::collections::HashMap;
@@ -28,6 +29,10 @@ impl Endpoint for InnerZmqSocket {
         match msg {
             Ok(DoBind(acceptor)) => {
                 socket.add_endpoint(box TcpListener::new(acceptor));
+            }
+            Ok(DoConnect(addr)) => {
+                let options = socket.clone_options();
+                socket.add_endpoint(box TcpConnecter::new(addr, options));
             }
             _ => ()
         }
@@ -80,6 +85,22 @@ impl ZmqSocket {
                             format!("{}", addr.ip).as_slice(), addr.port);
                         let acceptor = try!(listener.listen().map_err(ZmqError::from_io_error));
                         self.tx.send(Ok(DoBind(acceptor)));
+                        Ok(())
+                    }
+                    None => Err(ZmqError::new(
+                        consts::EINVAL, "Invaid argument: bad address")),
+                }},
+            _ => Err(ZmqError::new(consts::EPROTONOSUPPORT, "Protocol not supported")),
+        }
+    }
+
+    pub fn connect(&self, addr: &str) -> ZmqResult<()> {
+        let (protocol, address) = try!(parse_uri(addr));
+        match protocol {
+            "tcp" => {
+                match from_str::<SocketAddr>(address) {
+                    Some(addr) => {
+                        self.tx.send(Ok(DoConnect(addr)));
                         Ok(())
                     }
                     None => Err(ZmqError::new(

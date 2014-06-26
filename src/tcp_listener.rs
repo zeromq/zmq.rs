@@ -22,10 +22,9 @@ impl InnerTcpListener {
             self.acceptor.set_timeout(Some(ACCEPT_TIMEOUT));
             match self.acceptor.accept() {
                 Ok(stream) =>
-                    try!(self.chan_to_socket.send_opt(Ok(OnConnected(stream)))),
-                Err(e) => {
-                    try!(self.chan_to_socket.send_opt(Err(ZmqError::from_io_error(e))));
-                }
+                    try!(self.chan_to_socket.send_opt(Ok(OnConnected(stream, None)))),
+                Err(e) =>
+                    try!(self.chan_to_socket.send_opt(Err(ZmqError::from_io_error(e)))),
             }
         }
     }
@@ -44,9 +43,7 @@ impl TcpListener {
                 acceptor: acceptor,
                 chan_to_socket: tx,
             };
-            match listener.run() {
-                _ => ()
-            }
+            let _ = listener.run();
         });
 
         TcpListener{
@@ -62,9 +59,9 @@ impl Endpoint for TcpListener {
 
     fn in_event(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {
         match msg {
-            Ok(OnConnected(stream)) => {
+            Ok(OnConnected(stream, notifier)) => {
                 let options = socket.clone_options();
-                socket.add_endpoint(box StreamEngine::new(stream, options));
+                socket.add_endpoint(box StreamEngine::new(stream, options, notifier));
             }
             _ => ()
         }

@@ -19,6 +19,7 @@ mod result;
 mod socket_base;
 mod socket_interface;
 mod stream_engine;
+mod tcp_connecter;
 mod tcp_listener;
 mod options;
 mod v2_decoder;
@@ -41,7 +42,7 @@ mod test {
     #[test]
     fn test_socket_bind() {
         let c = super::Context::new();
-        let mut s = c.socket(super::REQ);
+        let s = c.socket(super::REQ);
         assert_eq!(s.bind("").unwrap_err().code, super::EINVAL);
         assert_eq!(s.bind("://127").unwrap_err().code, super::EINVAL);
         assert_eq!(s.bind("tcp://").unwrap_err().code, super::EINVAL);
@@ -49,8 +50,22 @@ mod test {
         assert_eq!(s.bind("tcp://10.0.1.255:12345").unwrap_err().code, super::ECONNREFUSED);
         assert_eq!(s.bind("tcp://10.0.1.1:12z45").unwrap_err().code, super::EINVAL);
         assert!(s.bind("tcp://127.0.0.1:12345").is_ok());
+        assert_eq!(s.bind("tcp://127.0.0.1:12345").unwrap_err().code, super::ECONNREFUSED);
+    }
+
+    #[test]
+    fn test_socket_connect() {
+        let c = super::Context::new();
+        let s = c.socket(super::REQ);
+        assert_eq!(s.connect("").unwrap_err().code, super::EINVAL);
+        assert_eq!(s.connect("://127").unwrap_err().code, super::EINVAL);
+        assert_eq!(s.connect("tcp://").unwrap_err().code, super::EINVAL);
+        assert_eq!(s.connect("tcpp://127.0.0.1:12346").unwrap_err().code, super::EPROTONOSUPPORT);
+        assert_eq!(s.connect("tcp://10.0.1.1:12z46").unwrap_err().code, super::EINVAL);
+        assert!(s.connect("tcp://127.0.0.1:12346").is_ok());
+        assert!(s.connect("tcp://127.0.0.1:12346").is_ok());
         /*loop {
-            println!(">>> {}", s.msg_recv());
+            println!(">>> {}", req.msg_recv());
         }*/
     }
 }

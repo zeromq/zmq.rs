@@ -36,6 +36,9 @@ struct InnerStreamEngine {
     options: Arc<RWLock<Options>>,
     sender: Sender<Box<Vec<u8>>>,
     decoder: Option<V2Decoder>,
+
+    // a sender to unblock all receivers on drop
+    _death_notifier: Option<Sender<u8>>,
 }
 
 impl InnerStreamEngine {
@@ -45,7 +48,6 @@ impl InnerStreamEngine {
         extensions::u64_to_be_bytes(
             (self.options.read().identity_size + 1) as u64, 8, |v| signature.push_all(v));
         signature.push(0x7fu8);
-        println!(">>> Sending signature: {}", signature);
         self.sender.send(signature);
 
         self.handshake();
@@ -74,7 +76,6 @@ impl InnerStreamEngine {
         while greeting_bytes_read < V2_GREETING_SIZE {
             match self.stream.read(greeting_recv.mut_slice_from(greeting_bytes_read)) {
                 Ok(0) => {
-                    println!("ZERO");
                     zeros += 1;
                     if zeros > NO_PROGRESS_LIMIT {
                         return; // TODO: error
@@ -87,7 +88,6 @@ impl InnerStreamEngine {
                 }
                 _ => return, // TODO: error
             }
-            println!(">>> Greeting bytes so far: {}", greeting_recv.as_slice());
 
             //  We have received at least one byte from the peer.
             //  If the first byte is not 0xff, we know that the
@@ -116,11 +116,9 @@ impl InnerStreamEngine {
                 type_sent = true;
                 match greeting_recv[10] {
                     ZMTP_1_0 | ZMTP_2_0 => {
-                        println!(">>> ZMTP 2.0");
                         self.sender.send(box [self.options.read().type_ as u8].into_owned());
                     }
                     _ => {
-                        println!(">>> ZMTP 3.0");
                         //TODO: error or ZMTP 3.0
                         self.sender.send(box [self.options.read().type_ as u8].into_owned());
                     }
@@ -150,7 +148,8 @@ pub struct StreamEngine {
 }
 
 impl StreamEngine {
-    pub fn new(stream: TcpStream, options: Arc<RWLock<Options>>) -> StreamEngine {
+    pub fn new(stream: TcpStream, options: Arc<RWLock<Options>>,
+               death_notifier: Option<Sender<u8>>) -> StreamEngine {
         // the normal channel for SocketMessage
         let (chan_to_socket, chan_from_inner) = channel();
 
@@ -168,10 +167,11 @@ impl StreamEngine {
                 options: options,
                 sender: stx2,
                 decoder: None,
+                _death_notifier: death_notifier,
             };
             engine.run();
-            engine.stream.close_read();
-            engine.stream.close_write();
+            let _ = engine.stream.close_read();
+            let _ = engine.stream.close_write();
         });
         spawn(proc() {
             proxy_write(srx, stream);
