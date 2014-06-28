@@ -142,9 +142,6 @@ impl InnerStreamEngine {
 pub struct StreamEngine {
     // the normal channel for SocketMessage
     chan_from_inner: Receiver<ZmqResult<SocketMessage>>,
-
-    // a send handle
-    sender: Sender<Box<Vec<u8>>>,
 }
 
 impl StreamEngine {
@@ -158,14 +155,13 @@ impl StreamEngine {
 
         // the channel for sending data
         let (stx, srx) = channel();
-        let stx2 = stx.clone();
 
         spawn(proc() {
             let mut engine = InnerStreamEngine {
                 chan_to_socket: chan_to_socket,
                 stream: receiver,
                 options: options,
-                sender: stx2,
+                sender: stx,
                 decoder: None,
                 _death_notifier: death_notifier,
             };
@@ -179,7 +175,6 @@ impl StreamEngine {
 
         StreamEngine {
             chan_from_inner: chan_from_inner,
-            sender: stx,
         }
     }
 }
