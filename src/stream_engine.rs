@@ -1,9 +1,8 @@
 use consts;
-use endpoint::Endpoint;
 use msg::Msg;
 use options::Options;
 use result::{ZmqError, ZmqResult};
-use socket_base::{FeedChannel, SocketBase, SocketMessage};
+use socket_interface::{OnConnected, SocketMessage};
 use v2_encoder::V2Encoder;
 use v2_decoder::V2Decoder;
 
@@ -43,10 +42,11 @@ fn stream_msg_writer(msg_chan: Receiver<Box<Msg>>, mut stream: TcpStream, encode
             _ => break
         }
     }
+    let _ = stream.close_read();
 }
 
 
-struct InnerStreamEngine {
+pub struct StreamEngine {
     chan_to_socket: Sender<ZmqResult<SocketMessage>>,
     stream: TcpStream,
     options: Arc<RWLock<Options>>,
@@ -55,7 +55,7 @@ struct InnerStreamEngine {
     _death_notifier: Option<Sender<u8>>,
 }
 
-impl InnerStreamEngine {
+impl StreamEngine {
     fn run(&mut self) -> ZmqResult<()> {
         // prepare task for bufferring outgoing bytes
         let (bytes_tx, bytes_rx) = channel();
@@ -87,7 +87,7 @@ impl InnerStreamEngine {
 
         // Receive Msg objects
         let (tx, rx) = channel(); // TODO: replace with SyncSender
-        if self.chan_to_socket.send_opt(Ok(FeedChannel(msg_tx, rx))).is_err() {
+        if self.chan_to_socket.send_opt(Ok(OnConnected(msg_tx, rx))).is_err() {
             return Ok(());
         }
         loop {
@@ -176,57 +176,18 @@ impl InnerStreamEngine {
             return Ok((V2Decoder::new(self.options.read().maxmsgsize), V2Encoder::new()));
         }
     }
-}
 
-
-pub struct StreamEngine {
-    // the normal channel for SocketMessage
-    chan_from_inner: Receiver<ZmqResult<SocketMessage>>,
-    stream: TcpStream,
-}
-
-impl StreamEngine {
-    pub fn new(stream: TcpStream, options: Arc<RWLock<Options>>,
-               death_notifier: Option<Sender<u8>>) -> StreamEngine {
-        // the normal channel for SocketMessage
-        let (chan_to_socket, chan_from_inner) = channel();
-        let s = stream.clone();
-
+    pub fn spawn_new(stream: TcpStream, options: Arc<RWLock<Options>>,
+                     chan: Sender<ZmqResult<SocketMessage>>,
+                     death_notifier: Option<Sender<u8>>) {
         spawn(proc() {
-            let mut engine = InnerStreamEngine {
-                chan_to_socket: chan_to_socket,
+            let mut engine = StreamEngine {
+                chan_to_socket: chan,
                 stream: stream,
                 options: options,
                 _death_notifier: death_notifier,
             };
             let _ = engine.run();
-            let _ = engine.stream.close_read();
-            let _ = engine.stream.close_write();
         });
-
-        StreamEngine {
-            chan_from_inner: chan_from_inner,
-            stream: s,
-        }
-    }
-}
-
-impl Endpoint for StreamEngine {
-    fn get_chan<'a>(&'a self) -> &'a Receiver<ZmqResult<SocketMessage>> {
-        &self.chan_from_inner
-    }
-
-    fn in_event(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {
-        match msg {
-            Ok(FeedChannel(msg_tx, rx)) => socket.send_back(Ok(FeedChannel(msg_tx, rx))),
-            _ => ()
-        }
-    }
-}
-
-impl Drop for StreamEngine {
-    fn drop(&mut self) {
-        let _ = self.stream.close_read();
-        let _ = self.stream.close_write();
     }
 }

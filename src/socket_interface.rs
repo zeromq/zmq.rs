@@ -1,10 +1,7 @@
 use consts;
-use endpoint::Endpoint;
 use msg::Msg;
 use options::Options;
 use result::{ZmqError, ZmqResult};
-use socket_base::{DoBind, DoConnect, FeedChannel, SocketMessage};
-use socket_base::SocketBase;
 use tcp_connecter::TcpConnecter;
 use tcp_listener::TcpListener;
 
@@ -16,31 +13,9 @@ use std::io::net::ip::SocketAddr;
 use std::sync::{RWLock, Arc};
 
 
-struct InnerZmqSocket {
-    rx: Receiver<ZmqResult<SocketMessage>>,
-}
-
-impl Endpoint for InnerZmqSocket {
-    fn get_chan<'a>(&'a self) -> &'a Receiver<ZmqResult<SocketMessage>> {
-        &self.rx
-    }
-
-    fn in_event(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {
-        match msg {
-            Ok(DoBind(acceptor)) => {
-                socket.add_endpoint(box TcpListener::new(acceptor));
-            }
-            Ok(DoConnect(addr)) => {
-                let options = socket.clone_options();
-                socket.add_endpoint(box TcpConnecter::new(addr, options));
-            }
-            _ => ()
-        }
-    }
-
-    fn is_critical(&self) -> bool {
-        true
-    }
+pub enum SocketMessage {
+    Ping,
+    OnConnected(Sender<Box<Msg>>, Receiver<Box<Msg>>),
 }
 
 
@@ -55,24 +30,14 @@ pub struct ZmqSocket {
 impl ZmqSocket {
     pub fn new(type_: consts::SocketType) -> ZmqSocket {
         let (tx, rx) = channel();
-        let (out_tx, out_rx) = channel();
         let ret = ZmqSocket {
+            rx: rx,
             tx: tx,
-            rx: out_rx,
             msg_channels: Vec::new(),
             options: Arc::new(RWLock::new(Options::new())),
             send_count: 0,
         };
         ret.options.write().type_ = type_ as int;
-        let options_on_arc = ret.options.clone();
-        spawn(proc() {
-            let mut socket = SocketBase::new(options_on_arc, out_tx);
-            let endpoint = box InnerZmqSocket {
-                rx: rx,
-            };
-            socket.add_endpoint(endpoint);
-            socket.run();
-        });
         ret
     }
 
@@ -86,7 +51,7 @@ impl ZmqSocket {
                         let listener = io::TcpListener::bind(
                             format!("{}", addr.ip).as_slice(), addr.port);
                         let acceptor = try!(listener.listen().map_err(ZmqError::from_io_error));
-                        self.tx.send(Ok(DoBind(acceptor)));
+                        TcpListener::spawn_new(acceptor, self.tx.clone(), self.options.clone());
                         Ok(())
                     }
                     None => Err(ZmqError::new(
@@ -102,7 +67,7 @@ impl ZmqSocket {
             "tcp" => {
                 match from_str::<SocketAddr>(address) {
                     Some(addr) => {
-                        self.tx.send(Ok(DoConnect(addr)));
+                        TcpConnecter::spawn_new(addr, self.tx.clone(), self.options.clone());
                         Ok(())
                     }
                     None => Err(ZmqError::new(
@@ -168,8 +133,9 @@ impl ZmqSocket {
             if self.msg_channels.len() == 0 {
                 match self.rx.recv_opt() {
                     Ok(msg) => self.handle_msg(msg),
-                    Err(_) => continue,
+                    Err(_) => (),
                 }
+                continue;
             }
             match self.rx.try_recv() {
                 Ok(msg) => self.handle_msg(msg),
@@ -180,7 +146,7 @@ impl ZmqSocket {
 
     fn handle_msg(&mut self, msg: ZmqResult<SocketMessage>) {
         match msg {
-            Ok(FeedChannel(tx, rx)) => {
+            Ok(OnConnected(tx, rx)) => {
                 self.msg_channels.push((tx, rx));
             }
             _ => (),

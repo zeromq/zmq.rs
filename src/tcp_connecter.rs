@@ -1,7 +1,6 @@
-use endpoint::Endpoint;
 use options::Options;
 use result::{ZmqError, ZmqResult};
-use socket_base::{SocketBase, SocketMessage, OnConnected};
+use socket_interface::{Ping, SocketMessage};
 use stream_engine::StreamEngine;
 
 use std::cmp;
@@ -11,7 +10,7 @@ use std::rand;
 use std::sync::{RWLock, Arc};
 
 
-struct InnerTcpConnecter {
+pub struct TcpConnecter {
     chan_to_socket: Sender<ZmqResult<SocketMessage>>,
     addr: SocketAddr,
     options: Arc<RWLock<Options>>,
@@ -20,13 +19,18 @@ struct InnerTcpConnecter {
     current_reconnect_ivl: u64,
 }
 
-impl InnerTcpConnecter {
+impl TcpConnecter {
     fn run(&mut self) -> Result<(), ZmqResult<SocketMessage>> {
         loop {
             match TcpStream::connect(format!("{}", self.addr.ip).as_slice(), self.addr.port) {
                 Ok(stream) => {
+                    if self.chan_to_socket.send_opt(Ok(Ping)).is_err() {
+                        return Ok(());
+                    }
+
                     let (tx, rx) = channel();
-                    try!(self.chan_to_socket.send_opt(Ok(OnConnected(stream, Some(tx)))));
+                    StreamEngine::spawn_new(
+                        stream, self.options.clone(), self.chan_to_socket.clone(), Some(tx));
                     let _ = rx.recv_opt();
                 }
                 Err(e) =>
@@ -50,44 +54,18 @@ impl InnerTcpConnecter {
             timer::sleep(interval);
         }
     }
-}
 
-
-pub struct TcpConnecter {
-    chan_from_inner: Receiver<ZmqResult<SocketMessage>>,
-}
-
-impl TcpConnecter {
-    pub fn new(addr: SocketAddr, options: Arc<RWLock<Options>>) -> TcpConnecter {
-        let (tx, rx) = channel();
+    pub fn spawn_new(addr: SocketAddr, chan: Sender<ZmqResult<SocketMessage>>,
+                     options: Arc<RWLock<Options>>) {
         spawn(proc() {
             let reconnect_ivl = options.read().reconnect_ivl;
-            let mut connecter = InnerTcpConnecter {
-                chan_to_socket: tx,
+            let mut connecter = TcpConnecter {
+                chan_to_socket: chan,
                 addr: addr,
                 options: options,
                 current_reconnect_ivl: reconnect_ivl,
             };
             let _ = connecter.run();
         });
-        TcpConnecter {
-            chan_from_inner: rx,
-        }
-    }
-}
-
-impl Endpoint for TcpConnecter {
-    fn get_chan<'a>(&'a self) -> &'a Receiver<ZmqResult<SocketMessage>> {
-        &self.chan_from_inner
-    }
-
-    fn in_event(&mut self, msg: ZmqResult<SocketMessage>, socket: &mut SocketBase) {
-        match msg {
-            Ok(OnConnected(stream, notifier)) => {
-                let options = socket.clone_options();
-                socket.add_endpoint(box StreamEngine::new(stream, options, notifier));
-            }
-            _ => ()
-        }
     }
 }

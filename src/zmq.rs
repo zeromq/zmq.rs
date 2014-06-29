@@ -13,10 +13,8 @@ pub use socket_interface::ZmqSocket;
 
 mod ctx;
 mod consts;
-mod endpoint;
 mod msg;
 mod result;
-mod socket_base;
 mod socket_interface;
 mod stream_engine;
 mod tcp_connecter;
