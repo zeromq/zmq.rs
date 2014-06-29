@@ -22,7 +22,9 @@ mod stream_engine;
 mod tcp_connecter;
 mod tcp_listener;
 mod options;
+mod v2_encoder;
 mod v2_decoder;
+mod v2_protocol;
 
 
 #[cfg(test)]
@@ -64,8 +66,21 @@ mod test {
         assert_eq!(s.connect("tcp://10.0.1.1:12z46").unwrap_err().code, super::EINVAL);
         assert!(s.connect("tcp://127.0.0.1:12346").is_ok());
         assert!(s.connect("tcp://127.0.0.1:12346").is_ok());
-        /*loop {
-            println!(">>> {}", req.msg_recv());
-        }*/
+    }
+
+    #[test]
+    fn test_socket_small_message() {
+        let c = super::Context::new();
+        let mut req = c.socket(super::REQ);
+        let mut rep = c.socket(super::REQ);
+        assert!(rep.bind("tcp://127.0.0.1:12347").is_ok());
+        assert!(req.connect("tcp://127.0.0.1:12347").is_ok());
+
+        let mut msg_sent = box super::Msg::new(4);
+        msg_sent.data.push_all([65u8, 66u8, 67u8, 68u8]);
+        req.msg_send(msg_sent);
+
+        let msg_recv = rep.msg_recv();
+        assert_eq!(msg_recv.data, [65u8, 66u8, 67u8, 68u8].into_owned());
     }
 }

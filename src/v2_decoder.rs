@@ -2,13 +2,9 @@ use consts;
 use msg;
 use msg::Msg;
 use result::{ZmqError, ZmqResult};
+use v2_protocol::{MORE_FLAG, LARGE_FLAG, COMMAND_FLAG};
 
 use std::io::Reader;
-
-
-static MORE_FLAG: u8 = 1;
-static LARGE_FLAG: u8 = 2;
-static COMMAND_FLAG: u8 = 4;
 
 
 pub struct V2Decoder {

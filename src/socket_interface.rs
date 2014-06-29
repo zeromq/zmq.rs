@@ -47,8 +47,9 @@ impl Endpoint for InnerZmqSocket {
 pub struct ZmqSocket {
     tx: Sender<ZmqResult<SocketMessage>>,
     rx: Receiver<ZmqResult<SocketMessage>>,
-    msg_channels: Vec<Receiver<Box<Msg>>>,
+    msg_channels: Vec<(Sender<Box<Msg>>, Receiver<Box<Msg>>)>,
     options: Arc<RWLock<Options>>,
+    send_count: uint,
 }
 
 impl ZmqSocket {
@@ -60,6 +61,7 @@ impl ZmqSocket {
             rx: out_rx,
             msg_channels: Vec::new(),
             options: Arc::new(RWLock::new(Options::new())),
+            send_count: 0,
         };
         ret.options.write().type_ = type_ as int;
         let options_on_arc = ret.options.clone();
@@ -121,7 +123,8 @@ impl ZmqSocket {
                 let selector = Select::new();
                 let mut mapping = HashMap::new();
                 let mut index = 0;
-                for chan in self.msg_channels.iter() {
+                for chan_tup in self.msg_channels.iter() {
+                    let chan = chan_tup.ref1();
                     let handle = box selector.handle(chan);
                     let hid = handle.id();
                     mapping.insert(hid, (handle, index));
@@ -146,6 +149,20 @@ impl ZmqSocket {
         }
     }
 
+    pub fn msg_send(&mut self, mut msg: Box<Msg>) {
+        loop {
+            self.sync();
+            self.send_count = self.send_count % self.msg_channels.len();
+            match self.msg_channels.get(self.send_count).ref0().send_opt(msg) {
+                Ok(_) => break,
+                Err(m) => {
+                    self.send_count += 1;
+                    msg = m;
+                }
+            }
+        }
+    }
+
     fn sync(&mut self) {
         loop {
             if self.msg_channels.len() == 0 {
@@ -163,8 +180,8 @@ impl ZmqSocket {
 
     fn handle_msg(&mut self, msg: ZmqResult<SocketMessage>) {
         match msg {
-            Ok(FeedChannel(chan)) => {
-                self.msg_channels.push(chan);
+            Ok(FeedChannel(tx, rx)) => {
+                self.msg_channels.push((tx, rx));
             }
             _ => (),
         }

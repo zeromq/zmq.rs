@@ -20,7 +20,7 @@ pub enum SocketMessage {
     OnConnected(TcpStream, Option<Sender<u8>>),
 
     // message from SocketBase to interface
-    FeedChannel(Receiver<Box<Msg>>),
+    FeedChannel(Sender<Box<Msg>>, Receiver<Box<Msg>>),
 }
 
 
