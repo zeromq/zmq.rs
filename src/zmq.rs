@@ -2,20 +2,26 @@
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 #![license = "MPLv2"]
+#![feature(phase)]
+#[phase(plugin, link)] extern crate log;
 
 pub use ctx::Context;
-pub use consts::{SocketType, REQ};
+pub use consts::{SocketType, REP, REQ};
 pub use consts::{SocketOption, TYPE};
 pub use consts::{HAUSNUMERO, ErrorCode, EINVAL, EPROTONOSUPPORT, ECONNREFUSED};
 pub use msg::Msg;
+pub use rep::RepSocket;
+pub use req::ReqSocket;
 pub use result::{ZmqResult, ZmqError};
-pub use socket_interface::ZmqSocket;
 
 mod ctx;
 mod consts;
 mod msg;
+mod peer;
+mod rep;
+mod req;
 mod result;
-mod socket_interface;
+mod socket_base;
 mod stream_engine;
 mod tcp_connecter;
 mod tcp_listener;
@@ -42,7 +48,7 @@ mod test {
     #[test]
     fn test_socket_bind() {
         let c = super::Context::new();
-        let s = c.socket(super::REQ);
+        let mut s = c.socket(super::REQ);
         assert_eq!(s.bind("").unwrap_err().code, super::EINVAL);
         assert_eq!(s.bind("://127").unwrap_err().code, super::EINVAL);
         assert_eq!(s.bind("tcp://").unwrap_err().code, super::EINVAL);
@@ -56,7 +62,7 @@ mod test {
     #[test]
     fn test_socket_connect() {
         let c = super::Context::new();
-        let s = c.socket(super::REQ);
+        let mut s = c.socket(super::REQ);
         assert_eq!(s.connect("").unwrap_err().code, super::EINVAL);
         assert_eq!(s.connect("://127").unwrap_err().code, super::EINVAL);
         assert_eq!(s.connect("tcp://").unwrap_err().code, super::EINVAL);
@@ -70,15 +76,15 @@ mod test {
     fn test_socket_small_message() {
         let c = super::Context::new();
         let mut req = c.socket(super::REQ);
-        let mut rep = c.socket(super::REQ);
+        let mut rep = c.socket(super::REP);
         assert!(rep.bind("tcp://127.0.0.1:12347").is_ok());
         assert!(req.connect("tcp://127.0.0.1:12347").is_ok());
 
         let mut msg_sent = box super::Msg::new(4);
         msg_sent.data.push_all([65u8, 66u8, 67u8, 68u8]);
-        req.msg_send(msg_sent);
+        assert!(req.msg_send(msg_sent).is_ok());
 
-        let msg_recv = rep.msg_recv();
+        let msg_recv = rep.msg_recv().unwrap();
         assert_eq!(msg_recv.data, [65u8, 66u8, 67u8, 68u8].into_owned());
     }
 }

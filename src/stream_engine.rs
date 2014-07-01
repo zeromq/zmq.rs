@@ -2,7 +2,7 @@ use consts;
 use msg::Msg;
 use options::Options;
 use result::{ZmqError, ZmqResult};
-use socket_interface::{OnConnected, SocketMessage};
+use socket_base::{OnConnected, SocketMessage};
 use v2_encoder::V2Encoder;
 use v2_decoder::V2Decoder;
 
@@ -35,9 +35,13 @@ fn stream_bytes_writer(chan: Receiver<Box<Vec<u8>>>, mut stream: TcpStream, _wai
 fn stream_msg_writer(msg_chan: Receiver<Box<Msg>>, mut stream: TcpStream, encoder: V2Encoder) {
     loop {
         match msg_chan.recv_opt() {
-            Ok(msg) => match encoder.encode(msg, &mut stream) {
-                Err(_) => break,
-                _ => (),
+            Ok(msg) => {
+                debug!("Sending message: {} @ {} -> {}", msg,
+                       stream.socket_name(), stream.peer_name());
+                match encoder.encode(msg, &mut stream) {
+                    Err(_) => break,
+                    _ => (),
+                }
             },
             _ => break
         }
@@ -57,6 +61,8 @@ pub struct StreamEngine {
 
 impl StreamEngine {
     fn run(&mut self) -> ZmqResult<()> {
+        info!("Connection is made: {} -> {}", self.stream.socket_name(), self.stream.peer_name());
+
         // prepare task for bufferring outgoing bytes
         let (bytes_tx, bytes_rx) = channel();
         let (waiter_tx, waiter_rx) = channel();
@@ -77,6 +83,7 @@ impl StreamEngine {
 
         let (decoder, encoder) = try!(self.handshake(bytes_tx));
         let _ = waiter_rx.recv_opt(); // wait until all outgoing handshake bytes are committed
+        debug!("Handshake is done: {} -> {}", self.stream.socket_name(), self.stream.peer_name());
 
         // prepare task for sending Msg objects
         let (msg_tx, msg_rx) = channel(); // TODO: replace with SyncSender
@@ -87,7 +94,9 @@ impl StreamEngine {
 
         // Receive Msg objects
         let (tx, rx) = channel(); // TODO: replace with SyncSender
+        debug!("Feeding the peer channels to the socket object.");
         if self.chan_to_socket.send_opt(Ok(OnConnected(msg_tx, rx))).is_err() {
+            warn!("Socket object is gone!");
             return Ok(());
         }
         loop {

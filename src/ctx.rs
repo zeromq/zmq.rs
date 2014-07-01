@@ -1,5 +1,7 @@
 use consts;
-use socket_interface::ZmqSocket;
+use socket_base::SocketBase;
+use rep::RepSocket;
+use req::ReqSocket;
 
 
 pub struct Context {
@@ -15,8 +17,17 @@ impl Context {
         }
     }
 
-    pub fn socket(&self, type_: consts::SocketType) -> ZmqSocket {
-        ZmqSocket::new(type_)
+    pub fn socket(&self, type_: consts::SocketType) -> Box<SocketBase> {
+        match type_ {
+            consts::REQ => {
+                let ret: ReqSocket = SocketBase::new();
+                box ret as Box<SocketBase>
+            },
+            consts::REP => {
+                let ret: RepSocket = SocketBase::new();
+                box ret as Box<SocketBase>
+            },
+        }
     }
 }
 

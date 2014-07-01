@@ -5,7 +5,7 @@ pub enum SocketType {
     //PUB = 1,
     //SUB = 2,
     REQ = 3,
-    //REP = 4,
+    REP = 4,
     //DEALER = 5,
     //ROUTER = 6,
     //PULL = 7,
@@ -33,6 +33,7 @@ pub enum ErrorCode {
 
     EPROTONOSUPPORT = HAUSNUMERO + 2,
     EMSGSIZE = HAUSNUMERO + 10,
+    EFSM = HAUSNUMERO + 51,
 
     EIOERROR = HAUSNUMERO - 1,
 }

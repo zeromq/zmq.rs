@@ -4,7 +4,7 @@ all:
 
 tests:
 	rustc src/zmq.rs --test -o zmq.rs.test
-	./zmq.rs.test --nocapture
+	RUST_LOG=debug ./zmq.rs.test --nocapture
 
 clean:
 	rm zmq.rs.test

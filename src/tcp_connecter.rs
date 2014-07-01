@@ -1,6 +1,6 @@
 use options::Options;
 use result::{ZmqError, ZmqResult};
-use socket_interface::{Ping, SocketMessage};
+use socket_base::{Ping, SocketMessage};
 use stream_engine::StreamEngine;
 
 use std::cmp;
