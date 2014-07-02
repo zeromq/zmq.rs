@@ -69,3 +69,19 @@ impl SocketBase for RepSocket {
         Ok(())
     }
 }
+
+
+#[cfg(test)]
+mod test {
+    use ctx::Context;
+    use consts;
+    use msg::Msg;
+
+    #[test]
+    fn test_fsm() {
+        let ctx = Context::new();
+        let mut s = ctx.socket(consts::REP);
+        let msg = box Msg::new(1);
+        assert_eq!(s.msg_send(msg).unwrap_err().code, consts::EFSM);
+    }
+}

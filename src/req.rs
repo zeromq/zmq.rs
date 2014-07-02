@@ -78,3 +78,17 @@ impl SocketBase for ReqSocket {
         Ok(())
     }
 }
+
+
+#[cfg(test)]
+mod test {
+    use ctx::Context;
+    use consts;
+
+    #[test]
+    fn test_fsm() {
+        let ctx = Context::new();
+        let mut s = ctx.socket(consts::REQ);
+        assert_eq!(s.msg_recv().unwrap_err().code, consts::EFSM);
+    }
+}
