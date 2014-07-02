@@ -13,6 +13,7 @@ pub use msg::Msg;
 pub use rep::RepSocket;
 pub use req::ReqSocket;
 pub use result::{ZmqResult, ZmqError};
+pub use socket_base::SocketBase;
 
 mod ctx;
 mod consts;
