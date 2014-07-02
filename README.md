@@ -20,16 +20,20 @@ There are only very few interfaces implemented till now. Try this example as `sr
 ```rust
 extern crate zmq;
 
-use zmq::Context;
-
 fn main() {
-    let ctx = Context::new();
-    let mut s = ctx.socket(zmq::REQ);
-    s.bind("tcp://127.0.0.1:8876").unwrap();
-    s.connect("tcp://127.0.0.1:8877").unwrap();
-    loop {
-        println!(">>> {}", s.msg_recv());
-    }
+    let ctx = zmq::Context::new();
+
+    let mut req = ctx.socket(zmq::REQ);
+    req.connect("tcp://127.0.0.1:12347").unwrap();
+
+    let mut rep = ctx.socket(zmq::REP);
+    rep.bind("tcp://127.0.0.1:12347").unwrap();
+
+    let mut msg = box zmq::Msg::new(4);
+    msg.data.push_all([65u8, 66u8, 67u8, 68u8]);
+
+    req.msg_send(msg).unwrap();
+    println!("We got: {}", rep.msg_recv().unwrap());
 }
 ```
 
@@ -58,9 +62,6 @@ Then build and run with cargo, who will automatically download and build the dep
 $ cargo build
 $ ./target/hello-zmq
 ```
-
-Connect to `hello-zmq` at port `8876` and `8877` with any of your favorite ØMQ client and
-try it out, before we have our own `send` implemented. ;)
 
 ## Development
 
