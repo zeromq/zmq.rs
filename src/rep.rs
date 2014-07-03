@@ -37,10 +37,9 @@ impl SocketBase for RepSocket {
     }
 
     fn msg_recv(&mut self) -> ZmqResult<Box<Msg>> {
-        let last_identity = self.last_identity;
         let (id, ret) = match self.state {
-            Initial => self.pmut().recv_first(),
-            Receiving => (last_identity, self.pmut().recv_from(last_identity)),
+            Initial => self.pm.recv_first(),
+            Receiving => (self.last_identity, self.pm.recv_from(self.last_identity)),
             _ => return Err(ZmqError::new(
                 consts::EFSM, "Operation cannot be accomplished in current state")),
         };
@@ -55,9 +54,8 @@ impl SocketBase for RepSocket {
     fn msg_send(&mut self, msg: Box<Msg>) -> ZmqResult<()> {
         self.state = match self.state {
             Sending => {
-                let id = self.last_identity;
                 let flags = msg.flags;
-                self.pmut().send_to(id, msg);
+                self.pm.send_to(self.last_identity, msg);
                 match flags & msg::MORE {
                     0 => Initial,
                     _ => Sending,
