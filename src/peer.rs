@@ -85,12 +85,12 @@ impl PeerManager {
         }
     }
 
-    pub fn recv(&mut self, id: uint) -> Box<Msg> {
+    pub fn recv_from(&mut self, id: uint) -> Box<Msg> {
         self.sync_until(|pm| { pm.peers.contains_key(&id) });
         self.peers.get(&id).receiver.recv()
     }
 
-    pub fn send(&mut self, id: uint, msg: Box<Msg>) {
+    pub fn send_to(&mut self, id: uint, msg: Box<Msg>) {
         debug!("Sending {} to {}", msg, id);
         self.sync_until(|pm| { pm.peers.contains_key(&id) });
         self.peers.get(&id).sender.send(msg);

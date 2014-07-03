@@ -40,7 +40,7 @@ impl SocketBase for RepSocket {
         let last_identity = self.last_identity;
         let (id, ret) = match self.state {
             Initial => self.pmut().recv_first(),
-            Receiving => (last_identity, self.pmut().recv(last_identity)),
+            Receiving => (last_identity, self.pmut().recv_from(last_identity)),
             _ => return Err(ZmqError::new(
                 consts::EFSM, "Operation cannot be accomplished in current state")),
         };
@@ -57,7 +57,7 @@ impl SocketBase for RepSocket {
             Sending => {
                 let id = self.last_identity;
                 let flags = msg.flags;
-                self.pmut().send(id, msg);
+                self.pmut().send_to(id, msg);
                 match flags & msg::MORE {
                     0 => Initial,
                     _ => Sending,

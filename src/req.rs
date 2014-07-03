@@ -42,7 +42,7 @@ impl SocketBase for ReqSocket {
         let ret = match self.state {
             Receiving => {
                 let id = self.last_identity;
-                self.pmut().recv(id)
+                self.pmut().recv_from(id)
             },
             _ => return Err(ZmqError::new(
                 consts::EFSM, "Operation cannot be accomplished in current state")),
@@ -61,12 +61,12 @@ impl SocketBase for ReqSocket {
                 let count = self.send_count;
                 let (count, id) = self.pmut().round_robin(count);
                 self.send_count = count;
-                self.pmut().send(id, msg);
+                self.pmut().send_to(id, msg);
                 self.last_identity = id;
             },
             Sending => {
                 let id = self.last_identity;
-                self.pmut().send(id, msg);
+                self.pmut().send_to(id, msg);
             },
             _ => return Err(ZmqError::new(
                 consts::EFSM, "Operation cannot be accomplished in current state")),
