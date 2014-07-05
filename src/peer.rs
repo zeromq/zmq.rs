@@ -69,8 +69,18 @@ impl PeerManager {
                     Some((None, _)) => continue,
                     Some((Some(mut handle), index)) => {
                         match handle.recv_opt() {
-                            Ok(msg) => return (*self.ids.get(index), msg),
-                            _ => index,
+                            Ok(msg) => {
+                                unsafe {
+                                    handle.remove();
+                                }
+                                return (*self.ids.get(index), msg);
+                            }
+                            _ => {
+                                unsafe {
+                                    handle.remove();
+                                }
+                                index
+                            }
                         }
                     },
                     None => fail!(),
