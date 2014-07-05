@@ -20,11 +20,11 @@ impl Context {
     pub fn socket(&self, type_: consts::SocketType) -> Box<SocketBase> {
         match type_ {
             consts::REQ => {
-                let ret: ReqSocket = SocketBase::new();
+                let ret: ReqSocket = SocketBase::new(self);
                 box ret as Box<SocketBase>
             },
             consts::REP => {
-                let ret: RepSocket = SocketBase::new();
+                let ret: RepSocket = SocketBase::new(self);
                 box ret as Box<SocketBase>
             },
         }

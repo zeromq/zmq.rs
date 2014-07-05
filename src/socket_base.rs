@@ -1,4 +1,5 @@
 use consts;
+use ctx::Context;
 use msg::Msg;
 use peer::PeerManager;
 use result::{ZmqError, ZmqResult};
@@ -16,8 +17,8 @@ pub enum SocketMessage {
 }
 
 
-pub trait SocketBase {
-    fn new() -> Self;
+pub trait SocketBase<'s> {
+    fn new(ctx: &'s Context) -> Self;
 
     fn pm<'a>(&'a self) -> &'a PeerManager;
 

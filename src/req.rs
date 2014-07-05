@@ -1,4 +1,5 @@
 use consts;
+use ctx::Context;
 use msg;
 use msg::Msg;
 use peer::PeerManager;
@@ -13,16 +14,18 @@ enum State {
 }
 
 
-pub struct ReqSocket {
+pub struct ReqSocket<'s> {
+    ctx: &'s Context,
     pm: PeerManager,
     state: State,
     last_identity: uint,
     send_count: uint,
 }
 
-impl SocketBase for ReqSocket {
-    fn new() -> ReqSocket {
+impl<'s> SocketBase<'s> for ReqSocket<'s> {
+    fn new(ctx: &'s Context) -> ReqSocket<'s> {
         ReqSocket {
+            ctx: ctx,
             pm: PeerManager::new(),
             state: Initial,
             last_identity: 0,
