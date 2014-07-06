@@ -15,7 +15,7 @@ enum State {
 
 
 pub struct ReqSocket<'s> {
-    ctx: &'s Context,
+    ctx: &'s mut Context,
     pm: PeerManager,
     state: State,
     last_identity: uint,
@@ -23,7 +23,7 @@ pub struct ReqSocket<'s> {
 }
 
 impl<'s> SocketBase<'s> for ReqSocket<'s> {
-    fn new(ctx: &'s Context) -> ReqSocket<'s> {
+    fn new(ctx: &'s mut Context) -> ReqSocket<'s> {
         ReqSocket {
             ctx: ctx,
             pm: PeerManager::new(),
@@ -39,6 +39,10 @@ impl<'s> SocketBase<'s> for ReqSocket<'s> {
 
     fn pmut<'a>(&'a mut self) -> &'a mut PeerManager {
         &mut self.pm
+    }
+
+    fn ctx<'a>(&'a mut self) -> &'a mut Context {
+        &mut *self.ctx
     }
 
     fn msg_recv(&mut self) -> ZmqResult<Box<Msg>> {
@@ -87,7 +91,7 @@ mod test {
 
     #[test]
     fn test_fsm() {
-        let ctx = Context::new();
+        let mut ctx = Context::new();
         let mut s = ctx.socket(consts::REQ);
         assert_eq!(s.msg_recv().unwrap_err().code, consts::EFSM);
     }

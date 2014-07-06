@@ -18,11 +18,13 @@ pub enum SocketMessage {
 
 
 pub trait SocketBase<'s> {
-    fn new(ctx: &'s Context) -> Self;
+    fn new(ctx: &'s mut Context) -> Self;
 
     fn pm<'a>(&'a self) -> &'a PeerManager;
 
     fn pmut<'a>(&'a mut self) -> &'a mut PeerManager;
+
+    fn ctx<'a>(&'a mut self) -> &'a mut Context;
 
     fn init(self, type_: consts::SocketType) -> Self {
         self.pm().options.write().type_ = type_ as int;
@@ -45,7 +47,13 @@ pub trait SocketBase<'s> {
                     }
                     None => Err(ZmqError::new(
                         consts::EINVAL, "Invaid argument: bad address")),
-                }},
+                }
+            },
+            "inproc" => {
+                let tx = self.pm().tx.clone();
+                self.ctx()._bind_inproc(address, tx);
+                Ok(())
+            },
             _ => Err(ZmqError::new(consts::EPROTONOSUPPORT, "Protocol not supported")),
         }
     }
@@ -62,7 +70,13 @@ pub trait SocketBase<'s> {
                     }
                     None => Err(ZmqError::new(
                         consts::EINVAL, "Invaid argument: bad address")),
-                }},
+                }
+            },
+            "inproc" => {
+                let tx = self.pm().tx.clone();
+                self.ctx()._connect_inproc(address, tx);
+                Ok(())
+            },
             _ => Err(ZmqError::new(consts::EPROTONOSUPPORT, "Protocol not supported")),
         }
     }
