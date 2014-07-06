@@ -1,5 +1,5 @@
 use consts;
-use ctx::Context;
+use inproc::InprocCommand;
 use msg;
 use msg::Msg;
 use peer::PeerManager;
@@ -14,18 +14,16 @@ enum State {
 }
 
 
-pub struct RepSocket<'s> {
-    ctx: &'s mut Context,
+pub struct RepSocket {
     pm: PeerManager,
     state: State,
     last_identity: uint,
 }
 
-impl<'s> SocketBase<'s> for RepSocket<'s> {
-    fn new(ctx: &'s mut Context) -> RepSocket<'s> {
+impl SocketBase for RepSocket {
+    fn new(chan: Sender<InprocCommand>) -> RepSocket {
         RepSocket {
-            ctx: ctx,
-            pm: PeerManager::new(),
+            pm: PeerManager::new(chan),
             state: Initial,
             last_identity: 0,
         }.init(consts::REP)
@@ -37,10 +35,6 @@ impl<'s> SocketBase<'s> for RepSocket<'s> {
 
     fn pmut<'a>(&'a mut self) -> &'a mut PeerManager {
         &mut self.pm
-    }
-
-    fn ctx<'a>(&'a mut self) -> &'a mut Context {
-        &mut *self.ctx
     }
 
     fn msg_recv(&mut self) -> ZmqResult<Box<Msg>> {
@@ -84,7 +78,7 @@ mod test {
 
     #[test]
     fn test_fsm() {
-        let mut ctx = Context::new();
+        let ctx = Context::new();
         let mut s = ctx.socket(consts::REP);
         let msg = box Msg::new(1);
         assert_eq!(s.msg_send(msg).unwrap_err().code, consts::EFSM);

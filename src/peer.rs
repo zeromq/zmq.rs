@@ -1,3 +1,4 @@
+use inproc::InprocCommand;
 use msg::Msg;
 use options::Options;
 use result::ZmqResult;
@@ -29,10 +30,11 @@ pub struct PeerManager {
     rx: Receiver<ZmqResult<SocketMessage>>,
     pub peers: HashMap<uint, Peer>,
     ids: Vec<uint>,
+    pub inproc_chan: Sender<InprocCommand>,
 }
 
 impl PeerManager {
-    pub fn new() -> PeerManager {
+    pub fn new(chan: Sender<InprocCommand>) -> PeerManager {
         let (tx, rx) = channel();
         PeerManager {
             options: Arc::new(RWLock::new(Options::new())),
@@ -40,6 +42,7 @@ impl PeerManager {
             rx: rx,
             peers: HashMap::new(),
             ids: Vec::new(),
+            inproc_chan: chan,
         }
     }
 

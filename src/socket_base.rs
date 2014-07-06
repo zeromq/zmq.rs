@@ -1,5 +1,5 @@
 use consts;
-use ctx::Context;
+use inproc::{InprocCommand, DoBind, DoConnect};
 use msg::Msg;
 use peer::PeerManager;
 use result::{ZmqError, ZmqResult};
@@ -17,14 +17,12 @@ pub enum SocketMessage {
 }
 
 
-pub trait SocketBase<'s> {
-    fn new(ctx: &'s mut Context) -> Self;
+pub trait SocketBase {
+    fn new(chan: Sender<InprocCommand>) -> Self;
 
     fn pm<'a>(&'a self) -> &'a PeerManager;
 
     fn pmut<'a>(&'a mut self) -> &'a mut PeerManager;
-
-    fn ctx<'a>(&'a mut self) -> &'a mut Context;
 
     fn init(self, type_: consts::SocketType) -> Self {
         self.pm().options.write().type_ = type_ as int;
@@ -51,7 +49,7 @@ pub trait SocketBase<'s> {
             },
             "inproc" => {
                 let tx = self.pm().tx.clone();
-                self.ctx()._bind_inproc(address, tx);
+                self.pm().inproc_chan.send(DoBind(String::from_str(address), tx));
                 Ok(())
             },
             _ => Err(ZmqError::new(consts::EPROTONOSUPPORT, "Protocol not supported")),
@@ -74,7 +72,7 @@ pub trait SocketBase<'s> {
             },
             "inproc" => {
                 let tx = self.pm().tx.clone();
-                self.ctx()._connect_inproc(address, tx);
+                self.pm().inproc_chan.send(DoConnect(String::from_str(address), tx));
                 Ok(())
             },
             _ => Err(ZmqError::new(consts::EPROTONOSUPPORT, "Protocol not supported")),

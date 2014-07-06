@@ -17,6 +17,7 @@ pub use socket_base::SocketBase;
 
 mod ctx;
 mod consts;
+mod inproc;
 mod msg;
 mod peer;
 mod rep;
@@ -41,14 +42,14 @@ mod test {
 
     #[test]
     fn test_socket_create() {
-        let mut c = super::Context::new();
+        let c = super::Context::new();
         let s = c.socket(super::REQ);
         assert_eq!(s.getsockopt(super::TYPE), super::REQ as int);
     }
 
     #[test]
     fn test_socket_bind() {
-        let mut c = super::Context::new();
+        let c = super::Context::new();
         let mut s = c.socket(super::REQ);
         assert_eq!(s.bind("").unwrap_err().code, super::EINVAL);
         assert_eq!(s.bind("://127").unwrap_err().code, super::EINVAL);
@@ -62,7 +63,7 @@ mod test {
 
     #[test]
     fn test_socket_connect() {
-        let mut c = super::Context::new();
+        let c = super::Context::new();
         let mut s = c.socket(super::REQ);
         assert_eq!(s.connect("").unwrap_err().code, super::EINVAL);
         assert_eq!(s.connect("://127").unwrap_err().code, super::EINVAL);
@@ -75,7 +76,7 @@ mod test {
 
     #[test]
     fn test_socket_small_message() {
-        let mut c = super::Context::new();
+        let c = super::Context::new();
         let mut req = c.socket(super::REQ);
         let mut rep = c.socket(super::REP);
         assert!(rep.bind("tcp://127.0.0.1:12347").is_ok());
@@ -90,17 +91,21 @@ mod test {
     }
 
     #[test]
-    fn test_inproc() {
-        let mut c = super::Context::new();
-        let mut req = c.socket(super::REQ);
+    fn test_inproc_and_moved_socket() {
+        let c = super::Context::new();
+        let req = c.socket(super::REQ);
+
+        spawn(proc() {
+            let mut req = req;
+            assert!(req.connect("inproc://#1").is_ok());
+
+            let mut msg_sent = box super::Msg::new(4);
+            msg_sent.data.push_all([65u8, 66u8, 67u8, 68u8]);
+            assert!(req.msg_send(msg_sent).is_ok());
+        });
+
         let mut rep = c.socket(super::REP);
-        assert!(req.connect("inproc://#1").is_ok());
         assert!(rep.bind("inproc://#1").is_ok());
-
-        let mut msg_sent = box super::Msg::new(4);
-        msg_sent.data.push_all([65u8, 66u8, 67u8, 68u8]);
-        assert!(req.msg_send(msg_sent).is_ok());
-
         let msg_recv = rep.msg_recv().unwrap();
         assert_eq!(msg_recv.data, [65u8, 66u8, 67u8, 68u8].into_owned());
     }
