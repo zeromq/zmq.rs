@@ -13,16 +13,16 @@ pub use msg::Msg;
 pub use rep::RepSocket;
 pub use req::ReqSocket;
 pub use result::{ZmqResult, ZmqError};
-pub use socket_base::SocketBase;
+pub use socket::ZmqSocket;
 
 mod ctx;
 mod consts;
 mod inproc;
 mod msg;
-mod peer;
 mod rep;
 mod req;
 mod result;
+mod socket;
 mod socket_base;
 mod stream_engine;
 mod tcp_connecter;
@@ -50,7 +50,7 @@ mod test {
     #[test]
     fn test_socket_bind() {
         let c = super::Context::new();
-        let mut s = c.socket(super::REQ);
+        let s = c.socket(super::REQ);
         assert_eq!(s.bind("").unwrap_err().code, super::EINVAL);
         assert_eq!(s.bind("://127").unwrap_err().code, super::EINVAL);
         assert_eq!(s.bind("tcp://").unwrap_err().code, super::EINVAL);
@@ -64,7 +64,7 @@ mod test {
     #[test]
     fn test_socket_connect() {
         let c = super::Context::new();
-        let mut s = c.socket(super::REQ);
+        let s = c.socket(super::REQ);
         assert_eq!(s.connect("").unwrap_err().code, super::EINVAL);
         assert_eq!(s.connect("://127").unwrap_err().code, super::EINVAL);
         assert_eq!(s.connect("tcp://").unwrap_err().code, super::EINVAL);

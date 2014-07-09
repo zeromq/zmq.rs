@@ -1,9 +1,8 @@
 use consts;
-use inproc::InprocCommand;
 use msg;
 use msg::Msg;
-use peer::PeerManager;
 use result::{ZmqError, ZmqResult};
+use socket::ZmqSocket;
 use socket_base::SocketBase;
 
 
@@ -15,32 +14,29 @@ enum State {
 
 
 pub struct RepSocket {
-    pm: PeerManager,
+    base: SocketBase,
     state: State,
     last_identity: uint,
 }
 
-impl SocketBase for RepSocket {
-    fn new(chan: Sender<InprocCommand>) -> RepSocket {
-        RepSocket {
-            pm: PeerManager::new(chan),
-            state: Initial,
-            last_identity: 0,
-        }.init(consts::REP)
+
+impl ZmqSocket for RepSocket {
+    fn getsockopt(&self, option: consts::SocketOption) -> int {
+        self.base.getsockopt(option)
     }
 
-    fn pm<'a>(&'a self) -> &'a PeerManager {
-        &self.pm
+    fn bind(&self, addr: &str) -> ZmqResult<()> {
+        self.base.bind(addr)
     }
 
-    fn pmut<'a>(&'a mut self) -> &'a mut PeerManager {
-        &mut self.pm
+    fn connect(&self, addr: &str) -> ZmqResult<()> {
+        self.base.connect(addr)
     }
 
     fn msg_recv(&mut self) -> ZmqResult<Box<Msg>> {
         let (id, ret) = match self.state {
-            Initial => self.pm.recv_first(),
-            Receiving => (self.last_identity, self.pm.recv_from(self.last_identity)),
+            Initial => self.base.recv_first(),
+            Receiving => (self.last_identity, self.base.recv_from(self.last_identity)),
             _ => return Err(ZmqError::new(
                 consts::EFSM, "Operation cannot be accomplished in current state")),
         };
@@ -56,7 +52,7 @@ impl SocketBase for RepSocket {
         self.state = match self.state {
             Sending => {
                 let flags = msg.flags;
-                self.pm.send_to(self.last_identity, msg);
+                self.base.send_to(self.last_identity, msg);
                 match flags & msg::MORE {
                     0 => Initial,
                     _ => Sending,
@@ -66,6 +62,16 @@ impl SocketBase for RepSocket {
                 consts::EFSM, "Operation cannot be accomplished in current state")),
         };
         Ok(())
+    }
+}
+
+
+pub fn new(base: SocketBase) -> RepSocket {
+    base.set_type(consts::REP);
+    RepSocket {
+        base: base,
+        state: Initial,
+        last_identity: 0,
     }
 }
 

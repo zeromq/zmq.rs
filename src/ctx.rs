@@ -1,8 +1,9 @@
 use consts;
 use inproc::InprocManager;
+use rep;
+use req;
+use socket::ZmqSocket;
 use socket_base::SocketBase;
-use rep::RepSocket;
-use req::ReqSocket;
 
 
 pub struct Context {
@@ -16,16 +17,11 @@ impl Context {
         }
     }
 
-    pub fn socket(&self, type_: consts::SocketType) -> Box<SocketBase + Send> {
+    pub fn socket(&self, type_: consts::SocketType) -> Box<ZmqSocket + Send> {
+        let base = SocketBase::new(self.inproc_mgr.chan());
         match type_ {
-            consts::REQ => {
-                let ret: ReqSocket = SocketBase::new(self.inproc_mgr.chan());
-                box ret as Box<SocketBase + Send>
-            },
-            consts::REP => {
-                let ret: RepSocket = SocketBase::new(self.inproc_mgr.chan());
-                box ret as Box<SocketBase + Send>
-            },
+            consts::REQ => box req::new(base) as Box<ZmqSocket + Send>,
+            consts::REP => box rep::new(base) as Box<ZmqSocket + Send>,
         }
     }
 }
