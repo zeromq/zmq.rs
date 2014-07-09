@@ -27,9 +27,11 @@
 //!
 //!  [ØMQ]: http://zeromq.org/
 
-#![crate_id = "zmq#0.1.0-pre"]
+#![crate_name = "zmq"]
+#![unstable]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
+#![comment = "native stack of ØMQ in Rust"]
 #![license = "MPLv2"]
 #![feature(phase)]
 #[phase(plugin, link)] extern crate log;
