@@ -63,6 +63,11 @@ $ cargo build
 $ ./target/hello-zmq
 ```
 
+## Documentation
+
+API document can be found [here](http://www.rust-ci.org/zeromq/zmq.rs/doc/zmq/), and there are tons
+of useful documentation at [zeromq.org](http://zeromq.org/intro:read-the-manual).
+
 ## Development
 
 Under C4.1 process, you are more than welcome to help us by:
