@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/zeromq/zmq.rs.svg?branch=master)](https://travis-ci.org/zeromq/zmq.rs)
+
 # zmq.rs - native stack of ØMQ in Rust
 
 zmq.rs is a native implementation of ØMQ in the [Rust programming language][1]. It is still in a
