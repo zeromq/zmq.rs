@@ -7,5 +7,5 @@ tests:
 
 clean:
 	rm zmq.rs.test || true
-	rm -r target || true
+	cargo clean || rm -r target || true
 
