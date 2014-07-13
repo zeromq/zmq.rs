@@ -75,6 +75,8 @@ of useful documentation at [zeromq.org](http://zeromq.org/intro:read-the-manual)
 Under C4.1 process, you are more than welcome to help us by:
 
 * join the discussion over anything from design to code style
+* try out and submit issue reports or feature requests
+* **pick a task and get it done** - there are plenty of them in the issues page
 * fork the repository and have your own fixes
 * send us pull requests
 * and even star this project `^_^`
