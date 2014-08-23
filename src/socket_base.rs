@@ -119,7 +119,7 @@ impl SocketBase {
                 let mut mapping = HashMap::new();
                 let mut index = 0;
                 for id in self.ids.iter() {
-                    let peer = self.peers.get(id);
+                    let ref peer = self.peers[*id];
                     let handle = box selector.handle(&peer.receiver);
                     let hid = handle.id();
                     mapping.insert(hid, (Some(handle), index));
@@ -141,7 +141,7 @@ impl SocketBase {
                                 unsafe {
                                     handle.remove();
                                 }
-                                return (*self.ids.get(index), msg);
+                                return (self.ids[index], msg);
                             }
                             _ => {
                                 unsafe {
@@ -165,19 +165,19 @@ impl SocketBase {
 
     pub fn recv_from(&mut self, id: uint) -> Box<Msg> {
         self.sync_until(|s| { s.peers.contains_key(&id) });
-        self.peers.get(&id).receiver.recv()
+        self.peers[id].receiver.recv()
     }
 
     pub fn send_to(&mut self, id: uint, msg: Box<Msg>) {
         debug!("Sending {} to {}", msg, id);
         self.sync_until(|s| { s.peers.contains_key(&id) });
-        self.peers.get(&id).sender.send(msg);
+        self.peers[id].sender.send(msg);
     }
 
     pub fn round_robin(&mut self, mut index: uint) -> (uint, uint) {
         self.sync_until(|s| { s.ids.len() > 0 });
         index = (index + 1) % self.ids.len();
-        (index, *self.ids.get(index))
+        (index, self.ids[index])
     }
 
     fn sync_until(&mut self, cond: |&SocketBase| -> bool) {

@@ -6,8 +6,10 @@ use stream_engine::StreamEngine;
 use std::cmp;
 use std::io::net::ip::SocketAddr;
 use std::io::{TcpStream, timer};
+use std::num::Zero;
 use std::rand;
 use std::sync::{RWLock, Arc};
+use std::time::duration::Duration;
 
 
 pub struct TcpConnecter {
@@ -16,7 +18,7 @@ pub struct TcpConnecter {
     options: Arc<RWLock<Options>>,
 
     //  Current reconnect ivl, updated for backoff strategy
-    current_reconnect_ivl: u64,
+    current_reconnect_ivl: Duration,
 }
 
 impl TcpConnecter {
@@ -41,11 +43,12 @@ impl TcpConnecter {
             let reconnect_ivl_max = self.options.read().reconnect_ivl_max;
 
             //  The new interval is the current interval + random value.
-            let interval = self.current_reconnect_ivl + rand::random::<u64>() % reconnect_ivl;
+            let interval = self.current_reconnect_ivl + Duration::milliseconds(
+                (rand::random::<u64>() % reconnect_ivl.num_milliseconds() as u64) as i32);
 
             //  Only change the current reconnect interval  if the maximum reconnect
             //  interval was set and if it's larger than the reconnect interval.
-            if reconnect_ivl_max > 0 && reconnect_ivl_max > reconnect_ivl {
+            if reconnect_ivl_max > Zero::zero() && reconnect_ivl_max > reconnect_ivl {
                 //  Calculate the next interval
                 self.current_reconnect_ivl =
                     cmp::min (self.current_reconnect_ivl * 2, reconnect_ivl_max);

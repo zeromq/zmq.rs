@@ -27,7 +27,7 @@ impl InprocManagerTask {
                     }
 
                     if self.inproc_connecters.contains_key(&key) {
-                        let connecters = self.inproc_connecters.get(&key);
+                        let ref connecters = self.inproc_connecters[key];
                         for connecter_tx in connecters.iter() {
                             let (tx1, rx1) = channel();
                             let (tx2, rx2) = channel();
@@ -40,7 +40,7 @@ impl InprocManagerTask {
                 },
                 Ok(DoConnect(key, tx)) => {
                     if self.inproc_binders.contains_key(&key) {
-                        let binder_tx = self.inproc_binders.get(&key);
+                        let ref binder_tx = self.inproc_binders[key];
                         let (tx1, rx1) = channel();
                         let (tx2, rx2) = channel();
                         binder_tx.send(Ok(OnConnected(tx1, rx2)));

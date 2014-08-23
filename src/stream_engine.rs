@@ -160,18 +160,18 @@ impl StreamEngine {
             //  Send the version number.
             if !version_sent {
                 version_sent = true;
-                sender.send(box [1u8].into_owned());
+                sender.send(box [1u8].into_vec());
             }
 
             if greeting_bytes_read > SIGNATURE_SIZE && !type_sent {
                 type_sent = true;
                 match greeting_recv[10] {
                     ZMTP_1_0 | ZMTP_2_0 => {
-                        sender.send(box [self.options.read().type_ as u8].into_owned());
+                        sender.send(box [self.options.read().type_ as u8].into_vec());
                     }
                     _ => {
                         //TODO: error or ZMTP 3.0
-                        sender.send(box [self.options.read().type_ as u8].into_owned());
+                        sender.send(box [self.options.read().type_ as u8].into_vec());
                     }
                 }
             }

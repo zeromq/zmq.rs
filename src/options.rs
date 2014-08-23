@@ -1,6 +1,9 @@
 use consts;
 use consts::SocketOption;
 
+use std::num::Zero;
+use std::time::duration::Duration;
+
 
 pub struct Options {
     //  Socket identity.
@@ -10,13 +13,13 @@ pub struct Options {
     //  Socket type.
     pub type_: int,
 
-    //  Minimum interval between attempts to reconnect, in milliseconds.
+    //  Minimum interval between attempts to reconnect
     //  Default 100ms
-    pub reconnect_ivl: u64,
+    pub reconnect_ivl: Duration,
 
-    //  Maximum interval between attempts to reconnect, in milliseconds.
+    //  Maximum interval between attempts to reconnect
     //  Default 0 (unused)
-    pub reconnect_ivl_max: u64,
+    pub reconnect_ivl_max: Duration,
 
     //  Maximal size of message to handle.
     pub maxmsgsize: i64,
@@ -28,8 +31,8 @@ impl Options {
             identity_size: 0,
             type_: -1,
             maxmsgsize: -1,
-            reconnect_ivl: 100,
-            reconnect_ivl_max: 0,
+            reconnect_ivl: Duration::milliseconds(100),
+            reconnect_ivl_max: Zero::zero(),
         }
     }
 
