@@ -11,12 +11,12 @@ use std::io::{TcpStream, Reader};
 use std::sync::{RWLock, Arc};
 
 
-static V2_GREETING_SIZE: uint = 12;
-static NO_PROGRESS_LIMIT: uint = 1000;
-static SIGNATURE_SIZE: uint = 10;
-static ZMTP_1_0: u8 = 0;
-static ZMTP_2_0: u8 = 1;
-static REVISION_POS: uint = 10;
+const V2_GREETING_SIZE: uint = 12;
+const NO_PROGRESS_LIMIT: uint = 1000;
+const SIGNATURE_SIZE: uint = 10;
+const ZMTP_1_0: u8 = 0;
+const ZMTP_2_0: u8 = 1;
+const REVISION_POS: uint = 10;
 
 
 fn stream_bytes_writer(chan: Receiver<Box<Vec<u8>>>, mut stream: TcpStream, _waiter: Sender<u8>) {
@@ -122,7 +122,7 @@ impl StreamEngine {
         let mut version_sent = false;
 
         while greeting_bytes_read < V2_GREETING_SIZE {
-            match self.stream.read(greeting_recv.mut_slice_from(greeting_bytes_read)) {
+            match self.stream.read(greeting_recv.slice_from_mut(greeting_bytes_read)) {
                 Ok(0) => {
                     zeros += 1;
                     if zeros > NO_PROGRESS_LIMIT {
@@ -160,18 +160,18 @@ impl StreamEngine {
             //  Send the version number.
             if !version_sent {
                 version_sent = true;
-                sender.send(box [1u8].into_vec());
+                sender.send(box [1u8].to_vec());
             }
 
             if greeting_bytes_read > SIGNATURE_SIZE && !type_sent {
                 type_sent = true;
                 match greeting_recv[10] {
                     ZMTP_1_0 | ZMTP_2_0 => {
-                        sender.send(box [self.options.read().type_ as u8].into_vec());
+                        sender.send(box [self.options.read().type_ as u8].to_vec());
                     }
                     _ => {
                         //TODO: error or ZMTP 3.0
-                        sender.send(box [self.options.read().type_ as u8].into_vec());
+                        sender.send(box [self.options.read().type_ as u8].to_vec());
                     }
                 }
             }
