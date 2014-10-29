@@ -118,7 +118,7 @@ mod test {
         assert!(req.msg_send(msg_sent).is_ok());
 
         let msg_recv = rep.msg_recv().unwrap();
-        assert_eq!(msg_recv.data, [65u8, 66u8, 67u8, 68u8].into_owned());
+        assert_eq!(msg_recv.data, [65u8, 66u8, 67u8, 68u8].to_vec());
     }
 
     #[test]
@@ -138,6 +138,6 @@ mod test {
         let mut rep = c.socket(super::REP);
         assert!(rep.bind("inproc://#1").is_ok());
         let msg_recv = rep.msg_recv().unwrap();
-        assert_eq!(msg_recv.data, [65u8, 66u8, 67u8, 68u8].into_owned());
+        assert_eq!(msg_recv.data, [65u8, 66u8, 67u8, 68u8].to_vec());
     }
 }
