@@ -2,6 +2,7 @@ use result::ZmqResult;
 use socket_base::{SocketMessage, OnConnected};
 
 use std::collections::HashMap;
+use std::collections::hashmap::{Vacant, Occupied};
 
 
 pub enum InprocCommand {
@@ -47,7 +48,14 @@ impl InprocManagerTask {
                         tx.send(Ok(OnConnected(tx2, rx1)));
                     }
 
-                    self.inproc_connecters.find_or_insert(key.clone(), vec!()).push(tx);
+                    match self.inproc_connecters.entry(key) {
+                        Vacant(entry) => {
+                            entry.set(vec!());
+                        },
+                        Occupied(entry) => {
+                            entry.into_mut().push(tx);
+                        }
+                    }
                 },
                 _ => break,
             }

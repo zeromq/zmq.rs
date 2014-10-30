@@ -76,7 +76,7 @@ pub trait ZmqSocket {
     ///
     /// **Binding a publisher socket to an in-process and a tcp transport**
     ///
-    /// ```rust
+    /// ```ignore
     /// // Create a zmq::PUB socket
     /// let socket = ctx.socket(zmq::PUB);
     /// // Bind it to a in-process transport with the address 'my_publisher'
@@ -132,7 +132,7 @@ pub trait ZmqSocket {
     ///
     /// **Connecting a subscriber socket to an in-process and a tcp transport**
     ///
-    /// ```rust
+    /// ```ignore
     /// // Create a ZMQ_SUB socket
     /// let socket = ctx.socket(zmq::SUB);
     /// // Connect it to an in-process transport with the address 'my_publisher'
@@ -182,14 +182,14 @@ pub trait ZmqSocket {
     ///
     /// **Receiving a message from a socket**
     ///
-    /// ```rust
+    /// ```ignore
     /// // Block until a message is available to be received from socket
     /// let msg = socket.msg_recv();
     /// ```
     ///
     /// **Receiving a multi-part message**
     ///
-    /// ```rust
+    /// ```ignore
     /// let mut more = true;
     /// while more {
     ///     // Block until a message is available to be received from socket

@@ -47,7 +47,7 @@ pub enum SocketOption {
 
 /// A number random enough not to collide with different errno ranges on
 /// different OSes. The assumption is that error_t is at least 32-bit type.
-static HAUSNUMERO: int = 156384712;
+const HAUSNUMERO: int = 156384712;
 
 /// ØMQ errors.
 #[deriving(PartialEq, Show)]
