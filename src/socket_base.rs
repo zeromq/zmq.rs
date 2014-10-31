@@ -151,7 +151,7 @@ impl SocketBase {
                             }
                         }
                     },
-                    None => fail!(),
+                    None => panic!(),
                 }
             };
             match self.ids.remove(to_remove) {
@@ -186,7 +186,7 @@ impl SocketBase {
                 debug!("Condition not met, wait... peers: {}", self.peers.len());
                 match self.rx.recv_opt() {
                     Ok(msg) => self.handle_msg(msg),
-                    Err(_) => fail!(),
+                    Err(_) => panic!(),
                 }
                 continue;
             }
