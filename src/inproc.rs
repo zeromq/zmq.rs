@@ -24,7 +24,7 @@ impl InprocManagerTask {
                 Ok(DoBind(key, tx)) => {
                     if self.inproc_binders.contains_key(&key) {
                         // TODO: return error
-                        fail!("Key already exist: {}", key);
+                        panic!("Key already exist: {}", key);
                     }
 
                     if self.inproc_connecters.contains_key(&key) {
