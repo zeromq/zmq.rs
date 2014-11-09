@@ -69,7 +69,7 @@ impl SocketBase {
                 match from_str::<SocketAddr>(address) {
                     Some(addr) => {
                         let listener = io::TcpListener::bind(
-                            format!("{}", addr.ip).as_slice(), addr.port);
+                            format!("{}:{}", addr.ip, addr.port).as_slice());
                         let acceptor = try!(listener.listen().map_err(ZmqError::from_io_error));
                         TcpListener::spawn_new(acceptor, self.tx.clone(), self.options.clone());
                         Ok(())
@@ -123,7 +123,7 @@ impl SocketBase {
                     let handle = box selector.handle(&peer.receiver);
                     let hid = handle.id();
                     mapping.insert(hid, (Some(handle), index));
-                    let handle = mapping.get_mut(&hid).mut0().as_mut().unwrap();
+                    let handle = mapping.get_mut(&hid).unwrap().mut0().as_mut().unwrap();
                     unsafe {
                         handle.add();
                     }
@@ -133,7 +133,7 @@ impl SocketBase {
                 let hid = handle.id();
                 mapping.insert(hid, (None, 0));
                 let hid = selector.wait();
-                match mapping.pop(&hid) {
+                match mapping.remove(&hid) {
                     Some((None, _)) => continue,
                     Some((Some(mut handle), index)) => {
                         match handle.recv_opt() {
@@ -200,7 +200,7 @@ impl SocketBase {
     fn handle_msg(&mut self, msg: ZmqResult<SocketMessage>) {
         match msg {
             Ok(OnConnected(tx, rx)) => {
-                let id = self.ids.last().unwrap_or(&0) + 1;
+                let id = *self.ids.last().unwrap_or(&0) + 1;
                 debug!("New peer: {}", id);
                 self.ids.push(id);
                 self.peers.insert(id, Peer::new(tx, rx));

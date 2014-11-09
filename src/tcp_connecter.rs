@@ -25,7 +25,7 @@ pub struct TcpConnecter {
 impl TcpConnecter {
     fn run(&mut self) -> Result<(), ZmqResult<SocketMessage>> {
         loop {
-            match TcpStream::connect(format!("{}", self.addr.ip).as_slice(), self.addr.port) {
+            match TcpStream::connect(format!("{}:{}", self.addr.ip, self.addr.port).as_slice()) {
                 Ok(stream) => {
                     if self.chan_to_socket.send_opt(Ok(Ping)).is_err() {
                         return Ok(());
