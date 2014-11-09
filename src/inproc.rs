@@ -2,7 +2,7 @@ use result::ZmqResult;
 use socket_base::{SocketMessage, OnConnected};
 
 use std::collections::HashMap;
-use std::collections::hashmap::{Vacant, Occupied};
+use std::collections::hash_map::Entry;
 
 
 pub enum InprocCommand {
@@ -49,10 +49,10 @@ impl InprocManagerTask {
                     }
 
                     match self.inproc_connecters.entry(key) {
-                        Vacant(entry) => {
+                        Entry::Vacant(entry) => {
                             entry.set(vec!());
                         },
-                        Occupied(entry) => {
+                        Entry::Occupied(entry) => {
                             entry.into_mut().push(tx);
                         }
                     }
