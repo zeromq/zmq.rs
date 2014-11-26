@@ -7,7 +7,7 @@ use std::cmp;
 use std::io::net::ip::SocketAddr;
 use std::io::{TcpStream, timer};
 use std::num;
-use std::num::Zero;
+use std::num::{Zero, SignedInt};
 use std::rand;
 use std::sync::{RWLock, Arc};
 use std::time::duration::Duration;
@@ -45,7 +45,7 @@ impl TcpConnecter {
 
             //  The new interval is the current interval + random value.
             let interval = self.current_reconnect_ivl + Duration::milliseconds(
-                num::abs(rand::random::<i64>() % reconnect_ivl.num_milliseconds()));
+                (rand::random::<i64>() % reconnect_ivl.num_milliseconds()).abs());
 
             //  Only change the current reconnect interval  if the maximum reconnect
             //  interval was set and if it's larger than the reconnect interval.
