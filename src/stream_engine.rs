@@ -1,8 +1,8 @@
-use consts;
+use consts::ErrorCode;
 use msg::Msg;
 use options::Options;
 use result::{ZmqError, ZmqResult};
-use socket_base::{OnConnected, SocketMessage};
+use socket_base::SocketMessage;
 use v2_encoder::V2Encoder;
 use v2_decoder::V2Decoder;
 
@@ -78,7 +78,7 @@ impl StreamEngine {
             (self.options.read().identity_size + 1) as u64, 8, |v| signature.push_all(v));
         signature.push(0x7fu8);
         if bytes_tx.send_opt(signature).is_err() {
-            return Err(ZmqError::new(consts::EIOERROR, "Connection closed"));
+            return Err(ZmqError::new(ErrorCode::EIOERROR, "Connection closed"));
         }
 
         let (decoder, encoder) = try!(self.handshake(bytes_tx));
@@ -95,7 +95,7 @@ impl StreamEngine {
         // Receive Msg objects
         let (tx, rx) = channel(); // TODO: replace with SyncSender
         debug!("Feeding the peer channels to the socket object.");
-        if self.chan_to_socket.send_opt(Ok(OnConnected(msg_tx, rx))).is_err() {
+        if self.chan_to_socket.send_opt(Ok(SocketMessage::OnConnected(msg_tx, rx))).is_err() {
             warn!("Socket object is gone!");
             return Ok(());
         }
@@ -126,7 +126,7 @@ impl StreamEngine {
                 Ok(0) => {
                     zeros += 1;
                     if zeros > NO_PROGRESS_LIMIT {
-                        return Err(ZmqError::new(consts::EIOERROR, "No progress in handshake"));
+                        return Err(ZmqError::new(ErrorCode::EIOERROR, "No progress in handshake"));
                     } else {
                         continue;
                     }
@@ -141,7 +141,7 @@ impl StreamEngine {
             //  If the first byte is not 0xff, we know that the
             //  peer is using unversioned protocol.
             if greeting_recv[0] != 0xff {
-                return Err(ZmqError::new(consts::EPROTONOSUPPORT, "ZMTP 1.0 is not supported"));
+                return Err(ZmqError::new(ErrorCode::EPROTONOSUPPORT, "ZMTP 1.0 is not supported"));
             }
 
             if greeting_bytes_read < SIGNATURE_SIZE {
@@ -153,7 +153,7 @@ impl StreamEngine {
             //  Zero indicates this is a header of identity message
             //  (i.e. the peer is using the unversioned protocol).
             if greeting_recv[9] & 0x01 == 0 {
-                return Err(ZmqError::new(consts::EPROTONOSUPPORT, "ZMTP 1.0 is not supported"));
+                return Err(ZmqError::new(ErrorCode::EPROTONOSUPPORT, "ZMTP 1.0 is not supported"));
             }
 
             //  The peer is using versioned protocol.
@@ -178,9 +178,9 @@ impl StreamEngine {
         }
 
         if greeting_recv[0] != 0xff || greeting_recv[9] & 0x01 == 0 {
-            return Err(ZmqError::new(consts::EPROTONOSUPPORT, "ZMTP 1.0 is not supported"));
+            return Err(ZmqError::new(ErrorCode::EPROTONOSUPPORT, "ZMTP 1.0 is not supported"));
         } else if greeting_recv[REVISION_POS] == ZMTP_1_0 {
-            return Err(ZmqError::new(consts::EPROTONOSUPPORT, "ZMTP 1.0 is not supported"));
+            return Err(ZmqError::new(ErrorCode::EPROTONOSUPPORT, "ZMTP 1.0 is not supported"));
         } else {
             return Ok((V2Decoder::new(self.options.read().maxmsgsize), V2Encoder::new()));
         }

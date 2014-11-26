@@ -1,5 +1,5 @@
 use result::ZmqResult;
-use socket_base::{SocketMessage, OnConnected};
+use socket_base::SocketMessage;
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -21,7 +21,7 @@ impl InprocManagerTask {
     fn run(&mut self) {
         loop {
             match self.chan.recv_opt() {
-                Ok(DoBind(key, tx)) => {
+                Ok(InprocCommand::DoBind(key, tx)) => {
                     if self.inproc_binders.contains_key(&key) {
                         // TODO: return error
                         panic!("Key already exist: {}", key);
@@ -32,20 +32,20 @@ impl InprocManagerTask {
                         for connecter_tx in connecters.iter() {
                             let (tx1, rx1) = channel();
                             let (tx2, rx2) = channel();
-                            connecter_tx.send(Ok(OnConnected(tx1, rx2)));
-                            tx.send(Ok(OnConnected(tx2, rx1)));
+                            connecter_tx.send(Ok(SocketMessage::OnConnected(tx1, rx2)));
+                            tx.send(Ok(SocketMessage::OnConnected(tx2, rx1)));
                         }
                     }
 
                     self.inproc_binders.insert(key.clone(), tx);
                 },
-                Ok(DoConnect(key, tx)) => {
+                Ok(InprocCommand::DoConnect(key, tx)) => {
                     if self.inproc_binders.contains_key(&key) {
                         let ref binder_tx = self.inproc_binders[key];
                         let (tx1, rx1) = channel();
                         let (tx2, rx2) = channel();
-                        binder_tx.send(Ok(OnConnected(tx1, rx2)));
-                        tx.send(Ok(OnConnected(tx2, rx1)));
+                        binder_tx.send(Ok(SocketMessage::OnConnected(tx1, rx2)));
+                        tx.send(Ok(SocketMessage::OnConnected(tx2, rx1)));
                     }
 
                     match self.inproc_connecters.entry(key) {

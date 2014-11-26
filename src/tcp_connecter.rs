@@ -1,6 +1,6 @@
 use options::Options;
 use result::{ZmqError, ZmqResult};
-use socket_base::{Ping, SocketMessage};
+use socket_base::SocketMessage;
 use stream_engine::StreamEngine;
 
 use std::cmp;
@@ -27,7 +27,7 @@ impl TcpConnecter {
         loop {
             match TcpStream::connect(format!("{}:{}", self.addr.ip, self.addr.port).as_slice()) {
                 Ok(stream) => {
-                    if self.chan_to_socket.send_opt(Ok(Ping)).is_err() {
+                    if self.chan_to_socket.send_opt(Ok(SocketMessage::Ping)).is_err() {
                         return Ok(());
                     }
 

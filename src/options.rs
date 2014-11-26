@@ -1,4 +1,3 @@
-use consts;
 use consts::SocketOption;
 
 use std::num::Zero;
@@ -38,7 +37,7 @@ impl Options {
 
     pub fn getsockopt(&self, option: SocketOption) -> int {
         match option {
-            consts::TYPE => self.type_ as int,
+            SocketOption::TYPE => self.type_ as int,
         }
     }
 }

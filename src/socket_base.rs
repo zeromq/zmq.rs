@@ -1,5 +1,6 @@
 use consts;
-use inproc::{InprocCommand, DoBind, DoConnect};
+use consts::ErrorCode;
+use inproc::InprocCommand;
 use msg::Msg;
 use options::Options;
 use result::{ZmqError, ZmqResult};
@@ -75,14 +76,14 @@ impl SocketBase {
                         Ok(())
                     }
                     None => Err(ZmqError::new(
-                        consts::EINVAL, "Invaid argument: bad address")),
+                        ErrorCode::EINVAL, "Invaid argument: bad address")),
                 }
             },
             "inproc" => {
-                self.inproc_chan.send(DoBind(String::from_str(address), self.tx.clone()));
+                self.inproc_chan.send(InprocCommand::DoBind(String::from_str(address), self.tx.clone()));
                 Ok(())
             },
-            _ => Err(ZmqError::new(consts::EPROTONOSUPPORT, "Protocol not supported")),
+            _ => Err(ZmqError::new(ErrorCode::EPROTONOSUPPORT, "Protocol not supported")),
         }
     }
 
@@ -96,14 +97,14 @@ impl SocketBase {
                         Ok(())
                     }
                     None => Err(ZmqError::new(
-                        consts::EINVAL, "Invaid argument: bad address")),
+                        ErrorCode::EINVAL, "Invaid argument: bad address")),
                 }
             },
             "inproc" => {
-                self.inproc_chan.send(DoConnect(String::from_str(address), self.tx.clone()));
+                self.inproc_chan.send(InprocCommand::DoConnect(String::from_str(address), self.tx.clone()));
                 Ok(())
             },
-            _ => Err(ZmqError::new(consts::EPROTONOSUPPORT, "Protocol not supported")),
+            _ => Err(ZmqError::new(ErrorCode::EPROTONOSUPPORT, "Protocol not supported")),
         }
     }
 
@@ -199,7 +200,7 @@ impl SocketBase {
 
     fn handle_msg(&mut self, msg: ZmqResult<SocketMessage>) {
         match msg {
-            Ok(OnConnected(tx, rx)) => {
+            Ok(SocketMessage::OnConnected(tx, rx)) => {
                 let id = *self.ids.last().unwrap_or(&0) + 1;
                 debug!("New peer: {}", id);
                 self.ids.push(id);
@@ -218,14 +219,14 @@ fn parse_uri<'r>(uri: &'r str) -> ZmqResult<(&'r str, &'r str)> {
             let address = uri.slice_from(pos + 3);
             if protocol.len() == 0 || address.len() == 0 {
                 Err(ZmqError::new(
-                    consts::EINVAL,
+                    ErrorCode::EINVAL,
                     "Invalid argument: missing protocol or address"))
             } else {
                 Ok((protocol, address))
             }
         },
         None => Err(ZmqError::new(
-            consts::EINVAL, "Invalid argument: missing ://")),
+            ErrorCode::EINVAL, "Invalid argument: missing ://")),
     }
 }
 
