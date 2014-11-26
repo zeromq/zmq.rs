@@ -1,6 +1,5 @@
 use consts::SocketOption;
 
-use std::num::Zero;
 use std::time::duration::Duration;
 
 
@@ -31,7 +30,7 @@ impl Options {
             type_: -1,
             maxmsgsize: -1,
             reconnect_ivl: Duration::milliseconds(100),
-            reconnect_ivl_max: Zero::zero(),
+            reconnect_ivl_max: Duration::zero(),
         }
     }
 

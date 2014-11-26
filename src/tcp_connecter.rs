@@ -6,8 +6,7 @@ use stream_engine::StreamEngine;
 use std::cmp;
 use std::io::net::ip::SocketAddr;
 use std::io::{TcpStream, timer};
-use std::num;
-use std::num::{Zero, SignedInt};
+use std::num::SignedInt;
 use std::rand;
 use std::sync::{RWLock, Arc};
 use std::time::duration::Duration;
@@ -49,7 +48,7 @@ impl TcpConnecter {
 
             //  Only change the current reconnect interval  if the maximum reconnect
             //  interval was set and if it's larger than the reconnect interval.
-            if reconnect_ivl_max > Zero::zero() && reconnect_ivl_max > reconnect_ivl {
+            if reconnect_ivl_max > Duration::zero() && reconnect_ivl_max > reconnect_ivl {
                 //  Calculate the next interval
                 self.current_reconnect_ivl =
                     cmp::min (self.current_reconnect_ivl * 2, reconnect_ivl_max);
