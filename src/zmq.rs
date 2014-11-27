@@ -18,7 +18,7 @@
 //!     rep.bind("tcp://127.0.0.1:12347").unwrap();
 //!
 //!     let mut msg = box zmq::Msg::new(4);
-//!     msg.data.push_all([65u8, 66u8, 67u8, 68u8]);
+//!     msg.data.push_all([65u8, 66u8, 67u8, 68u8].as_slice());
 //!
 //!     req.msg_send(msg).unwrap();
 //!     println!("We got: {}", rep.msg_recv().unwrap());
@@ -114,7 +114,7 @@ mod test {
         assert!(req.connect("tcp://127.0.0.1:12347").is_ok());
 
         let mut msg_sent = box super::Msg::new(4);
-        msg_sent.data.push_all([65u8, 66u8, 67u8, 68u8]);
+        msg_sent.data.push_all([65u8, 66u8, 67u8, 68u8].as_slice());
         assert!(req.msg_send(msg_sent).is_ok());
 
         let msg_recv = rep.msg_recv().unwrap();
@@ -131,7 +131,7 @@ mod test {
             assert!(req.connect("inproc://#1").is_ok());
 
             let mut msg_sent = box super::Msg::new(4);
-            msg_sent.data.push_all([65u8, 66u8, 67u8, 68u8]);
+            msg_sent.data.push_all([65u8, 66u8, 67u8, 68u8].as_slice());
             assert!(req.msg_send(msg_sent).is_ok());
         });
 
