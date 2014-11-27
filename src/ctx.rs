@@ -1,4 +1,4 @@
-use consts;
+use consts::SocketType;
 use inproc::InprocManager;
 use rep;
 use req;
@@ -29,11 +29,11 @@ impl Context {
     /// must be created for accepting incoming connections with
     /// [`bind`](trait.ZmqSocket.html#tymethod.bind).
     ///
-    pub fn socket(&self, type_: consts::SocketType) -> Box<ZmqSocket + Send> {
+    pub fn socket(&self, type_: SocketType) -> Box<ZmqSocket + Send> {
         let base = SocketBase::new(self.inproc_mgr.chan());
         match type_ {
-            consts::REQ => box req::new(base) as Box<ZmqSocket + Send>,
-            consts::REP => box rep::new(base) as Box<ZmqSocket + Send>,
+            SocketType::REQ => box req::new(base) as Box<ZmqSocket + Send>,
+            SocketType::REP => box rep::new(base) as Box<ZmqSocket + Send>,
         }
     }
 }

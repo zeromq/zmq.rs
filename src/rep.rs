@@ -1,4 +1,4 @@
-use consts;
+use consts::{SocketOption, ErrorCode, SocketType};
 use msg;
 use msg::Msg;
 use result::{ZmqError, ZmqResult};
@@ -21,7 +21,7 @@ pub struct RepSocket {
 
 
 impl ZmqSocket for RepSocket {
-    fn getsockopt(&self, option: consts::SocketOption) -> int {
+    fn getsockopt(&self, option: SocketOption) -> int {
         self.base.getsockopt(option)
     }
 
@@ -35,31 +35,31 @@ impl ZmqSocket for RepSocket {
 
     fn msg_recv(&mut self) -> ZmqResult<Box<Msg>> {
         let (id, ret) = match self.state {
-            Initial => self.base.recv_first(),
-            Receiving => (self.last_identity, self.base.recv_from(self.last_identity)),
+            State::Initial => self.base.recv_first(),
+            State::Receiving => (self.last_identity, self.base.recv_from(self.last_identity)),
             _ => return Err(ZmqError::new(
-                consts::EFSM, "Operation cannot be accomplished in current state")),
+                ErrorCode::EFSM, "Operation cannot be accomplished in current state")),
         };
         self.last_identity = id;
         self.state = match ret.flags & msg::MORE {
-            0 => Sending,
-            _ => Receiving,
+            0 => State::Sending,
+            _ => State::Receiving,
         };
         Ok(ret)
     }
 
     fn msg_send(&mut self, msg: Box<Msg>) -> ZmqResult<()> {
         self.state = match self.state {
-            Sending => {
+            State::Sending => {
                 let flags = msg.flags;
                 self.base.send_to(self.last_identity, msg);
                 match flags & msg::MORE {
-                    0 => Initial,
-                    _ => Sending,
+                    0 => State::Initial,
+                    _ => State::Sending,
                 }
             }
             _ => return Err(ZmqError::new(
-                consts::EFSM, "Operation cannot be accomplished in current state")),
+                ErrorCode::EFSM, "Operation cannot be accomplished in current state")),
         };
         Ok(())
     }
@@ -67,10 +67,10 @@ impl ZmqSocket for RepSocket {
 
 
 pub fn new(base: SocketBase) -> RepSocket {
-    base.set_type(consts::REP);
+    base.set_type(SocketType::REP);
     RepSocket {
         base: base,
-        state: Initial,
+        state: State::Initial,
         last_identity: 0,
     }
 }
@@ -79,14 +79,14 @@ pub fn new(base: SocketBase) -> RepSocket {
 #[cfg(test)]
 mod test {
     use ctx::Context;
-    use consts;
+    use consts::{ErrorCode, SocketType};
     use msg::Msg;
 
     #[test]
     fn test_fsm() {
         let ctx = Context::new();
-        let mut s = ctx.socket(consts::REP);
+        let mut s = ctx.socket(SocketType::REP);
         let msg = box Msg::new(1);
-        assert_eq!(s.msg_send(msg).unwrap_err().code, consts::EFSM);
+        assert_eq!(s.msg_send(msg).unwrap_err().code, ErrorCode::EFSM);
     }
 }

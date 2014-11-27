@@ -1,4 +1,4 @@
-use consts;
+use consts::ErrorCode;
 use msg;
 use msg::Msg;
 use result::{ZmqError, ZmqResult};
@@ -34,12 +34,12 @@ impl V2Decoder {
 
                 //  Message size must not exceed the maximum allowed size.
                 if self.maxmsgsize > 0 && size > self.maxmsgsize as u64 {
-                    return Err(ZmqError::new(consts::EMSGSIZE, "Message too long"));
+                    return Err(ZmqError::new(ErrorCode::EMSGSIZE, "Message too long"));
                 }
 
                 //  Message size must fit into uint data type.
                 if size != (size as uint) as u64 {
-                    return Err(ZmqError::new(consts::EMSGSIZE, "Message too long"));
+                    return Err(ZmqError::new(ErrorCode::EMSGSIZE, "Message too long"));
                 }
 
                 size as uint
@@ -48,7 +48,7 @@ impl V2Decoder {
 
                 //  Message size must not exceed the maximum allowed size.
                 if self.maxmsgsize > 0 && size as u64 > self.maxmsgsize as u64 {
-                    return Err(ZmqError::new(consts::EMSGSIZE, "Message too long"));
+                    return Err(ZmqError::new(ErrorCode::EMSGSIZE, "Message too long"));
                 }
 
                 size as uint

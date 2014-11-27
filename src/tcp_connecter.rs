@@ -1,13 +1,12 @@
 use options::Options;
 use result::{ZmqError, ZmqResult};
-use socket_base::{Ping, SocketMessage};
+use socket_base::SocketMessage;
 use stream_engine::StreamEngine;
 
 use std::cmp;
 use std::io::net::ip::SocketAddr;
 use std::io::{TcpStream, timer};
-use std::num;
-use std::num::Zero;
+use std::num::SignedInt;
 use std::rand;
 use std::sync::{RWLock, Arc};
 use std::time::duration::Duration;
@@ -27,7 +26,7 @@ impl TcpConnecter {
         loop {
             match TcpStream::connect(format!("{}:{}", self.addr.ip, self.addr.port).as_slice()) {
                 Ok(stream) => {
-                    if self.chan_to_socket.send_opt(Ok(Ping)).is_err() {
+                    if self.chan_to_socket.send_opt(Ok(SocketMessage::Ping)).is_err() {
                         return Ok(());
                     }
 
@@ -45,11 +44,11 @@ impl TcpConnecter {
 
             //  The new interval is the current interval + random value.
             let interval = self.current_reconnect_ivl + Duration::milliseconds(
-                num::abs(rand::random::<i64>() % reconnect_ivl.num_milliseconds()));
+                (rand::random::<i64>() % reconnect_ivl.num_milliseconds()).abs());
 
             //  Only change the current reconnect interval  if the maximum reconnect
             //  interval was set and if it's larger than the reconnect interval.
-            if reconnect_ivl_max > Zero::zero() && reconnect_ivl_max > reconnect_ivl {
+            if reconnect_ivl_max > Duration::zero() && reconnect_ivl_max > reconnect_ivl {
                 //  Calculate the next interval
                 self.current_reconnect_ivl =
                     cmp::min (self.current_reconnect_ivl * 2, reconnect_ivl_max);

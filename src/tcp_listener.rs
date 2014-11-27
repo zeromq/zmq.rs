@@ -1,6 +1,6 @@
 use options::Options;
 use result::{ZmqError, ZmqResult};
-use socket_base::{Ping, SocketMessage};
+use socket_base::SocketMessage;
 use stream_engine::StreamEngine;
 
 use std::io::Acceptor;
@@ -23,7 +23,7 @@ impl TcpListener {
             self.acceptor.set_timeout(Some(ACCEPT_TIMEOUT));
             match self.acceptor.accept() {
                 Ok(stream) => {
-                    if self.chan_to_socket.send_opt(Ok(Ping)).is_err() {
+                    if self.chan_to_socket.send_opt(Ok(SocketMessage::Ping)).is_err() {
                         return Ok(());
                     }
 
