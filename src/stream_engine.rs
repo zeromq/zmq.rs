@@ -67,7 +67,7 @@ impl StreamEngine {
         let (bytes_tx, bytes_rx) = channel();
         let (waiter_tx, waiter_rx) = channel();
         let stream = self.stream.clone();
-        spawn(proc() {
+        spawn(move || {
             stream_bytes_writer(bytes_rx, stream, waiter_tx);
         });
 
@@ -88,7 +88,7 @@ impl StreamEngine {
         // prepare task for sending Msg objects
         let (msg_tx, msg_rx) = channel(); // TODO: replace with SyncSender
         let stream = self.stream.clone();
-        spawn(proc() {
+        spawn(move || {
             stream_msg_writer(msg_rx, stream, encoder);
         });
 
@@ -189,7 +189,7 @@ impl StreamEngine {
     pub fn spawn_new(stream: TcpStream, options: Arc<RWLock<Options>>,
                      chan: Sender<ZmqResult<SocketMessage>>,
                      death_notifier: Option<Sender<u8>>) {
-        spawn(proc() {
+        spawn(move || {
             let mut engine = StreamEngine {
                 chan_to_socket: chan,
                 stream: stream,

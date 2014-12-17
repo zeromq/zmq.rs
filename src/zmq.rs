@@ -126,7 +126,7 @@ mod test {
         let c = super::Context::new();
         let req = c.socket(super::SocketType::REQ);
 
-        spawn(proc() {
+        spawn(move || {
             let mut req = req;
             assert!(req.connect("inproc://#1").is_ok());
 

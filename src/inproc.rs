@@ -72,7 +72,7 @@ impl InprocManager {
     pub fn new() -> InprocManager {
         let (tx, rx) = channel();
 
-        spawn(proc() {
+        spawn(move || {
             InprocManagerTask {
                 chan: rx,
                 inproc_binders: HashMap::new(),

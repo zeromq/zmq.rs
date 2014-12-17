@@ -38,7 +38,7 @@ impl TcpListener {
 
     pub fn spawn_new(acceptor: TcpAcceptor, chan: Sender<ZmqResult<SocketMessage>>,
                      options: Arc<RWLock<Options>>) {
-        spawn(proc() {
+        spawn(move || {
             let mut listener = TcpListener {
                 acceptor: acceptor,
                 options: options,

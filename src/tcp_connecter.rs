@@ -60,7 +60,7 @@ impl TcpConnecter {
 
     pub fn spawn_new(addr: SocketAddr, chan: Sender<ZmqResult<SocketMessage>>,
                      options: Arc<RWLock<Options>>) {
-        spawn(proc() {
+        spawn(move || {
             let reconnect_ivl = options.read().reconnect_ivl;
             let mut connecter = TcpConnecter {
                 chan_to_socket: chan,
