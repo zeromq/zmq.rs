@@ -21,9 +21,9 @@ use result::ZmqResult;
 ///
 /// Conventional sockets allow only strict one-to-one (two peers), many-to-one (many clients, one
 /// server), or in some cases one-to-many (multicast) relationships. With the exception of
-/// *`zmq::PAIR`*, ØMQ sockets may be connected **to multiple endpoints** using *`connect()`*, while
-/// simultaneously accepting incoming connections **from multiple endpoints** bound to the socket
-/// using *`bind()`*, thus allowing many-to-many relationships.
+/// *`zeromq::PAIR`*, ØMQ sockets may be connected **to multiple endpoints** using *`connect()`*,
+/// while simultaneously accepting incoming connections **from multiple endpoints** bound to the
+/// socket using *`bind()`*, thus allowing many-to-many relationships.
 pub trait ZmqSocket {
     /// This function shall retrieve the value for the option specified by the *`option`* argument
     /// for this ØMQ socket object and return it.
@@ -44,7 +44,8 @@ pub trait ZmqSocket {
     /// > ***`inproc`***
     /// >> local in-process (inter-task) communication transport
     ///
-    /// Every ØMQ socket type except *`zmq::PAIR`* supports one-to-many and many-to-one semantics.
+    /// Every ØMQ socket type except *`zeromq::PAIR`* supports one-to-many and many-to-one
+    /// semantics.
     ///
     /// # Errors
     ///
@@ -77,8 +78,8 @@ pub trait ZmqSocket {
     /// **Binding a publisher socket to an in-process and a tcp transport**
     ///
     /// ```ignore
-    /// // Create a zmq::PUB socket
-    /// let socket = ctx.socket(zmq::PUB);
+    /// // Create a zeromq::PUB socket
+    /// let socket = ctx.socket(zeromq::PUB);
     /// // Bind it to a in-process transport with the address 'my_publisher'
     /// socket.bind("inproc://my_publisher");
     /// // Bind it to a TCP transport on port 5555 of the 'eth0' interface
@@ -101,14 +102,15 @@ pub trait ZmqSocket {
     /// > ***`inproc`***
     /// >> local in-process (inter-task) communication transport
     ///
-    /// Every ØMQ socket type except *`zmq::PAIR`* supports one-to-many and many-to-one semantics.
+    /// Every ØMQ socket type except *`zeromq::PAIR`* supports one-to-many and many-to-one
+    /// semantics.
     ///
     /// > for most transports and socket types the connection is not performed immediately but as
     /// > needed by ØMQ. Thus a successful call to *`connect()`* does not mean that the connection
     /// > was or could actually be established. Because of this, for most transports and socket
     /// > types the order in which a *server* socket is bound and a *client* socket is connected to
     /// > it does not matter. The first exception is when using the `inproc://` transport: you must
-    /// > call *`bind()`* before calling *`connect()`*. The second exception are *`zmq::PAIR`*
+    /// > call *`bind()`* before calling *`connect()`*. The second exception are *`zeromq::PAIR`*
     /// > sockets, which do not automatically reconnect to endpoints.
     ///
     /// # Errors
@@ -134,7 +136,7 @@ pub trait ZmqSocket {
     ///
     /// ```ignore
     /// // Create a ZMQ_SUB socket
-    /// let socket = ctx.socket(zmq::SUB);
+    /// let socket = ctx.socket(zeromq::SUB);
     /// // Connect it to an in-process transport with the address 'my_publisher'
     /// socket.connect("inproc://my_publisher");
     /// // Connect it to the host server001, port 5555 using a TCP transport
@@ -149,9 +151,9 @@ pub trait ZmqSocket {
     /// # Multi-part messages
     ///
     /// A ØMQ message is composed of 1 or more message parts. Each message part is an independent
-    /// *`zmq::Msg`* in its own right. ØMQ ensures atomic delivery of messages: peers shall receive
-    /// either all *message parts* of a message or none at all. The total number of message parts is
-    /// unlimited except by available memory.
+    /// *`zeromq::Msg`* in its own right. ØMQ ensures atomic delivery of messages: peers shall
+    /// receive either all *message parts* of a message or none at all. The total number of message
+    /// parts is unlimited except by available memory.
     ///
     /// # Errors
     ///
@@ -164,7 +166,7 @@ pub trait ZmqSocket {
     /// > **`EFSM`**
     /// >> The *`msg_recv()`* operation cannot be performed on this socket at the moment due to the
     /// >> socket not being in the appropriate state. This error may occur with socket types that
-    /// >> switch between several states, such as `zmq::REP`.
+    /// >> switch between several states, such as `zeromq::REP`.
     ///
     /// > **`ETERM`**
     /// >> The ØMQ context associated with the specified socket was terminated.

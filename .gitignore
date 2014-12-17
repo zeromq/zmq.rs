@@ -1,6 +1,6 @@
+/target
+/Cargo.lock
 *.swp
 *.test
 .idea
-target
 doc
-Cargo.lock

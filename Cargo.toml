@@ -1,10 +1,8 @@
 [package]
 
-name = "zmq"
+name = "zeromq"
 version = "0.1.0-pre"
-authors = ["fantix.king@gmail.com"]
+authors = ["Fantix King <fantix.king@gmail.com>"]
 
-[lib]
-
-name = "zmq"
-
+description = "native stack of ØMQ in Rust"
+license = "MPL-2.0"

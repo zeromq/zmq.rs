@@ -6,18 +6,18 @@
 //! There are only very few interfaces implemented till now. Try this example for now:
 //!
 //! ```rust
-//! extern crate zmq;
+//! extern crate zeromq;
 //!
 //! fn main() {
-//!     let ctx = zmq::Context::new();
+//!     let ctx = zeromq::Context::new();
 //!
-//!     let mut req = ctx.socket(zmq::SocketType::REQ);
+//!     let mut req = ctx.socket(zeromq::SocketType::REQ);
 //!     req.connect("tcp://127.0.0.1:12347").unwrap();
 //!
-//!     let mut rep = ctx.socket(zmq::SocketType::REP);
+//!     let mut rep = ctx.socket(zeromq::SocketType::REP);
 //!     rep.bind("tcp://127.0.0.1:12347").unwrap();
 //!
-//!     let mut msg = box zmq::Msg::new(4);
+//!     let mut msg = box zeromq::Msg::new(4);
 //!     msg.data.push_all([65u8, 66u8, 67u8, 68u8].as_slice());
 //!
 //!     req.msg_send(msg).unwrap();
@@ -27,12 +27,10 @@
 //!
 //!  [ØMQ]: http://zeromq.org/
 
-#![crate_name = "zmq"]
+#![crate_name = "zeromq"]
 #![unstable]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
-#![comment = "native stack of ØMQ in Rust"]
-#![license = "MPLv2"]
 #![feature(phase)]
 #[phase(plugin, link)] extern crate log;
 
