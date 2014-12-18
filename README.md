@@ -20,18 +20,18 @@ To report an issue, use the [zmq.rs issue tracker][4] at github.com.
 There are only very few interfaces implemented till now. Try this example as `src/hello-zmq.rs`:
 
 ```rust
-extern crate zmq;
+extern crate zeromq;
 
 fn main() {
-    let ctx = zmq::Context::new();
+    let ctx = zeromq::Context::new();
 
-    let mut req = ctx.socket(zmq::REQ);
+    let mut req = ctx.socket(zeromq::REQ);
     req.connect("tcp://127.0.0.1:12347").unwrap();
 
-    let mut rep = ctx.socket(zmq::REP);
+    let mut rep = ctx.socket(zeromq::REP);
     rep.bind("tcp://127.0.0.1:12347").unwrap();
 
-    let mut msg = box zmq::Msg::new(4);
+    let mut msg = box zeromq::Msg::new(4);
     msg.data.push_all([65u8, 66u8, 67u8, 68u8]);
 
     req.msg_send(msg).unwrap();
