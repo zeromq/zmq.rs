@@ -33,6 +33,8 @@ pub enum SocketType {
     //STREAM = 11,
 }
 
+impl Copy for SocketType {}
+
 
 /// Defines different options for a ØMQ socket.
 ///
@@ -44,6 +46,8 @@ pub enum SocketOption {
     /// afterwards.
     TYPE = 16,
 }
+
+impl Copy for SocketOption {}
 
 
 /// A number random enough not to collide with different errno ranges on
@@ -87,3 +91,6 @@ pub enum ErrorCode {
     /// Unknown I/O error
     EIOERROR = HAUSNUMERO - 1,
 }
+
+impl Copy for ErrorCode {}
+
