@@ -124,7 +124,7 @@ impl SocketBase {
                     let handle = box selector.handle(&peer.receiver);
                     let hid = handle.id();
                     mapping.insert(hid, (Some(handle), index));
-                    let handle = mapping.get_mut(&hid).unwrap().mut0().as_mut().unwrap();
+                    let handle = mapping.get_mut(&hid).unwrap().0.as_mut().unwrap();
                     unsafe {
                         handle.add();
                     }
