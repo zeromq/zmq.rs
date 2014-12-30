@@ -31,8 +31,7 @@
 #![unstable]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
-#![feature(phase)]
-#[phase(plugin, link)] extern crate log;
+#[macro_use] extern crate log;
 
 pub use ctx::Context;
 pub use consts::SocketType;
