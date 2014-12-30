@@ -31,6 +31,8 @@
 #![unstable]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
+#![feature(box_syntax)]
+#![feature(int_uint)]
 #[macro_use] extern crate log;
 
 pub use ctx::Context;
