@@ -8,7 +8,7 @@ use v2_decoder::V2Decoder;
 
 use std::io::extensions;
 use std::io::{TcpStream, Reader};
-use std::sync::{RWLock, Arc};
+use std::sync::{RwLock, Arc};
 
 
 const V2_GREETING_SIZE: uint = 12;
@@ -53,7 +53,7 @@ fn stream_msg_writer(msg_chan: Receiver<Box<Msg>>, mut stream: TcpStream, encode
 pub struct StreamEngine {
     chan_to_socket: Sender<ZmqResult<SocketMessage>>,
     stream: TcpStream,
-    options: Arc<RWLock<Options>>,
+    options: Arc<RwLock<Options>>,
 
     // a sender to unblock all receivers on drop
     _death_notifier: Option<Sender<u8>>,
@@ -186,7 +186,7 @@ impl StreamEngine {
         }
     }
 
-    pub fn spawn_new(stream: TcpStream, options: Arc<RWLock<Options>>,
+    pub fn spawn_new(stream: TcpStream, options: Arc<RwLock<Options>>,
                      chan: Sender<ZmqResult<SocketMessage>>,
                      death_notifier: Option<Sender<u8>>) {
         spawn(move || {

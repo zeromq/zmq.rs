@@ -5,7 +5,9 @@ use stream_engine::StreamEngine;
 
 use std::io::Acceptor;
 use std::io::net::tcp::TcpAcceptor;
-use std::sync::{RWLock, Arc};
+use std::sync::Arc;
+use std::sync::RwLock;
+use std::sync::mpsc::Sender;
 
 
 static ACCEPT_TIMEOUT: u64 = 1000;
@@ -14,7 +16,7 @@ static ACCEPT_TIMEOUT: u64 = 1000;
 pub struct TcpListener {
     acceptor: TcpAcceptor,
     chan_to_socket: Sender<ZmqResult<SocketMessage>>,
-    options: Arc<RWLock<Options>>,
+    options: Arc<RwLock<Options>>,
 }
 
 impl TcpListener {
@@ -37,7 +39,7 @@ impl TcpListener {
     }
 
     pub fn spawn_new(acceptor: TcpAcceptor, chan: Sender<ZmqResult<SocketMessage>>,
-                     options: Arc<RWLock<Options>>) {
+                     options: Arc<RwLock<Options>>) {
         spawn(move || {
             let mut listener = TcpListener {
                 acceptor: acceptor,

@@ -8,14 +8,14 @@ use std::io::net::ip::SocketAddr;
 use std::io::{TcpStream, timer};
 use std::num::SignedInt;
 use std::rand;
-use std::sync::{RWLock, Arc};
+use std::sync::{Arc, RwLock};
 use std::time::duration::Duration;
 
 
 pub struct TcpConnecter {
     chan_to_socket: Sender<ZmqResult<SocketMessage>>,
     addr: SocketAddr,
-    options: Arc<RWLock<Options>>,
+    options: Arc<RwLock<Options>>,
 
     //  Current reconnect ivl, updated for backoff strategy
     current_reconnect_ivl: Duration,
@@ -59,7 +59,7 @@ impl TcpConnecter {
     }
 
     pub fn spawn_new(addr: SocketAddr, chan: Sender<ZmqResult<SocketMessage>>,
-                     options: Arc<RWLock<Options>>) {
+                     options: Arc<RwLock<Options>>) {
         spawn(move || {
             let reconnect_ivl = options.read().reconnect_ivl;
             let mut connecter = TcpConnecter {

@@ -8,12 +8,11 @@ use tcp_connecter::TcpConnecter;
 use tcp_listener::TcpListener;
 
 use std::collections::HashMap;
-use std::comm::Select;
+use std::sync::mpsc::Select;
 use std::io;
 use std::io::Listener;
 use std::io::net::ip::SocketAddr;
-use std::sync::{Arc, RWLock};
-
+use std::sync::{Arc, RwLock};
 
 pub enum SocketMessage {
     Ping,
@@ -37,7 +36,7 @@ impl Peer {
 
 
 pub struct SocketBase {
-    options: Arc<RWLock<Options>>,
+    options: Arc<RwLock<Options>>,
     tx: Sender<ZmqResult<SocketMessage>>,
     rx: Receiver<ZmqResult<SocketMessage>>,
     peers: HashMap<uint, Peer>,
@@ -49,7 +48,7 @@ impl SocketBase {
     pub fn new(chan: Sender<InprocCommand>) -> SocketBase {
         let (tx, rx) = channel();
         SocketBase {
-            options: Arc::new(RWLock::new(Options::new())),
+            options: Arc::new(RwLock::new(Options::new())),
             tx: tx,
             rx: rx,
             peers: HashMap::new(),
@@ -181,7 +180,7 @@ impl SocketBase {
         (index, self.ids[index])
     }
 
-    fn sync_until(&mut self, cond: |&SocketBase| -> bool) {
+    fn sync_until<F: FnOnce(&SocketBase)>(&mut self, func: F) {
         loop {
             if !cond(self) {
                 debug!("Condition not met, wait... peers: {}", self.peers.len());
