@@ -1,3 +1,5 @@
+use std::sync::mpsc::channel;
+use std::thread::Thread;
 use options::Options;
 use result::{ZmqError, ZmqResult};
 use socket_base::SocketMessage;
@@ -10,6 +12,7 @@ use std::num::SignedInt;
 use std::rand;
 use std::sync::{Arc, RwLock};
 use std::time::duration::Duration;
+use std::sync::mpsc::Sender;
 
 
 pub struct TcpConnecter {

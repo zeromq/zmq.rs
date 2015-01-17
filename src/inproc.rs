@@ -1,5 +1,7 @@
 use result::ZmqResult;
 use socket_base::SocketMessage;
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::channel;
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;

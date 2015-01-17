@@ -35,6 +35,7 @@
 #![feature(int_uint)]
 #[macro_use] extern crate log;
 
+
 pub use ctx::Context;
 pub use consts::SocketType;
 pub use consts::SocketOption;
@@ -44,6 +45,7 @@ pub use rep::RepSocket;
 pub use req::ReqSocket;
 pub use result::{ZmqResult, ZmqError};
 pub use socket::ZmqSocket;
+
 
 mod ctx;
 mod consts;

@@ -1,3 +1,5 @@
+use std::sync::mpsc::channel;
+use std::thread::Thread;
 use consts;
 use consts::ErrorCode;
 use inproc::InprocCommand;
@@ -13,6 +15,7 @@ use std::io;
 use std::io::Listener;
 use std::io::net::ip::SocketAddr;
 use std::sync::{Arc, RwLock};
+use std::sync::mpsc::{Receiver, Sender};
 
 pub enum SocketMessage {
     Ping,

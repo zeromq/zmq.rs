@@ -1,3 +1,5 @@
+use std::sync::mpsc::channel;
+use std::thread::Thread;
 use consts::ErrorCode;
 use msg::Msg;
 use options::Options;
@@ -9,6 +11,8 @@ use v2_decoder::V2Decoder;
 use std::io::extensions;
 use std::io::{TcpStream, Reader};
 use std::sync::{RwLock, Arc};
+use std::sync::mpsc::Sender;
+use std::sync::mpsc::Receiver;
 
 
 const V2_GREETING_SIZE: uint = 12;
