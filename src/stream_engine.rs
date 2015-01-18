@@ -14,7 +14,6 @@ use std::sync::{RwLock, Arc};
 use std::sync::mpsc::Sender;
 use std::sync::mpsc::Receiver;
 
-
 const V2_GREETING_SIZE: uint = 12;
 const NO_PROGRESS_LIMIT: uint = 1000;
 const SIGNATURE_SIZE: uint = 10;
@@ -71,7 +70,7 @@ impl StreamEngine {
         let (bytes_tx, bytes_rx) = channel();
         let (waiter_tx, waiter_rx) = channel();
         let stream = self.stream.clone();
-        spawn(move || {
+        Thread::spawn(move || {
             stream_bytes_writer(bytes_rx, stream, waiter_tx);
         });
 
@@ -92,7 +91,7 @@ impl StreamEngine {
         // prepare task for sending Msg objects
         let (msg_tx, msg_rx) = channel(); // TODO: replace with SyncSender
         let stream = self.stream.clone();
-        spawn(move || {
+        Thread::spawn(move || {
             stream_msg_writer(msg_rx, stream, encoder);
         });
 
@@ -193,7 +192,7 @@ impl StreamEngine {
     pub fn spawn_new(stream: TcpStream, options: Arc<RwLock<Options>>,
                      chan: Sender<ZmqResult<SocketMessage>>,
                      death_notifier: Option<Sender<u8>>) {
-        spawn(move || {
+        Thread::spawn(move || {
             let mut engine = StreamEngine {
                 chan_to_socket: chan,
                 stream: stream,

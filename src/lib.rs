@@ -47,6 +47,7 @@ pub use result::{ZmqResult, ZmqError};
 pub use socket::ZmqSocket;
 
 
+
 mod ctx;
 mod consts;
 mod inproc;
@@ -67,6 +68,8 @@ mod v2_protocol;
 
 #[cfg(test)]
 mod test {
+    use std::thread::Thread;
+
     #[test]
     fn test_socket_type() {
         assert_eq!(super::SocketType::REQ as int, 3);
@@ -127,7 +130,7 @@ mod test {
         let c = super::Context::new();
         let req = c.socket(super::SocketType::REQ);
 
-        spawn(move || {
+        Thread::spawn(move || {
             let mut req = req;
             assert!(req.connect("inproc://#1").is_ok());
 

@@ -8,6 +8,7 @@ use std::io::net::tcp::TcpAcceptor;
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::mpsc::Sender;
+use std::thread::Thread;
 
 
 static ACCEPT_TIMEOUT: u64 = 1000;
@@ -40,7 +41,7 @@ impl TcpListener {
 
     pub fn spawn_new(acceptor: TcpAcceptor, chan: Sender<ZmqResult<SocketMessage>>,
                      options: Arc<RwLock<Options>>) {
-        spawn(move || {
+        Thread::spawn(move || {
             let mut listener = TcpListener {
                 acceptor: acceptor,
                 options: options,
