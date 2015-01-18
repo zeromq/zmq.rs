@@ -1,8 +1,11 @@
 use result::ZmqResult;
 use socket_base::SocketMessage;
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::channel;
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::thread::Thread;
 
 
 pub enum InprocCommand {
@@ -72,7 +75,7 @@ impl InprocManager {
     pub fn new() -> InprocManager {
         let (tx, rx) = channel();
 
-        spawn(move || {
+        Thread::spawn(move || {
             InprocManagerTask {
                 chan: rx,
                 inproc_binders: HashMap::new(),

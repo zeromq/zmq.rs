@@ -1,3 +1,5 @@
+use std::sync::mpsc::channel;
+use std::thread::Thread;
 use consts::ErrorCode;
 use msg::Msg;
 use options::Options;
@@ -8,8 +10,9 @@ use v2_decoder::V2Decoder;
 
 use std::io::extensions;
 use std::io::{TcpStream, Reader};
-use std::sync::{RWLock, Arc};
-
+use std::sync::{RwLock, Arc};
+use std::sync::mpsc::Sender;
+use std::sync::mpsc::Receiver;
 
 const V2_GREETING_SIZE: uint = 12;
 const NO_PROGRESS_LIMIT: uint = 1000;
@@ -53,7 +56,7 @@ fn stream_msg_writer(msg_chan: Receiver<Box<Msg>>, mut stream: TcpStream, encode
 pub struct StreamEngine {
     chan_to_socket: Sender<ZmqResult<SocketMessage>>,
     stream: TcpStream,
-    options: Arc<RWLock<Options>>,
+    options: Arc<RwLock<Options>>,
 
     // a sender to unblock all receivers on drop
     _death_notifier: Option<Sender<u8>>,
@@ -67,7 +70,7 @@ impl StreamEngine {
         let (bytes_tx, bytes_rx) = channel();
         let (waiter_tx, waiter_rx) = channel();
         let stream = self.stream.clone();
-        spawn(move || {
+        Thread::spawn(move || {
             stream_bytes_writer(bytes_rx, stream, waiter_tx);
         });
 
@@ -88,7 +91,7 @@ impl StreamEngine {
         // prepare task for sending Msg objects
         let (msg_tx, msg_rx) = channel(); // TODO: replace with SyncSender
         let stream = self.stream.clone();
-        spawn(move || {
+        Thread::spawn(move || {
             stream_msg_writer(msg_rx, stream, encoder);
         });
 
@@ -186,10 +189,10 @@ impl StreamEngine {
         }
     }
 
-    pub fn spawn_new(stream: TcpStream, options: Arc<RWLock<Options>>,
+    pub fn spawn_new(stream: TcpStream, options: Arc<RwLock<Options>>,
                      chan: Sender<ZmqResult<SocketMessage>>,
                      death_notifier: Option<Sender<u8>>) {
-        spawn(move || {
+        Thread::spawn(move || {
             let mut engine = StreamEngine {
                 chan_to_socket: chan,
                 stream: stream,
