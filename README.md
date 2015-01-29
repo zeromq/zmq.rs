@@ -53,7 +53,7 @@ authors = ["you@example.com"]
 
 name = "hello-zmq"
 
-[dependencies.zmq]
+[dependencies.zeromq]
 
 git = "https://github.com/zeromq/zmq.rs.git"
 ```
