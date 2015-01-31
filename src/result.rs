@@ -5,7 +5,7 @@ use std::io::{IoError, IoErrorKind};
 
 pub type ZmqResult<T> = Result<T, ZmqError>;
 
-#[deriving(Show)]
+#[derive(Debug)]
 pub struct ZmqError {
     pub code: ErrorCode,
     pub desc: &'static str,
