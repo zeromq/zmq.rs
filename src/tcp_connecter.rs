@@ -6,8 +6,8 @@ use socket_base::SocketMessage;
 use stream_engine::StreamEngine;
 
 use std::cmp;
-use std::io::net::ip::SocketAddr;
-use std::io::{TcpStream, timer};
+use std::old_io::net::ip::SocketAddr;
+use std::old_io::{TcpStream, timer};
 use std::num::SignedInt;
 use std::rand;
 use std::sync::{Arc, RwLock};

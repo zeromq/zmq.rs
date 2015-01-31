@@ -3,8 +3,8 @@ use result::{ZmqError, ZmqResult};
 use socket_base::SocketMessage;
 use stream_engine::StreamEngine;
 
-use std::io::Acceptor;
-use std::io::net::tcp::TcpAcceptor;
+use std::old_io::Acceptor;
+use std::old_io::net::tcp::TcpAcceptor;
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::mpsc::Sender;

@@ -4,7 +4,7 @@ use msg::Msg;
 use result::{ZmqError, ZmqResult};
 use v2_protocol::{MORE_FLAG, LARGE_FLAG, COMMAND_FLAG};
 
-use std::io::Reader;
+use std::old_io::Reader;
 
 
 pub struct V2Decoder {
