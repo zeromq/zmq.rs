@@ -1,9 +1,13 @@
 [![Build Status](https://travis-ci.org/zeromq/zmq.rs.svg?branch=master)](https://travis-ci.org/zeromq/zmq.rs)
 
+### NOTICE: THIS LIBRARY IS CURRENTLY UNDER REWRITING, PLEASE WAIT FOR A WHILE. THANK YOU FOR YOUR INTEREST!
+
 # zmq.rs - native stack of ØMQ in Rust
 
 zmq.rs is a native implementation of ØMQ in the [Rust programming language][1]. It is still in a
 very early stage of designing and development, so it is **not** supposed to be used seriously now.
+
+If you are looking for the libzmq wrapper in Rust, it is [rust-zmq](https://github.com/erickt/rust-zmq).
 
 ## Ownership and License
 
