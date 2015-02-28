@@ -8,8 +8,8 @@ use socket_base::SocketMessage;
 use v2_encoder::V2Encoder;
 use v2_decoder::V2Decoder;
 
-use std::io::extensions;
-use std::io::{TcpStream, Reader};
+use std::old_io::extensions;
+use std::old_io::{TcpStream, Reader};
 use std::sync::{RwLock, Arc};
 use std::sync::mpsc::Sender;
 use std::sync::mpsc::Receiver;

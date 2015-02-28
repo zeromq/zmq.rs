@@ -1,11 +1,11 @@
 use consts::ErrorCode;
 use std;
-use std::io::{IoError, IoErrorKind};
+use std::old_io::{IoError, IoErrorKind};
 
 
 pub type ZmqResult<T> = Result<T, ZmqError>;
 
-#[deriving(Show)]
+#[derive(Debug)]
 pub struct ZmqError {
     pub code: ErrorCode,
     pub desc: &'static str,
@@ -26,12 +26,12 @@ impl ZmqError {
     pub fn from_io_error(e: IoError) -> ZmqError {
         ZmqError {
             code: match e.kind {
-                std::io::PermissionDenied => ErrorCode::EACCES,
-                std::io::ConnectionRefused => ErrorCode::ECONNREFUSED,
-                std::io::ConnectionReset => ErrorCode::ECONNRESET,
-                std::io::ConnectionAborted => ErrorCode::ECONNABORTED,
-                std::io::NotConnected => ErrorCode::ENOTCONN,
-                std::io::TimedOut => ErrorCode::ETIMEDOUT,
+                std::old_io::PermissionDenied => ErrorCode::EACCES,
+                std::old_io::ConnectionRefused => ErrorCode::ECONNREFUSED,
+                std::old_io::ConnectionReset => ErrorCode::ECONNRESET,
+                std::old_io::ConnectionAborted => ErrorCode::ECONNABORTED,
+                std::old_io::NotConnected => ErrorCode::ENOTCONN,
+                std::old_io::TimedOut => ErrorCode::ETIMEDOUT,
 
                 _ => ErrorCode::EIOERROR,
             },

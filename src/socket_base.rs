@@ -11,9 +11,9 @@ use tcp_listener::TcpListener;
 
 use std::collections::HashMap;
 use std::sync::mpsc::Select;
-use std::io;
-use std::io::Listener;
-use std::io::net::ip::SocketAddr;
+use std::old_io as io;
+use std::old_io::Listener;
+use std::old_io::net::ip::SocketAddr;
 use std::sync::{Arc, RwLock};
 use std::sync::mpsc::{Receiver, Sender};
 

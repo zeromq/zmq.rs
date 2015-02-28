@@ -2,7 +2,7 @@ use msg;
 use msg::Msg;
 use v2_protocol::{MORE_FLAG, LARGE_FLAG, COMMAND_FLAG};
 
-use std::io::{IoResult, Writer};
+use std::old_io::{IoResult, Writer};
 
 
 pub struct V2Encoder;
