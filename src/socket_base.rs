@@ -1,5 +1,5 @@
 extern crate mio;
-//extern crate mioco;
+extern crate mioco;
 use std::sync::mpsc::channel;
 //use std::thread::Thread;
 //use consts;
@@ -9,7 +9,7 @@ use msg::Msg;
 //use options::Options;
 use result::{ZmqError, ZmqResult};
 //use tcp_connecter::TcpConnecter;
-//use tcp_listener::TcpListener;
+use tcp_listener::TcpListener;
 
 //
 //use std::collections::HashMap;
@@ -20,11 +20,11 @@ use result::{ZmqError, ZmqResult};
 use std::net::SocketAddr;
 use std::str::FromStr;
 //use std::sync::{Arc, RwLock};
-use std::sync::mpsc::{Receiver, Sender};
+//use std::sync::mpsc::{Receiver, Sender};
 
 pub enum SocketMessage {
     Ping,
-    OnConnected(Sender<Box<Msg>>, Receiver<Box<Msg>>),
+//    OnConnected(Sender<Box<Msg>>, Receiver<Box<Msg>>),
 }
 
 
@@ -45,8 +45,8 @@ pub enum SocketMessage {
 //
 pub struct SocketBase {
 //    options: Arc<RwLock<Options>>,
-    tx: Sender<ZmqResult<SocketMessage>>,
-    rx: Receiver<ZmqResult<SocketMessage>>,
+    tx: mioco::MailboxOuterEnd<ZmqResult<SocketMessage>>,
+    rx: mioco::MailboxInnerEnd<ZmqResult<SocketMessage>>,
 //    peers: HashMap<uint, Peer>,
 //    ids: Vec<uint>,
 //    inproc_chan: Sender<InprocCommand>,
@@ -55,7 +55,7 @@ pub struct SocketBase {
 impl SocketBase {
 //    pub fn new(chan: Sender<InprocCommand>) -> SocketBase {
 	pub fn new() -> SocketBase {
-        let (tx, rx) = channel();
+        let (tx, rx) = mioco::mailbox();
         SocketBase {
 //            options: Arc::new(RwLock::new(Options::new())),
             tx: tx,
@@ -78,7 +78,7 @@ impl SocketBase {
                 match SocketAddr::from_str(address) {
                     Ok(addr) => {
                         let listener = try!(mio::tcp::TcpListener::bind(&addr).map_err(ZmqError::from_io_error));
-//                        TcpListener::spawn_new(sock, self.tx.clone(), self.options.clone());
+                        TcpListener::spawn_new(listener, &self.tx);//, self.options.clone());
                         Ok(())
                     }
                     Err(e) => Err(ZmqError::new(
