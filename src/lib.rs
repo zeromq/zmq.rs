@@ -30,9 +30,10 @@
 #![crate_name = "zeromq"]
 #![allow(dead_code)]
 #![allow(unused_imports)]
-#![feature(slice_chars)]
 #![allow(deprecated)]
 #![allow(unused_variables)]
+#![feature(slice_patterns)]
+#![feature(convert)]
 //#![unstable]
 //#![crate_type = "rlib"]
 //#![crate_type = "dylib"]
@@ -53,6 +54,7 @@
 //
 //
 //
+extern crate mio;
 //mod ctx;
 mod consts;
 //mod inproc;

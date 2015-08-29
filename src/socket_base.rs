@@ -1,6 +1,5 @@
 extern crate mio;
 //extern crate mioco;
-use mio::tcp::*;
 use std::sync::mpsc::channel;
 //use std::thread::Thread;
 //use consts;
@@ -78,11 +77,7 @@ impl SocketBase {
             "tcp" => {
                 match SocketAddr::from_str(address) {
                     Ok(addr) => {
-//                        TcpListener::bind(addr);
-//						let sock = try!(TcpSocket::v4());
-//						try!(sock.bind(addr));
-//				          try!(sock.bind(format!("{}:{}", addr.ip, addr.port).as_slice()));
-//                        let sock = try!(sock.listen());
+                        let listener = try!(mio::tcp::TcpListener::bind(&addr).map_err(ZmqError::from_io_error));
 //                        TcpListener::spawn_new(sock, self.tx.clone(), self.options.clone());
                         Ok(())
                     }
@@ -224,21 +219,20 @@ impl SocketBase {
 
 
 fn parse_uri<'r>(uri: &'r str) -> ZmqResult<(&'r str, &'r str)> {
-    match uri.find("://") {
-        Some(pos) => {
-            let protocol = uri.slice_chars(0, pos);
-            let address = uri.slice_chars(pos + 3, uri.len());
+    let sp: Vec<&str> = uri.splitn(2, "://").collect();
+    match sp.as_slice() {
+        [protocol, address] => {
             if protocol.len() == 0 || address.len() == 0 {
-                Err(ZmqError::new(
-                    ErrorCode::EINVAL,
-                    "Invalid argument: missing protocol or address"))
+                    Err(ZmqError::new(
+                        ErrorCode::EINVAL,
+                        "Invalid argument: missing protocol or address"))
             } else {
-                Ok((protocol, address))
+                    Ok((protocol, address))
             }
         },
-        None => Err(ZmqError::new(
-            ErrorCode::EINVAL, "Invalid argument: missing ://")),
-    }
+        _ => Err(ZmqError::new(
+                    ErrorCode::EINVAL, "Invalid argument: missing ://")),
+	}
 }
 
 
