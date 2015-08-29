@@ -1,8 +1,17 @@
 [package]
 
 name = "zeromq"
-version = "0.1.0-pre"
+version = "0.2.0-pre"
 authors = ["Fantix King <fantix.king@gmail.com>"]
 
 description = "native stack of ØMQ in Rust"
 license = "MPL-2.0"
+
+[dependencies]
+libc = "0.1.10"
+
+[dependencies.mio]
+git = "https://github.com/carllerche/mio/"
+
+[dependencies.mioco]
+git = "https://github.com/dpc/mioco.git"

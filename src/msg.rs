@@ -9,7 +9,7 @@ pub struct Msg {
 }
 
 impl Msg {
-    pub fn new(size: uint) -> Msg {
+    pub fn new(size: usize) -> Msg {
         Msg {
             data: Vec::with_capacity(size),
             flags: 0,

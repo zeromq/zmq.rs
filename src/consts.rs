@@ -33,7 +33,7 @@ pub enum SocketType {
     //STREAM = 11,
 }
 
-impl Copy for SocketType {}
+//impl Copy for SocketType {}
 
 
 /// Defines different options for a ØMQ socket.
@@ -47,36 +47,36 @@ pub enum SocketOption {
     TYPE = 16,
 }
 
-impl Copy for SocketOption {}
+//impl Copy for SocketOption {}
 
 
 /// A number random enough not to collide with different errno ranges on
 /// different OSes. The assumption is that error_t is at least 32-bit type.
-const HAUSNUMERO: int = 156384712;
+const HAUSNUMERO: isize = 156384712;
 
 /// ØMQ errors.
 #[derive(PartialEq, Debug)]
 pub enum ErrorCode {
     /// Invalid argument
-    EINVAL = libc::EINVAL as int,
+    EINVAL = libc::EINVAL as isize,
 
     /// Permission denied
-    EACCES = libc::EACCES as int,
+    EACCES = libc::EACCES as isize,
 
     /// Connection refused
-    ECONNREFUSED = libc::ECONNREFUSED as int,
+    ECONNREFUSED = libc::ECONNREFUSED as isize,
 
     /// Connection reset by peer
-    ECONNRESET = libc::ECONNRESET as int,
+    ECONNRESET = libc::ECONNRESET as isize,
 
     /// Software caused connection abort
-    ECONNABORTED = libc::ECONNABORTED as int,
+    ECONNABORTED = libc::ECONNABORTED as isize,
 
     /// Socket is not connected
-    ENOTCONN = libc::ENOTCONN as int,
+    ENOTCONN = libc::ENOTCONN as isize,
 
     /// Connection timed out
-    ETIMEDOUT = libc::ETIMEDOUT as int,
+    ETIMEDOUT = libc::ETIMEDOUT as isize,
 
 
     /// Protocol not supported
@@ -92,5 +92,5 @@ pub enum ErrorCode {
     EIOERROR = HAUSNUMERO - 1,
 }
 
-impl Copy for ErrorCode {}
+//impl Copy for ErrorCode {}
 
