@@ -1,0 +1,16 @@
+[package]
+name = "zmq"
+version = "0.1.0"
+authors = ["Alexei Kornienko <alexei.kornienko@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+futures = "0.3.1"
+futures-util = "0.3.1"
+bytes = "0.5.4"
+tokio = { version = "0.2.11", features = ["full", "tcp"] }
+tokio-util = { version = "0.2.0", features = ["codec"] }
+num-traits = "0.2.11"
+enum-primitive-derive = "0.1.2"
