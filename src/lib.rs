@@ -18,13 +18,19 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use std::fmt::Display;
 use crate::ZmqError::{NETWORK, NO_MESSAGE};
-use crate::Message::Greeting;
+use crate::Message::{Greeting, Command};
 use bytes::buf::BufExt;
 use std::convert::TryFrom;
-use crate::error::ZmqError;
+
+use std::ffi::CString;
+use std::io::BufRead;
 
 mod error;
 mod codec;
+
+use crate::error::ZmqError;
+use crate::codec::*;
+use std::collections::HashMap;
 
 pub type ZmqResult<T> = Result<T, ZmqError>;
 
@@ -45,51 +51,37 @@ pub enum SocketType {
 }
 
 #[derive(Debug, Copy, Clone)]
+enum ZmqCommandName {
+    READY,
+}
+
+#[derive(Debug, Copy, Clone)]
 pub struct ZmqCommand {
-
+    name: ZmqCommandName,
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum ZmqMechanism {
-    NULL,
-    PLAIN,
-    CURVE
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct ZmqGreeting {
-    pub version: (u8, u8),
-    pub mechanism: ZmqMechanism,
-    pub asServer: bool
-}
-
-impl TryFrom<Bytes> for ZmqGreeting {
+impl TryFrom<BytesMut> for ZmqCommand {
     type Error = ZmqError;
 
-    fn try_from(value: Bytes) -> Result<Self, Self::Error> {
-        if !(value[0] == 0xff && value[9] == 0x7f) {
-            return Err(ZmqError::CODEC("Failed to parse greeting"))
-        }
-        Ok(ZmqGreeting {
-            version: (value[10], value[11]),
-            mechanism: ZmqMechanism::NULL,
-            asServer: value[32] == 0x01
+    fn try_from(mut buf: BytesMut) -> Result<Self, Self::Error> {
+        dbg!(&buf);
+        let command_len = buf[0] as usize;
+        buf.advance(1);
+        // command-name-char = ALPHA according to https://rfc.zeromq.org/spec:23/ZMTP/
+        let command_name = unsafe { String::from_utf8_unchecked(buf.split_to(command_len).to_vec()) };
+        let command = match command_name.as_str() {
+            "READY" => ZmqCommandName::READY,
+            _ => return Err(ZmqError::CODEC("Uknown command received"))
+        };
+
+        let prop_len = buf[0] as usize;
+        buf.advance(1);
+        let property = unsafe { String::from_utf8_unchecked(buf.split_to(prop_len).to_vec()) };
+
+        dbg!(property);
+        Ok(Self {
+            name: command,
         })
-    }
-}
-
-impl From<ZmqGreeting> for BytesMut {
-
-    fn from(greet: ZmqGreeting) -> Self {
-        let mut data: [u8; 64] = [0; 64];
-        data[0] = 0xff;
-        data[9] = 0x7f;
-        data[10] = greet.version.0;
-        data[11] = greet.version.1;
-        data[32] = greet.asServer.into();
-        let mut bytes = BytesMut::new();
-        bytes.extend_from_slice(&data);
-        bytes
     }
 }
 
@@ -110,10 +102,12 @@ impl Display for Message {
     }
 }
 
+#[derive(Debug)]
 enum DecoderState {
     Greeting,
-    Handshake,
-    Traffic
+    FrameHeader,
+    Frame(bool, usize, bool),
+    End
 }
 
 struct ZmqCodec {
@@ -131,23 +125,63 @@ impl Decoder for ZmqCodec {
     type Error = ZmqError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        dbg!(&self.state);
         dbg!(&src);
-        match self.state {
-            DecoderState::Greeting => {
-                if src.len() < 64 {
-                    return if src[0] == 0xff {
-                        Ok(None)
+        return if src.is_empty() {
+            Ok(None)
+        } else {
+            match self.state {
+                DecoderState::Greeting => {
+                    if src.len() >= 64 {
+                        self.state = DecoderState::FrameHeader;
+                        Ok(Some(Greeting(ZmqGreeting::try_from(src.split_to(64).freeze())?)))
                     } else {
-                        Err(ZmqError::CODEC("Bad first byte of greeting"))
+                        if src[0] == 0xff {
+                            src.reserve(64);
+                            Ok(None)
+                        } else {
+                            Err(ZmqError::CODEC("Bad first byte of greeting"))
+                        }
                     }
-                }
-                self.state = DecoderState::Handshake;
-                return Ok(Some(Greeting(ZmqGreeting::try_from(src.split_to(64).freeze())?)))
-            },
-            DecoderState::Handshake => {},
-            DecoderState::Traffic => {},
-        };
-        Ok(None)
+                },
+                DecoderState::FrameHeader => {
+                    let flags = src[0];
+                    let command = (flags & 0b0000_0100) != 0;
+                    let long = (flags & 0b0000_0010) != 0;
+                    let more = ((flags & 0b0000_0001) != 0) | command;
+
+                    let frame_len = if !long && src.len() >= 2 {
+                        let command_len = src[1] as usize;
+                        src.advance(2);
+                        command_len
+                    } else if long && src.len() >= 9 {
+                        src.advance(1);
+                        use std::usize;
+                        usize::from_ne_bytes(unsafe { *(src.split_to(8).as_ptr() as *const [u8; 8]) })
+                    } else {
+                        return Ok(None)
+                    };
+                    self.state = DecoderState::Frame(command, frame_len, more);
+                    return self.decode(src)
+                },
+                DecoderState::Frame(command, frame_len, more) => {
+                    if src.len() < frame_len {
+                        src.reserve(frame_len);
+                        return Ok(None)
+                    }
+                    if more {
+                        self.state = DecoderState::FrameHeader;
+                    }
+                    if command {
+                        let message = Command(ZmqCommand::try_from(src.split_to(frame_len))?);
+                        return Ok(Some(message))
+                    }
+                    // TODO process message frame
+                    todo!()
+                },
+                DecoderState::End => Err(ZmqError::NO_MESSAGE)
+            }
+        }
     }
 }
 
@@ -175,22 +209,21 @@ impl Socket {
         let mut socket = Socket {
             _inner: Framed::new(TcpStream::connect(addr).await?, ZmqCodec::new()),
         };
-        let mut data: [u8; 64] = [0; 64];
-        data[0] = 0xff;
-        data[9] = 0x7f;
-        data[10] = 0x03;
-        data[12..16].copy_from_slice("NULL".as_bytes());
-        let greeting = Message::Bytes(Bytes::copy_from_slice(&data));
+        let greeting = Message::Greeting(ZmqGreeting::default());
         socket.send(greeting, 0).await?;
-        let message = socket.recv(0).await?;
-        match &message {
-            Greeting(payload) => {
-                socket.send(message, 0).await?
-            },
-            _ => return Err(ZmqError::OTHER("Failed handshake".into()))
-        };
-        let message = socket.recv(0).await?;
-        println!("{}", message);
+
+        let greeting_repl = socket.recv(0).await?;
+        dbg!(greeting_repl);
+
+        let ready = b"\x04\x19\x05READY\x0bSocket-Type\0\0\0\x03REQ";
+        socket.send(Message::Bytes(Bytes::from_static(ready)), 0).await?;
+
+        let ready_repl = socket.recv(0).await?;
+        dbg!(&ready_repl);
+
+        //let message = socket.recv(0).await?;
+        //dbg!(&message);
+
         Ok(socket)
     }
 

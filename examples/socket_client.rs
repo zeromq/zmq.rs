@@ -1,5 +1,6 @@
 use std::error::Error;
-use zmq::{Socket, SocketType};
+use zmq::{Socket, SocketType, Message};
+use bytes::Bytes;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -7,6 +8,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
         .expect("Failed to connect");
 
+    let hello = b"\x01\0\0\x05Hello";
+    dbg!(hello);
+    socket.send(Message::Bytes(Bytes::from_static(hello)), 0).await?;
+
     let data = socket.recv(0).await?;
+    dbg!(data);
     Ok(())
 }
