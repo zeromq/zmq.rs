@@ -1,5 +1,5 @@
 [package]
-name = "zmq"
+name = "zmq-rs"
 version = "0.1.0"
 authors = ["Alexei Kornienko <alexei.kornienko@gmail.com>"]
 edition = "2018"
