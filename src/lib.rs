@@ -40,21 +40,78 @@ pub enum SocketType {
     STREAM = 11,
 }
 
-#[derive(Debug, Copy, Clone)]
-enum ZmqCommandName {
-    READY,
+
+impl Display for SocketType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SocketType::PAIR => write!(f, "PAIR"),
+            SocketType::PUB => write!(f, "PUB"),
+            SocketType::SUB => write!(f, "SUB"),
+            SocketType::REQ => write!(f, "REQ"),
+            SocketType::REP => write!(f, "REP"),
+            SocketType::DEALER => write!(f, "DEALER"),
+            SocketType::ROUTER => write!(f, "ROUTER"),
+            SocketType::PULL => write!(f, "PULL"),
+            SocketType::PUSH => write!(f, "PUSH"),
+            SocketType::XPUB => write!(f, "XPUB"),
+            SocketType::XSUB => write!(f, "XSUB"),
+            SocketType::STREAM => write!(f, "STREAM"),
+        }
+    }
+}
+
+const COMPATIBILITY_MATRIX: [u8; 121] = [
+    // PAIR, PUB, SUB, REQ, REP, DEALER, ROUTER, PULL, PUSH, XPUB, XSUB
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // PAIR
+    0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, // PUB
+    0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, // SUB
+    0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, // REQ
+    0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, // REP
+    0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, // DEALER
+    0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, // ROUTER
+    0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, // PULL
+    0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, // PUSH
+    0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, // XPUB
+    0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, // XSUB
+];
+
+/// Checks if two sokets are compatible with each other
+/// ```
+/// use zmq_rs::{sockets_compatible, SocketType};
+/// assert!(sockets_compatible(SocketType::PUB, SocketType::SUB));
+/// assert!(sockets_compatible(SocketType::REQ, SocketType::REP));
+/// assert!(sockets_compatible(SocketType::DEALER, SocketType::ROUTER));
+/// ```
+pub fn sockets_compatible(one: SocketType, another: SocketType) -> bool {
+    let row_index = one.to_usize().unwrap();
+    let col_index = another.to_usize().unwrap();
+    COMPATIBILITY_MATRIX[row_index * 11 + col_index] != 0
 }
 
 #[derive(Debug, Copy, Clone)]
+pub enum ZmqCommandName {
+    READY,
+}
+
+#[derive(Debug, Clone)]
 pub struct ZmqCommand {
-    name: ZmqCommandName,
+    pub name: ZmqCommandName,
+    pub properties: HashMap<String, String>
+}
+
+impl ZmqCommand {
+
+    pub fn ready(socket: SocketType) -> Self {
+        let mut properties = HashMap::new();
+        properties.insert("Socket-Type".into(), format!("{}", socket));
+        Self { name: ZmqCommandName::READY, properties }
+    }
 }
 
 impl TryFrom<BytesMut> for ZmqCommand {
     type Error = ZmqError;
 
     fn try_from(mut buf: BytesMut) -> Result<Self, Self::Error> {
-        dbg!(&buf);
         let command_len = buf[0] as usize;
         buf.advance(1);
         // command-name-char = ALPHA according to https://rfc.zeromq.org/spec:23/ZMTP/
@@ -64,13 +121,19 @@ impl TryFrom<BytesMut> for ZmqCommand {
             "READY" => ZmqCommandName::READY,
             _ => return Err(ZmqError::CODEC("Uknown command received")),
         };
+        let mut properties = HashMap::new();
 
-        let prop_len = buf[0] as usize;
-        buf.advance(1);
-        let property = unsafe { String::from_utf8_unchecked(buf.split_to(prop_len).to_vec()) };
+        while !buf.is_empty() { // Collect command properties
+            let prop_len = buf[0] as usize;
+            buf.advance(1);
+            let property = unsafe { String::from_utf8_unchecked(buf.split_to(prop_len).to_vec()) };
 
-        dbg!(property);
-        Ok(Self { name: command })
+            use std::u32;
+            let prop_val_len = unsafe { u32::from_be_bytes(*(buf.split_to(4).as_ptr() as *const [u8 ;4])) as usize };
+            let prop_value = unsafe { String::from_utf8_unchecked(buf.split_to(prop_val_len).to_vec()) };
+            properties.insert(property, prop_value);
+        }
+        Ok(Self { name: command, properties })
     }
 }
 
