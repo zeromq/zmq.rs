@@ -103,16 +103,6 @@ pub(crate) enum Message {
     Message(ZmqMessage),
 }
 
-impl Display for Message {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Message::Greeting(payload) => write!(f, "Greeting"),
-            Message::Message(m) => write!(f, "Bin data - {}B", m.data.len()),
-            Message::Command(c) => write!(f, "Command - {:?}", c),
-        }
-    }
-}
-
 #[derive(Debug, Copy, Clone)]
 pub(crate) enum ZmqCommandName {
     READY,
@@ -181,7 +171,6 @@ impl TryFrom<BytesMut> for ZmqCommand {
 
 impl From<ZmqCommand> for BytesMut {
     fn from(command: ZmqCommand) -> Self {
-        use std::usize;
         let mut message_len = 0;
 
         let command_name: String = command.name.into();
@@ -197,7 +186,7 @@ impl From<ZmqCommand> for BytesMut {
         if long_message {
             bytes.reserve(message_len + 9);
             bytes.put_u8(0x06);
-            bytes.extend_from_slice(&message_len.to_be_bytes());
+            bytes.put_u64(message_len as u64);
         } else {
             bytes.reserve(message_len + 2);
             bytes.put_u8(0x04);

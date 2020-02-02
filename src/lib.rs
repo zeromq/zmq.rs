@@ -3,7 +3,6 @@ extern crate enum_primitive_derive;
 use num_traits::{FromPrimitive, ToPrimitive};
 
 use async_trait::async_trait;
-use bytes::{Buf, Bytes, BytesMut};
 use futures_util::sink::SinkExt;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
@@ -11,7 +10,7 @@ use tokio::prelude::*;
 use tokio::stream::StreamExt;
 use tokio_util::codec::Framed;
 
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::fmt::Display;
 
 mod codec;
@@ -24,7 +23,6 @@ mod tests;
 use crate::codec::*;
 use crate::error::ZmqError;
 use crate::req::ReqSocket;
-use crate::SocketType::REQ;
 
 pub use crate::codec::ZmqMessage;
 
@@ -143,23 +141,20 @@ pub async fn connect(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<d
 
     let ready_repl: Option<ZmqResult<Message>> = raw_socket.next().await;
     match ready_repl {
-        Some(Ok(Message::Command(c))) => match c.name {
+        Some(Ok(Message::Command(command))) => match command.name {
             ZmqCommandName::READY => {
-                let other_sock_type = c
+                let other_sock_type = command
                     .properties
                     .get("Socket-Type")
                     .map(|x| SocketType::try_from(x.as_str()))
                     .unwrap_or(Err(ZmqError::CODEC("Failed to parse other socket type")))?;
 
-                dbg!(socket_type);
-                dbg!(other_sock_type);
                 if !sockets_compatible(socket_type, other_sock_type) {
                     return Err(ZmqError::OTHER(
                         "Provided sockets combination is not compatible",
                     ));
                 }
-            }
-            _ => return Err(ZmqError::CODEC("Failed to confirm ready state")),
+            },
         },
         Some(Ok(_)) => return Err(ZmqError::CODEC("Failed to confirm ready state")),
         Some(Err(e)) => return Err(e),
