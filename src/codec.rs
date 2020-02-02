@@ -3,10 +3,12 @@ use bytes::{Bytes, BytesMut, Buf, BufMut};
 use std::convert::TryFrom;
 use std::fmt::Display;
 use std::collections::HashMap;
+use tokio_util::codec::{Decoder, Encoder};
+
 use crate::SocketType;
 
 #[derive(Debug, Copy, Clone)]
-pub enum ZmqMechanism {
+pub(crate) enum ZmqMechanism {
     NULL,
     PLAIN,
     CURVE,
@@ -41,7 +43,7 @@ impl TryFrom<Vec<u8>> for ZmqMechanism {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct ZmqGreeting {
+pub(crate) struct ZmqGreeting {
     pub version: (u8, u8),
     pub mechanism: ZmqMechanism,
     pub as_server: bool,
@@ -89,8 +91,31 @@ impl From<ZmqGreeting> for BytesMut {
 }
 
 
+#[derive(Debug, Clone)]
+pub struct ZmqMessage {
+    pub data: Bytes,
+    pub more: bool
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum Message {
+    Greeting(ZmqGreeting),
+    Command(ZmqCommand),
+    Message(ZmqMessage),
+}
+
+impl Display for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Message::Greeting(payload) => write!(f, "Greeting"),
+            Message::Message(m) => write!(f, "Bin data - {}B", m.data.len()),
+            Message::Command(c) => write!(f, "Command - {:?}", c),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
-pub enum ZmqCommandName {
+pub(crate) enum ZmqCommandName {
     READY,
 }
 
@@ -103,7 +128,7 @@ impl From<ZmqCommandName> for String {
 }
 
 #[derive(Debug, Clone)]
-pub struct ZmqCommand {
+pub(crate) struct ZmqCommand {
     pub name: ZmqCommandName,
     pub properties: HashMap<String, String>,
 }
@@ -188,5 +213,105 @@ impl From<ZmqCommand> for BytesMut {
             bytes.extend_from_slice(val.as_ref());
         }
         bytes
+    }
+}
+
+
+#[derive(Debug)]
+enum DecoderState {
+    Greeting,
+    FrameHeader,
+    Frame(bool, usize, bool),
+    End,
+}
+
+pub(crate) struct ZmqCodec {
+    state: DecoderState,
+}
+
+impl ZmqCodec {
+    pub fn new() -> Self {
+        Self {
+            state: DecoderState::Greeting,
+        }
+    }
+}
+
+impl Decoder for ZmqCodec {
+    type Item = Message;
+    type Error = ZmqError;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        dbg!(&src);
+        if src.is_empty() {
+            return Ok(None)
+        }
+        match self.state {
+            DecoderState::Greeting => {
+                if src.len() >= 64 {
+                    self.state = DecoderState::FrameHeader;
+                    Ok(Some(Message::Greeting(ZmqGreeting::try_from(
+                        src.split_to(64).freeze(),
+                    )?)))
+                } else {
+                    if src[0] == 0xff {
+                        src.reserve(64);
+                        Ok(None)
+                    } else {
+                        Err(ZmqError::CODEC("Bad first byte of greeting"))
+                    }
+                }
+            }
+            DecoderState::FrameHeader => {
+                let flags = src[0];
+                let command = (flags & 0b0000_0100) != 0;
+                let long = (flags & 0b0000_0010) != 0;
+                let more = ((flags & 0b0000_0001) != 0) | command;
+
+                let frame_len = if !long && src.len() >= 2 {
+                    let command_len = src[1] as usize;
+                    src.advance(2);
+                    command_len
+                } else if long && src.len() >= 9 {
+                    src.advance(1);
+                    use std::usize;
+                    usize::from_be_bytes(unsafe {
+                        *(src.split_to(8).as_ptr() as *const [u8; 8])
+                    })
+                } else {
+                    return Ok(None);
+                };
+                self.state = DecoderState::Frame(command, frame_len, more);
+                return self.decode(src);
+            }
+            DecoderState::Frame(command, frame_len, more) => {
+                if src.len() < frame_len {
+                    src.reserve(frame_len);
+                    return Ok(None);
+                }
+                self.state = DecoderState::FrameHeader;
+                let message = if command {
+                    Message::Command(ZmqCommand::try_from(src.split_to(frame_len))?)
+                } else {
+                    Message::Message(ZmqMessage { data: src.split_to(frame_len).freeze(), more })
+                };
+                return Ok(Some(message));
+            }
+            DecoderState::End => Err(ZmqError::NO_MESSAGE),
+        }
+    }
+}
+
+impl Encoder for ZmqCodec {
+    type Item = Message;
+    type Error = ZmqError;
+
+    fn encode(&mut self, message: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        match message {
+            Message::Greeting(payload) => dst.unsplit(payload.into()),
+            Message::Message(message) => dst.extend_from_slice(&message.data),
+            Message::Command(command) => dst.unsplit(command.into())
+        }
+        Ok(())
     }
 }

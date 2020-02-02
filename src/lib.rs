@@ -3,23 +3,30 @@ extern crate enum_primitive_derive;
 use num_traits::{FromPrimitive, ToPrimitive};
 
 use bytes::{Buf, Bytes, BytesMut};
-use futures_util::sink::SinkExt;
+use async_trait::async_trait;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
-use tokio::prelude::*;
 use tokio::stream::StreamExt;
+use futures_util::sink::SinkExt;
+use tokio::prelude::*;
 use tokio_util::codec::Framed;
-use tokio_util::codec::{Decoder, Encoder};
 
-use crate::Message::{Command, Greeting};
 use std::convert::TryFrom;
 use std::fmt::Display;
 
 mod codec;
 mod error;
+mod req;
+
+#[cfg(test)]
+mod tests;
 
 use crate::codec::*;
 use crate::error::ZmqError;
+use crate::SocketType::REQ;
+use crate::req::ReqSocket;
+
+pub use crate::codec::ZmqMessage;
 
 pub type ZmqResult<T> = Result<T, ZmqError>;
 
@@ -87,170 +94,36 @@ pub fn sockets_compatible(one: SocketType, another: SocketType) -> bool {
 }
 
 
-#[derive(Debug, Clone)]
-pub enum Message {
-    Greeting(ZmqGreeting),
-    Command(ZmqCommand),
-    Bytes(Bytes),
+#[async_trait]
+pub trait Socket {
+    async fn send(&mut self, data: ZmqMessage) -> ZmqResult<()>;
+    async fn recv(&mut self) -> ZmqResult<ZmqMessage>;
 }
 
-impl Display for Message {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Message::Greeting(payload) => write!(f, "Greeting"),
-            Message::Bytes(data) => write!(f, "Bin data - {}B", data.len()),
-            Message::Command(c) => write!(f, "Command - {:?}", c),
-        }
-    }
+pub async fn connect(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<dyn Socket>> {
+    let addr = endpoint.parse::<SocketAddr>()?;
+    let mut raw_socket = Framed::new(TcpStream::connect(addr).await?, ZmqCodec::new());
+    raw_socket.send(Message::Greeting(ZmqGreeting::default())).await?;
+
+    let greeting: Option<Result<Message, ZmqError>> = raw_socket.next().await;
+
+    match greeting {
+        Some(Ok(Message::Greeting(greet))) => match greet.version {
+            (3, 0) => {},
+            _ => return Err(ZmqError::OTHER("Unsupported protocol version"))
+        },
+        _ => return Err(ZmqError::CODEC("Failed Greeting exchange"))
+    };
+
+    let ready = ZmqCommand::ready(SocketType::REQ);
+    raw_socket.send(Message::Command(ready)).await?;
+
+    let ready_repl = raw_socket.next().await;
+    dbg!(&ready_repl);
+
+    let socket = match socket_type {
+        SocketType::REQ => Box::new(ReqSocket { _inner: raw_socket }),
+        _ => return Err(ZmqError::OTHER("Socket type not supported")),
+    };
+    Ok(socket)
 }
-
-#[derive(Debug)]
-enum DecoderState {
-    Greeting,
-    FrameHeader,
-    Frame(bool, usize, bool),
-    End,
-}
-
-struct ZmqCodec {
-    pub state: DecoderState,
-}
-
-impl ZmqCodec {
-    pub fn new() -> Self {
-        Self {
-            state: DecoderState::Greeting,
-        }
-    }
-}
-
-impl Decoder for ZmqCodec {
-    type Item = Message;
-    type Error = ZmqError;
-
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        dbg!(&self.state);
-        dbg!(&src);
-        return if src.is_empty() {
-            Ok(None)
-        } else {
-            match self.state {
-                DecoderState::Greeting => {
-                    if src.len() >= 64 {
-                        self.state = DecoderState::FrameHeader;
-                        Ok(Some(Greeting(ZmqGreeting::try_from(
-                            src.split_to(64).freeze(),
-                        )?)))
-                    } else {
-                        if src[0] == 0xff {
-                            src.reserve(64);
-                            Ok(None)
-                        } else {
-                            Err(ZmqError::CODEC("Bad first byte of greeting"))
-                        }
-                    }
-                }
-                DecoderState::FrameHeader => {
-                    let flags = src[0];
-                    let command = (flags & 0b0000_0100) != 0;
-                    let long = (flags & 0b0000_0010) != 0;
-                    let more = ((flags & 0b0000_0001) != 0) | command;
-
-                    let frame_len = if !long && src.len() >= 2 {
-                        let command_len = src[1] as usize;
-                        src.advance(2);
-                        command_len
-                    } else if long && src.len() >= 9 {
-                        src.advance(1);
-                        use std::usize;
-                        usize::from_be_bytes(unsafe {
-                            *(src.split_to(8).as_ptr() as *const [u8; 8])
-                        })
-                    } else {
-                        return Ok(None);
-                    };
-                    self.state = DecoderState::Frame(command, frame_len, more);
-                    return self.decode(src);
-                }
-                DecoderState::Frame(command, frame_len, more) => {
-                    if src.len() < frame_len {
-                        src.reserve(frame_len);
-                        return Ok(None);
-                    }
-                    if more {
-                        self.state = DecoderState::FrameHeader;
-                    } else {
-                        self.state = DecoderState::End;
-                    }
-                    if command {
-                        let message = Command(ZmqCommand::try_from(src.split_to(frame_len))?);
-                        return Ok(Some(message));
-                    }
-                    // TODO process message frame
-                    todo!()
-                }
-                DecoderState::End => Err(ZmqError::NO_MESSAGE),
-            }
-        };
-    }
-}
-
-impl Encoder for ZmqCodec {
-    type Item = Message;
-    type Error = ZmqError;
-
-    fn encode(&mut self, message: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        match message {
-            Message::Greeting(payload) => dst.unsplit(payload.into()),
-            Message::Bytes(data) => dst.extend_from_slice(&data),
-            Message::Command(command) => dst.unsplit(command.into())
-        }
-        Ok(())
-    }
-}
-
-pub struct Socket {
-    _inner: Framed<TcpStream, ZmqCodec>,
-}
-
-impl Socket {
-    pub async fn connect(endpoint: &str) -> ZmqResult<Self> {
-        let addr = endpoint.parse::<SocketAddr>()?;
-        let mut socket = Socket {
-            _inner: Framed::new(TcpStream::connect(addr).await?, ZmqCodec::new()),
-        };
-        socket.send(Message::Greeting(ZmqGreeting::default())).await?;
-
-        let greeting = socket.recv().await?;
-        match greeting {
-            Greeting(greet) => match greet.version {
-                (3, 0) => {},
-                _ => return Err(ZmqError::OTHER("Unsupported protocol version"))
-            },
-            _ => return Err(ZmqError::CODEC("Failed Greeting exchange"))
-        };
-
-        let ready = ZmqCommand::ready(SocketType::REQ);
-        socket.send(Message::Command(ready)).await?;
-
-        let ready_repl = socket.recv().await?;
-        dbg!(&ready_repl);
-
-        Ok(socket)
-    }
-
-    pub async fn send(&mut self, data: Message) -> ZmqResult<()> {
-        self._inner.send(data).await
-    }
-
-    pub async fn recv(&mut self) -> ZmqResult<Message> {
-        let message = self._inner.next().await;
-        match message {
-            Some(m) => Ok(m?),
-            None => Err(ZmqError::NO_MESSAGE),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests;
