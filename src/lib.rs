@@ -20,7 +20,6 @@ mod error;
 
 use crate::codec::*;
 use crate::error::ZmqError;
-use std::collections::HashMap;
 
 pub type ZmqResult<T> = Result<T, ZmqError>;
 
@@ -39,7 +38,6 @@ pub enum SocketType {
     XSUB = 10,
     STREAM = 11,
 }
-
 
 impl Display for SocketType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -88,54 +86,6 @@ pub fn sockets_compatible(one: SocketType, another: SocketType) -> bool {
     COMPATIBILITY_MATRIX[row_index * 11 + col_index] != 0
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum ZmqCommandName {
-    READY,
-}
-
-#[derive(Debug, Clone)]
-pub struct ZmqCommand {
-    pub name: ZmqCommandName,
-    pub properties: HashMap<String, String>
-}
-
-impl ZmqCommand {
-
-    pub fn ready(socket: SocketType) -> Self {
-        let mut properties = HashMap::new();
-        properties.insert("Socket-Type".into(), format!("{}", socket));
-        Self { name: ZmqCommandName::READY, properties }
-    }
-}
-
-impl TryFrom<BytesMut> for ZmqCommand {
-    type Error = ZmqError;
-
-    fn try_from(mut buf: BytesMut) -> Result<Self, Self::Error> {
-        let command_len = buf[0] as usize;
-        buf.advance(1);
-        // command-name-char = ALPHA according to https://rfc.zeromq.org/spec:23/ZMTP/
-        let command_name =
-            unsafe { String::from_utf8_unchecked(buf.split_to(command_len).to_vec()) };
-        let command = match command_name.as_str() {
-            "READY" => ZmqCommandName::READY,
-            _ => return Err(ZmqError::CODEC("Uknown command received")),
-        };
-        let mut properties = HashMap::new();
-
-        while !buf.is_empty() { // Collect command properties
-            let prop_len = buf[0] as usize;
-            buf.advance(1);
-            let property = unsafe { String::from_utf8_unchecked(buf.split_to(prop_len).to_vec()) };
-
-            use std::u32;
-            let prop_val_len = unsafe { u32::from_be_bytes(*(buf.split_to(4).as_ptr() as *const [u8 ;4])) as usize };
-            let prop_value = unsafe { String::from_utf8_unchecked(buf.split_to(prop_val_len).to_vec()) };
-            properties.insert(property, prop_value);
-        }
-        Ok(Self { name: command, properties })
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -213,7 +163,7 @@ impl Decoder for ZmqCodec {
                     } else if long && src.len() >= 9 {
                         src.advance(1);
                         use std::usize;
-                        usize::from_ne_bytes(unsafe {
+                        usize::from_be_bytes(unsafe {
                             *(src.split_to(8).as_ptr() as *const [u8; 8])
                         })
                     } else {
@@ -253,7 +203,7 @@ impl Encoder for ZmqCodec {
         match message {
             Message::Greeting(payload) => dst.unsplit(payload.into()),
             Message::Bytes(data) => dst.extend_from_slice(&data),
-            _ => {}
+            Message::Command(command) => dst.unsplit(command.into())
         }
         Ok(())
     }
@@ -269,16 +219,19 @@ impl Socket {
         let mut socket = Socket {
             _inner: Framed::new(TcpStream::connect(addr).await?, ZmqCodec::new()),
         };
-        let greeting = Message::Greeting(ZmqGreeting::default());
-        socket.send(greeting).await?;
+        socket.send(Message::Greeting(ZmqGreeting::default())).await?;
 
-        let greeting_repl = socket.recv().await?;
-        dbg!(greeting_repl);
+        let greeting = socket.recv().await?;
+        match greeting {
+            Greeting(greet) => match greet.version {
+                (3, 0) => {},
+                _ => return Err(ZmqError::OTHER("Unsupported protocol version"))
+            },
+            _ => return Err(ZmqError::CODEC("Failed Greeting exchange"))
+        };
 
-        let ready = b"\x04\x19\x05READY\x0bSocket-Type\0\0\0\x03REQ";
-        socket
-            .send(Message::Bytes(Bytes::from_static(ready)))
-            .await?;
+        let ready = ZmqCommand::ready(SocketType::REQ);
+        socket.send(Message::Command(ready)).await?;
 
         let ready_repl = socket.recv().await?;
         dbg!(&ready_repl);
