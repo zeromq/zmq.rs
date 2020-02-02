@@ -1,8 +1,8 @@
 use crate::error::ZmqError;
-use bytes::{Bytes, BytesMut, Buf, BufMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::Display;
-use std::collections::HashMap;
 use tokio_util::codec::{Decoder, Encoder};
 
 use crate::SocketType;
@@ -90,11 +90,10 @@ impl From<ZmqGreeting> for BytesMut {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct ZmqMessage {
     pub data: Bytes,
-    pub more: bool
+    pub more: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -122,7 +121,7 @@ pub(crate) enum ZmqCommandName {
 impl From<ZmqCommandName> for String {
     fn from(c_name: ZmqCommandName) -> Self {
         match c_name {
-            ZmqCommandName::READY => { "READY".into() },
+            ZmqCommandName::READY => "READY".into(),
         }
     }
 }
@@ -198,7 +197,7 @@ impl From<ZmqCommand> for BytesMut {
         if long_message {
             bytes.reserve(message_len + 9);
             bytes.put_u8(0x06);
-            bytes.extend_from_slice( &message_len.to_be_bytes());
+            bytes.extend_from_slice(&message_len.to_be_bytes());
         } else {
             bytes.reserve(message_len + 2);
             bytes.put_u8(0x04);
@@ -215,7 +214,6 @@ impl From<ZmqCommand> for BytesMut {
         bytes
     }
 }
-
 
 #[derive(Debug)]
 enum DecoderState {
@@ -244,7 +242,7 @@ impl Decoder for ZmqCodec {
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         dbg!(&src);
         if src.is_empty() {
-            return Ok(None)
+            return Ok(None);
         }
         match self.state {
             DecoderState::Greeting => {
@@ -289,7 +287,10 @@ impl Decoder for ZmqCodec {
                 let message = if command {
                     Message::Command(ZmqCommand::try_from(src.split_to(frame_len))?)
                 } else {
-                    Message::Message(ZmqMessage { data: src.split_to(frame_len).freeze(), more })
+                    Message::Message(ZmqMessage {
+                        data: src.split_to(frame_len).freeze(),
+                        more,
+                    })
                 };
                 return Ok(Some(message));
             }
@@ -306,7 +307,7 @@ impl Encoder for ZmqCodec {
         match message {
             Message::Greeting(payload) => dst.unsplit(payload.into()),
             Message::Message(message) => dst.extend_from_slice(&message.data),
-            Message::Command(command) => dst.unsplit(command.into())
+            Message::Command(command) => dst.unsplit(command.into()),
         }
         Ok(())
     }

@@ -1,13 +1,13 @@
 use async_trait::async_trait;
+use futures_util::sink::SinkExt;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
 use tokio::stream::StreamExt;
-use futures_util::sink::SinkExt;
 use tokio_util::codec::Framed;
 
-use crate::{Socket, ZmqResult};
-use crate::error::*;
 use crate::codec::*;
+use crate::error::*;
+use crate::{Socket, ZmqResult};
 
 pub struct ReqSocket {
     pub(crate) _inner: Framed<TcpStream, ZmqCodec>,
@@ -15,7 +15,6 @@ pub struct ReqSocket {
 
 #[async_trait]
 impl Socket for ReqSocket {
-
     async fn send(&mut self, data: ZmqMessage) -> ZmqResult<()> {
         self._inner.send(Message::Message(data)).await
     }

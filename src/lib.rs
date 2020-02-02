@@ -2,16 +2,16 @@
 extern crate enum_primitive_derive;
 use num_traits::{FromPrimitive, ToPrimitive};
 
-use bytes::{Buf, Bytes, BytesMut};
 use async_trait::async_trait;
+use bytes::{Buf, Bytes, BytesMut};
+use futures_util::sink::SinkExt;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
-use tokio::stream::StreamExt;
-use futures_util::sink::SinkExt;
 use tokio::prelude::*;
+use tokio::stream::StreamExt;
 use tokio_util::codec::Framed;
 
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::fmt::Display;
 
 mod codec;
@@ -23,8 +23,8 @@ mod tests;
 
 use crate::codec::*;
 use crate::error::ZmqError;
-use crate::SocketType::REQ;
 use crate::req::ReqSocket;
+use crate::SocketType::REQ;
 
 pub use crate::codec::ZmqMessage;
 
@@ -44,6 +44,28 @@ pub enum SocketType {
     XPUB = 9,
     XSUB = 10,
     STREAM = 11,
+}
+
+impl TryFrom<&str> for SocketType {
+    type Error = ZmqError;
+
+    fn try_from(s: &str) -> Result<Self, ZmqError> {
+        Ok(match s {
+            "PAIR" => SocketType::PAIR,
+            "PUB" => SocketType::PUB,
+            "SUB" => SocketType::SUB,
+            "REQ" => SocketType::REQ,
+            "REP" => SocketType::REP,
+            "DEALER" => SocketType::DEALER,
+            "ROUTER" => SocketType::ROUTER,
+            "PULL" => SocketType::PULL,
+            "PUSH" => SocketType::PUSH,
+            "XPUB" => SocketType::XPUB,
+            "XSUB" => SocketType::XSUB,
+            "STREAM" => SocketType::STREAM,
+            _ => return Err(ZmqError::CODEC("Unknown socket type")),
+        })
+    }
 }
 
 impl Display for SocketType {
@@ -93,7 +115,6 @@ pub fn sockets_compatible(one: SocketType, another: SocketType) -> bool {
     COMPATIBILITY_MATRIX[row_index * 11 + col_index] != 0
 }
 
-
 #[async_trait]
 pub trait Socket {
     async fn send(&mut self, data: ZmqMessage) -> ZmqResult<()>;
@@ -103,23 +124,47 @@ pub trait Socket {
 pub async fn connect(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<dyn Socket>> {
     let addr = endpoint.parse::<SocketAddr>()?;
     let mut raw_socket = Framed::new(TcpStream::connect(addr).await?, ZmqCodec::new());
-    raw_socket.send(Message::Greeting(ZmqGreeting::default())).await?;
+    raw_socket
+        .send(Message::Greeting(ZmqGreeting::default()))
+        .await?;
 
     let greeting: Option<Result<Message, ZmqError>> = raw_socket.next().await;
 
     match greeting {
         Some(Ok(Message::Greeting(greet))) => match greet.version {
-            (3, 0) => {},
-            _ => return Err(ZmqError::OTHER("Unsupported protocol version"))
+            (3, 0) => {}
+            _ => return Err(ZmqError::OTHER("Unsupported protocol version")),
         },
-        _ => return Err(ZmqError::CODEC("Failed Greeting exchange"))
+        _ => return Err(ZmqError::CODEC("Failed Greeting exchange")),
     };
 
-    let ready = ZmqCommand::ready(SocketType::REQ);
+    let ready = ZmqCommand::ready(socket_type);
     raw_socket.send(Message::Command(ready)).await?;
 
-    let ready_repl = raw_socket.next().await;
-    dbg!(&ready_repl);
+    let ready_repl: Option<ZmqResult<Message>> = raw_socket.next().await;
+    match ready_repl {
+        Some(Ok(Message::Command(c))) => match c.name {
+            ZmqCommandName::READY => {
+                let other_sock_type = c
+                    .properties
+                    .get("Socket-Type")
+                    .map(|x| SocketType::try_from(x.as_str()))
+                    .unwrap_or(Err(ZmqError::CODEC("Failed to parse other socket type")))?;
+
+                dbg!(socket_type);
+                dbg!(other_sock_type);
+                if !sockets_compatible(socket_type, other_sock_type) {
+                    return Err(ZmqError::OTHER(
+                        "Provided sockets combination is not compatible",
+                    ));
+                }
+            }
+            _ => return Err(ZmqError::CODEC("Failed to confirm ready state")),
+        },
+        Some(Ok(_)) => return Err(ZmqError::CODEC("Failed to confirm ready state")),
+        Some(Err(e)) => return Err(e),
+        None => return Err(ZmqError::OTHER("No reply from server")),
+    }
 
     let socket = match socket_type {
         SocketType::REQ => Box::new(ReqSocket { _inner: raw_socket }),
