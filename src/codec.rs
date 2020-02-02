@@ -269,15 +269,11 @@ impl Decoder for ZmqCodec {
                 let more = ((flags & 0b0000_0001) != 0) | command;
 
                 let frame_len = if !long && src.len() >= 2 {
-                    let command_len = src[1] as usize;
-                    src.advance(2);
-                    command_len
+                    src.advance(1);
+                    src.get_u8() as usize
                 } else if long && src.len() >= 9 {
                     src.advance(1);
-                    use std::usize;
-                    usize::from_be_bytes(unsafe {
-                        *(src.split_to(8).as_ptr() as *const [u8; 8])
-                    })
+                    src.get_u64() as usize
                 } else {
                     return Ok(None);
                 };
