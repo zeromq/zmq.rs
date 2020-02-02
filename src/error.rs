@@ -1,12 +1,12 @@
-use std::fmt::Display;
 use std::error::Error;
+use std::fmt::Display;
 
 #[derive(Debug)]
 pub enum ZmqError {
     NETWORK(Box<dyn Error>),
     CODEC(&'static str),
     OTHER(&'static str),
-    NO_MESSAGE
+    NO_MESSAGE,
 }
 
 impl Display for ZmqError {
@@ -15,7 +15,7 @@ impl Display for ZmqError {
             ZmqError::OTHER(message) => write!(f, "{}", message),
             ZmqError::CODEC(message) => write!(f, "{}", message),
             ZmqError::NETWORK(reason) => write!(f, "{}", reason),
-            ZmqError::NO_MESSAGE => write!(f, "No data received")
+            ZmqError::NO_MESSAGE => write!(f, "No data received"),
         };
     }
 }

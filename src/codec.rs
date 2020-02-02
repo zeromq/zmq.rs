@@ -1,13 +1,13 @@
-use bytes::{BytesMut, Bytes};
-use std::convert::TryFrom;
 use crate::error::ZmqError;
+use bytes::{Bytes, BytesMut};
+use std::convert::TryFrom;
 use std::fmt::Display;
 
 #[derive(Debug, Copy, Clone)]
 pub enum ZmqMechanism {
     NULL,
     PLAIN,
-    CURVE
+    CURVE,
 }
 
 impl Display for ZmqMechanism {
@@ -24,7 +24,7 @@ impl TryFrom<Vec<u8>> for ZmqMechanism {
     type Error = ZmqError;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        let mech = value.split(|x| *x == 0x0 ).next().unwrap_or(b"");
+        let mech = value.split(|x| *x == 0x0).next().unwrap_or(b"");
         // mechanism-char = "A"-"Z" | DIGIT
         //                  | "-" | "_" | "." | "+" | %x0
         // according to https://rfc.zeromq.org/spec:23/ZMTP/
@@ -33,7 +33,7 @@ impl TryFrom<Vec<u8>> for ZmqMechanism {
             "NULL" => Ok(ZmqMechanism::NULL),
             "PLAIN" => Ok(ZmqMechanism::PLAIN),
             "CURVE" => Ok(ZmqMechanism::CURVE),
-            _ => Err(ZmqError::OTHER("Failed to parse ZmqMechanism"))
+            _ => Err(ZmqError::OTHER("Failed to parse ZmqMechanism")),
         }
     }
 }
@@ -42,7 +42,7 @@ impl TryFrom<Vec<u8>> for ZmqMechanism {
 pub struct ZmqGreeting {
     pub version: (u8, u8),
     pub mechanism: ZmqMechanism,
-    pub asServer: bool
+    pub as_server: bool,
 }
 
 impl Default for ZmqGreeting {
@@ -50,7 +50,7 @@ impl Default for ZmqGreeting {
         Self {
             version: (3, 0),
             mechanism: ZmqMechanism::NULL,
-            asServer: false
+            as_server: false,
         }
     }
 }
@@ -60,18 +60,17 @@ impl TryFrom<Bytes> for ZmqGreeting {
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
         if !(value[0] == 0xff && value[9] == 0x7f) {
-            return Err(ZmqError::CODEC("Failed to parse greeting"))
+            return Err(ZmqError::CODEC("Failed to parse greeting"));
         }
         Ok(ZmqGreeting {
             version: (value[10], value[11]),
             mechanism: ZmqMechanism::try_from(value[12..32].to_vec())?,
-            asServer: value[32] == 0x01
+            as_server: value[32] == 0x01,
         })
     }
 }
 
 impl From<ZmqGreeting> for BytesMut {
-
     fn from(greet: ZmqGreeting) -> Self {
         let mut data: [u8; 64] = [0; 64];
         data[0] = 0xff;
@@ -79,8 +78,8 @@ impl From<ZmqGreeting> for BytesMut {
         data[10] = greet.version.0;
         data[11] = greet.version.1;
         let mech = format!("{}", greet.mechanism);
-        data[12..12+mech.len()].copy_from_slice(mech.as_bytes());
-        data[32] = greet.asServer.into();
+        data[12..12 + mech.len()].copy_from_slice(mech.as_bytes());
+        data[32] = greet.as_server.into();
         let mut bytes = BytesMut::new();
         bytes.extend_from_slice(&data);
         bytes

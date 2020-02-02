@@ -1,6 +1,6 @@
-use std::error::Error;
-use zmq::{Socket, SocketType, Message};
 use bytes::Bytes;
+use std::error::Error;
+use zmq_rs::{Message, Socket, SocketType};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -10,9 +10,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let hello = b"\x01\0\0\x05Hello";
     dbg!(hello);
-    socket.send(Message::Bytes(Bytes::from_static(hello)), 0).await?;
+    socket
+        .send(Message::Bytes(Bytes::from_static(hello)))
+        .await?;
 
-    let data = socket.recv(0).await?;
+    let data = socket.recv().await?;
     dbg!(data);
     Ok(())
 }
