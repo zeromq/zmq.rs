@@ -9,16 +9,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
         .expect("Failed to connect");
 
-    let hello = b"\x01\0\0\x05Hello";
-    dbg!(hello);
-    socket
-        .send(ZmqMessage {
-            data: Bytes::from_static(hello),
-            more: false,
-        })
-        .await?;
-
+    let hello = Vec::from("Hello");
+    socket.send(hello).await?;
     let data = socket.recv().await?;
-    dbg!(data);
+    let repl = String::from_utf8(data)?;
+    dbg!(repl);
+
+    let hello = Vec::from("NewHello");
+    socket.send(hello).await?;
+    let data = socket.recv().await?;
+    let repl = String::from_utf8(data)?;
+    dbg!(repl);
     Ok(())
 }

@@ -101,6 +101,7 @@ pub(crate) enum Message {
     Greeting(ZmqGreeting),
     Command(ZmqCommand),
     Message(ZmqMessage),
+    MultipartMessage(Vec<ZmqMessage>),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -288,6 +289,29 @@ impl Decoder for ZmqCodec {
     }
 }
 
+impl ZmqCodec {
+    fn _encode_message(&mut self, message: ZmqMessage, dst: &mut BytesMut) {
+        let mut flags: u8 = 0;
+        if message.more {
+            flags |= 0b0000_0001;
+        }
+        let len = message.data.len();
+        if len > 255 {
+            flags |= 0b0000_0010;
+            dst.reserve(len + 9);
+        } else {
+            dst.reserve(len + 2);
+        }
+        dst.put_u8(flags);
+        if len > 255 {
+            dst.put_u64(len as u64);
+        } else {
+            dst.put_u8(len as u8);
+        }
+        dst.extend_from_slice(message.data.as_ref());
+    }
+}
+
 impl Encoder for ZmqCodec {
     type Item = Message;
     type Error = ZmqError;
@@ -295,8 +319,13 @@ impl Encoder for ZmqCodec {
     fn encode(&mut self, message: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
         match message {
             Message::Greeting(payload) => dst.unsplit(payload.into()),
-            Message::Message(message) => dst.extend_from_slice(&message.data),
+            Message::Message(message) => self._encode_message(message, dst),
             Message::Command(command) => dst.unsplit(command.into()),
+            Message::MultipartMessage(parts) => {
+                for part in parts {
+                    self._encode_message(part, dst);
+                }
+            }
         }
         Ok(())
     }

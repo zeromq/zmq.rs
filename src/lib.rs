@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use futures_util::sink::SinkExt;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
-use tokio::prelude::*;
 use tokio::stream::StreamExt;
 use tokio_util::codec::Framed;
 
@@ -115,8 +114,8 @@ pub fn sockets_compatible(one: SocketType, another: SocketType) -> bool {
 
 #[async_trait]
 pub trait Socket {
-    async fn send(&mut self, data: ZmqMessage) -> ZmqResult<()>;
-    async fn recv(&mut self) -> ZmqResult<ZmqMessage>;
+    async fn send(&mut self, data: Vec<u8>) -> ZmqResult<()>;
+    async fn recv(&mut self) -> ZmqResult<Vec<u8>>;
 }
 
 pub async fn connect(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<dyn Socket>> {
@@ -154,7 +153,7 @@ pub async fn connect(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<d
                         "Provided sockets combination is not compatible",
                     ));
                 }
-            },
+            }
         },
         Some(Ok(_)) => return Err(ZmqError::CODEC("Failed to confirm ready state")),
         Some(Err(e)) => return Err(e),
