@@ -7,7 +7,7 @@ use tokio_util::codec::Framed;
 use crate::codec::*;
 use crate::error::*;
 use crate::{Socket, ZmqResult};
-use bytes::BytesMut;
+use bytes::{BytesMut, BufMut};
 
 pub struct SubSocket {
     pub(crate) _inner: Framed<TcpStream, ZmqCodec>,
@@ -27,5 +27,27 @@ impl Socket for SubSocket {
             Some(Err(e)) => Err(e),
             None => Err(ZmqError::NO_MESSAGE),
         }
+    }
+}
+
+impl SubSocket {
+    pub async fn subscribe(&mut self, subscription: &str) -> ZmqResult<()> {
+        let mut sub = BytesMut::with_capacity(subscription.len() + 1);
+        sub.put_u8(1);
+        sub.extend_from_slice(subscription.as_bytes());
+        self._inner.send(
+            Message::Message(ZmqMessage { data: sub.freeze(), more: false })
+        ).await?;
+        Ok(())
+    }
+
+    pub async fn unsubscribe(&mut self, subscription: &str) -> ZmqResult<()> {
+        let mut sub = BytesMut::with_capacity(subscription.len() + 1);
+        sub.put_u8(0);
+        sub.extend_from_slice(subscription.as_bytes());
+        self._inner.send(
+            Message::Message(ZmqMessage { data: sub.freeze(), more: false })
+        ).await?;
+        Ok(())
     }
 }
