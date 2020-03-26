@@ -5,6 +5,7 @@ use std::fmt::Display;
 pub enum ZmqError {
     NETWORK(Box<dyn Error>),
     CODEC(&'static str),
+    SOCKET(&'static str),
     OTHER(&'static str),
     NO_MESSAGE,
 }
@@ -14,6 +15,7 @@ impl Display for ZmqError {
         return match self {
             ZmqError::OTHER(message) => write!(f, "{}", message),
             ZmqError::CODEC(message) => write!(f, "{}", message),
+            ZmqError::SOCKET(message) => write!(f, "{}", message),
             ZmqError::NETWORK(reason) => write!(f, "{}", reason),
             ZmqError::NO_MESSAGE => write!(f, "No data received"),
         };

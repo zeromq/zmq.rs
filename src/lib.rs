@@ -11,12 +11,13 @@ use tokio::stream::StreamExt;
 use tokio_util::codec::Framed;
 
 use std::convert::TryFrom;
-use std::fmt::Display;
+use std::fmt::{Display, Debug};
 
 mod codec;
 mod error;
 mod req;
 mod rep;
+mod sub;
 mod util;
 
 #[cfg(test)]
@@ -29,6 +30,8 @@ use crate::rep::*;
 use crate::util::*;
 
 pub use crate::codec::ZmqMessage;
+use crate::sub::SubSocket;
+use bytes::BytesMut;
 
 pub type ZmqResult<T> = Result<T, ZmqError>;
 
@@ -108,8 +111,14 @@ pub async fn connect(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<d
     ready_exchange(&mut raw_socket, socket_type).await?;
 
 
-    let socket = match socket_type {
+    let socket: Box<dyn Socket> = match socket_type {
         SocketType::REQ => Box::new(ReqSocket { _inner: raw_socket }),
+        SocketType::SUB => {
+            let subsciption = BytesMut::from("\x01");
+            raw_socket.send(Message::Message(ZmqMessage { data: subsciption.freeze(), more: false }))
+                .await?;
+            Box::new(SubSocket { _inner: raw_socket })
+        },
         _ => return Err(ZmqError::OTHER("Socket type not supported")),
     };
     Ok(socket)
