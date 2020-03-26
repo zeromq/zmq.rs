@@ -230,7 +230,6 @@ impl Decoder for ZmqCodec {
     type Error = ZmqError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        dbg!(&src);
         if src.is_empty() {
             return Ok(None);
         }
