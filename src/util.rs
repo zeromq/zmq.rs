@@ -1,4 +1,5 @@
 use crate::*;
+use tokio::net::TcpStream;
 
 const COMPATIBILITY_MATRIX: [u8; 121] = [
     // PAIR, PUB, SUB, REQ, REP, DEALER, ROUTER, PULL, PUSH, XPUB, XSUB
@@ -71,4 +72,13 @@ pub(crate) async fn ready_exchange(socket: &mut Framed<TcpStream, ZmqCodec>, soc
         Some(Err(e)) => Err(e),
         None => Err(ZmqError::OTHER("No reply from server")),
     }
+}
+
+
+pub(crate) async fn raw_connect(socket_type: SocketType, endpoint: &str) -> ZmqResult<Framed<TcpStream, ZmqCodec>> {
+    let addr = endpoint.parse::<SocketAddr>()?;
+    let mut raw_socket = Framed::new(TcpStream::connect(addr).await?, ZmqCodec::new());
+    greet_exchange(&mut raw_socket).await?;
+    ready_exchange(&mut raw_socket, socket_type).await?;
+    Ok(raw_socket)
 }

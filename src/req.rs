@@ -6,8 +6,9 @@ use tokio_util::codec::Framed;
 
 use crate::codec::*;
 use crate::error::*;
-use crate::{Socket, ZmqResult};
+use crate::{Socket, ZmqResult, SocketType};
 use bytes::BytesMut;
+use crate::util::raw_connect;
 
 pub struct ReqSocket {
     pub(crate) _inner: Framed<TcpStream, ZmqCodec>,
@@ -49,5 +50,12 @@ impl Socket for ReqSocket {
             Some(Err(e)) => Err(e),
             None => Err(ZmqError::NO_MESSAGE),
         }
+    }
+}
+
+impl ReqSocket {
+    pub async fn connect(endpoint: &str) -> ZmqResult<Self> {
+        let raw_socket = raw_connect(SocketType::REQ, endpoint).await?;
+        Ok(Self { _inner: raw_socket })
     }
 }

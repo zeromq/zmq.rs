@@ -25,9 +25,9 @@ mod tests;
 
 use crate::codec::*;
 use crate::error::ZmqError;
-use crate::req::*;
-use crate::rep::*;
-use crate::sub::*;
+pub use crate::req::*;
+pub use crate::rep::*;
+pub use crate::sub::*;
 use crate::util::*;
 
 pub use crate::codec::ZmqMessage;
@@ -100,26 +100,6 @@ pub trait Socket: Send {
 #[async_trait]
 pub trait SocketServer {
     async fn accept(&mut self) -> ZmqResult<Box<dyn Socket>>;
-}
-
-pub async fn connect(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<dyn Socket>> {
-    let addr = endpoint.parse::<SocketAddr>()?;
-    let mut raw_socket = Framed::new(TcpStream::connect(addr).await?, ZmqCodec::new());
-    greet_exchange(&mut raw_socket).await?;
-
-    ready_exchange(&mut raw_socket, socket_type).await?;
-
-
-    let socket: Box<dyn Socket> = match socket_type {
-        SocketType::REQ => Box::new(ReqSocket { _inner: raw_socket }),
-        SocketType::SUB => {
-            let mut sock = SubSocket { _inner: raw_socket };
-            sock.subscribe("").await?;
-            Box::new(sock)
-        },
-        _ => return Err(ZmqError::OTHER("Socket type not supported")),
-    };
-    Ok(socket)
 }
 
 pub async fn bind(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<dyn SocketServer>> {

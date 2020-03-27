@@ -6,8 +6,10 @@ use tokio_util::codec::Framed;
 
 use crate::codec::*;
 use crate::error::*;
-use crate::{Socket, ZmqResult};
+use crate::util::*;
+use crate::{Socket, ZmqResult, SocketType};
 use bytes::{BytesMut, BufMut};
+use std::net::SocketAddr;
 
 pub struct SubSocket {
     pub(crate) _inner: Framed<TcpStream, ZmqCodec>,
@@ -31,6 +33,12 @@ impl Socket for SubSocket {
 }
 
 impl SubSocket {
+
+    pub async fn connect(endpoint: &str) -> ZmqResult<Self> {
+        let raw_socket = raw_connect(SocketType::SUB, endpoint).await?;
+        Ok(Self { _inner: raw_socket })
+    }
+
     pub async fn subscribe(&mut self, subscription: &str) -> ZmqResult<()> {
         let mut sub = BytesMut::with_capacity(subscription.len() + 1);
         sub.put_u8(1);
