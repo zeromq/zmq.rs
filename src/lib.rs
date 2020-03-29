@@ -17,7 +17,7 @@ mod codec;
 mod error;
 mod req;
 mod rep;
-mod sub;
+mod pub_sub;
 mod util;
 
 #[cfg(test)]
@@ -27,7 +27,7 @@ use crate::codec::*;
 use crate::error::ZmqError;
 pub use crate::req::*;
 pub use crate::rep::*;
-pub use crate::sub::*;
+pub use crate::pub_sub::*;
 use crate::util::*;
 
 pub use crate::codec::ZmqMessage;
