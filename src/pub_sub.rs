@@ -12,17 +12,17 @@ use crate::codec::*;
 use crate::error::*;
 use crate::util::*;
 use crate::{Socket, ZmqResult, SocketType};
-use bytes::{BytesMut, BufMut, Bytes};
+use bytes::{BytesMut, BufMut, Bytes, Buf};
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 
-struct Subscriber {
+pub(crate) struct Subscriber {
     pub subscriptions: Vec<Vec<u8>>,
-    pub connection: TcpStream,
-    //pub sink: FramedWrite<WriteHalf, ZmqCodec>
+    pub connection: tokio_util::codec::FramedWrite<tokio::io::WriteHalf<tokio::net::TcpStream>, ZmqCodec>,
 }
 
 pub struct PubSocket {
-    subscribers: Vec<Subscriber>,
+    pub(crate) subscribers: Arc<Mutex<Vec<Subscriber>>>,
     accept_handle: futures::channel::oneshot::Sender<bool>
 }
 
@@ -30,7 +30,8 @@ pub struct PubSocket {
 impl Socket for PubSocket {
     async fn send(&mut self, data: Vec<u8>) -> ZmqResult<()> {
         let message = ZmqMessage { data: Bytes::from(data), more: false};
-        for subscriber in &mut self.subscribers {
+        let mut subscribers = self.subscribers.lock().expect("Failed to lock subscribers");
+        for subscriber in subscribers.iter_mut() {
             println!("Message sent")
             //subscriber.sink.send(Message::Message(message.clone())).await?
         }
@@ -43,27 +44,78 @@ impl Socket for PubSocket {
 }
 
 impl PubSocket {
+    async fn handle_subscriber(socket: tokio::net::TcpStream, subscribers: Arc<Mutex<Vec<Subscriber>>>) {
+        let (read, write) = tokio::io::split(socket);
+        let mut read_part = tokio_util::codec::FramedRead::new(read, ZmqCodec::new());
+        let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
+        //let mut socket = Framed::new(socket, ZmqCodec::new());
+        //greet_exchange(&mut socket).await.expect("Failed to exchange greetings");
+        {
+            write_part
+                .send(Message::Greeting(ZmqGreeting::default()))
+                .await;
+
+            let greeting: Option<Result<Message, ZmqError>> = read_part.next().await;
+
+            match greeting {
+                Some(Ok(Message::Greeting(greet))) => match greet.version {
+                    (3, 0) => Ok(()),
+                    _ => Err(ZmqError::OTHER("Unsupported protocol version")),
+                },
+                _ => Err(ZmqError::CODEC("Failed Greeting exchange")),
+            }.unwrap();
+        }
+        {
+            write_part.send(Message::Command(ZmqCommand::ready(SocketType::PUB))).await;
+
+            let _ready_repl: Option<ZmqResult<Message>> = read_part.next().await;
+        }
+
+        let mut subscriber_id = None;
+        {
+            let mut locked_subscribers = subscribers.lock().expect("Failed to lock subscribers");
+            locked_subscribers.push(Subscriber { subscriptions: vec![], connection: write_part});
+            subscriber_id = Some(locked_subscribers.len());
+        }
+
+        loop {
+            let msg: Option<ZmqResult<Message>> = read_part.next().await;
+            match msg {
+                Some(Ok(Message::Message(message))) => {
+                    let data = message.data.to_vec();
+                    if data.len() < 1 {
+                        panic!("Unable to handle message")
+                    }
+
+                },
+                _ => {
+                    todo!()
+                }
+            }
+        }
+    }
+
     pub async fn bind(endpoint: &str) -> ZmqResult<Self> {
-        let mut listener = TcpListener::bind(endpoint).await?;
+        let mut listener = tokio::net::TcpListener::bind(endpoint).await?;
         let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
+        let mut pub_socket = Self { subscribers: Arc::new(Mutex::new(vec![])), accept_handle: sender };
+        let subscribers = pub_socket.subscribers.clone();
         tokio::spawn(async move {
+            let mut stop_callback = receiver.fuse();
             loop {
                 select! {
                     incoming = listener.accept().fuse() => {
                         let (socket, _) = incoming.expect("Failed to accept connection");
-                        let mut socket = Framed::new(socket, ZmqCodec::new());
-                        greet_exchange(&mut socket).await.expect("Failed to exchange greetings");
-                        ready_exchange(&mut socket, SocketType::PUB).await.expect("Failed to exchange ready");
-                        todo!()
+                        tokio::spawn(PubSocket::handle_subscriber(socket, subscribers.clone()));
                     },
-                    stop = receiver.fuse() => {
+                    _ = stop_callback => {
                         println!("Stop signal received");
                         break
                     }
                 }
             }
         });
-        Ok(Self { subscribers: vec![], accept_handle: sender })
+        Ok(pub_socket)
     }
 }
 

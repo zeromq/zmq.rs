@@ -18,7 +18,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let relhumidity = rng.gen_range(10, 60);
         let message = format!("{} {} {}", zipcode, temperature, relhumidity);
         socket.send(message.into_bytes()).await?;
-        break
+        tokio::time::delay_for(Duration::from_secs(1)).await;
     }
     drop(socket);
 
