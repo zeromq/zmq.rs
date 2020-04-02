@@ -14,7 +14,8 @@ use crate::util::*;
 use crate::{Socket, ZmqResult, SocketType};
 use bytes::{BytesMut, BufMut, Bytes, Buf};
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use futures::lock::Mutex;
 
 pub(crate) struct Subscriber {
     pub subscriptions: Vec<Vec<u8>>,
@@ -30,10 +31,19 @@ pub struct PubSocket {
 impl Socket for PubSocket {
     async fn send(&mut self, data: Vec<u8>) -> ZmqResult<()> {
         let message = ZmqMessage { data: Bytes::from(data), more: false};
-        let mut subscribers = self.subscribers.lock().expect("Failed to lock subscribers");
-        for subscriber in subscribers.iter_mut() {
-            println!("Message sent")
-            //subscriber.sink.send(Message::Message(message.clone())).await?
+        let mut fanout = vec![];
+        {
+            let mut subscribers = self.subscribers.lock().await;
+            for subscriber in subscribers.iter_mut() {
+                for sub_filter in &subscriber.subscriptions {
+                    if sub_filter.as_slice() == &message.data[0..sub_filter.len()] {
+                        fanout.push(subscriber.connection.send(Message::Message(message.clone())));
+                        break;
+                    }
+                }
+            }
+            println!("Sending message to all piers");
+            futures::future::join_all(fanout).await;
         }
         Ok(())
     }
@@ -73,9 +83,9 @@ impl PubSocket {
 
         let mut subscriber_id = None;
         {
-            let mut locked_subscribers = subscribers.lock().expect("Failed to lock subscribers");
+            let mut locked_subscribers = subscribers.lock().await;
             locked_subscribers.push(Subscriber { subscriptions: vec![], connection: write_part});
-            subscriber_id = Some(locked_subscribers.len());
+            subscriber_id = Some(locked_subscribers.len() - 1);
         }
 
         loop {
@@ -86,9 +96,39 @@ impl PubSocket {
                     if data.len() < 1 {
                         panic!("Unable to handle message")
                     }
+                    {
+                        let mut locked_subscribers = subscribers.lock().await;
+                        match data[0] {
+                            1 => {
+                                // Subscribe
+                                locked_subscribers[subscriber_id.unwrap()].subscriptions.push(Vec::from(&data[1..]));
+                            },
+                            0 => {
+                                // Unsubscribe
+                                let mut del_index = None;
+                                let sub = Vec::from(&data[1..]);
+                                for (idx, subscription) in locked_subscribers[subscriber_id.unwrap()].subscriptions.iter().enumerate() {
+                                    if &sub == subscription {
+                                        del_index = Some(idx);
+                                        break;
+                                    }
+                                }
+                                if let Some(index) = del_index {
+                                    locked_subscribers[subscriber_id.unwrap()].subscriptions.remove(index);
+                                }
+                            },
+                            _ => panic!("Malformed message")
+                        }
 
+                    }
                 },
-                _ => {
+                Some(other) => {
+                    dbg!(other);
+                    todo!()
+                }
+                None => {
+                    println!("None received");
+                    // TODO implement handling for disconnected client
                     todo!()
                 }
             }

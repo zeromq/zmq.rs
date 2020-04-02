@@ -13,12 +13,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Start sending loop");
     loop {
-        let zipcode = rng.gen_range(1, 100000);
+        let zipcode = rng.gen_range(10000, 10010);
         let temperature = rng.gen_range(-80, 135);
         let relhumidity = rng.gen_range(10, 60);
         let message = format!("{} {} {}", zipcode, temperature, relhumidity);
         socket.send(message.into_bytes()).await?;
-        tokio::time::delay_for(Duration::from_secs(1)).await;
+        tokio::time::delay_for(Duration::from_millis(100)).await;
     }
     drop(socket);
 
