@@ -43,7 +43,7 @@ impl Socket for PubSocket {
                 }
             }
             println!("Sending message to all piers");
-            futures::future::join_all(fanout).await;
+            futures::future::join_all(fanout).await; // Ignore errors for now
         }
         Ok(())
     }
@@ -58,28 +58,15 @@ impl PubSocket {
         let (read, write) = tokio::io::split(socket);
         let mut read_part = tokio_util::codec::FramedRead::new(read, ZmqCodec::new());
         let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
-        //let mut socket = Framed::new(socket, ZmqCodec::new());
-        //greet_exchange(&mut socket).await.expect("Failed to exchange greetings");
-        {
-            write_part
-                .send(Message::Greeting(ZmqGreeting::default()))
-                .await;
 
-            let greeting: Option<Result<Message, ZmqError>> = read_part.next().await;
+        greet_exchange_w_parts(&mut write_part, &mut read_part)
+            .await
+            .expect("Failed to exchange greetings");
 
-            match greeting {
-                Some(Ok(Message::Greeting(greet))) => match greet.version {
-                    (3, 0) => Ok(()),
-                    _ => Err(ZmqError::OTHER("Unsupported protocol version")),
-                },
-                _ => Err(ZmqError::CODEC("Failed Greeting exchange")),
-            }.unwrap();
-        }
-        {
-            write_part.send(Message::Command(ZmqCommand::ready(SocketType::PUB))).await;
+        ready_exchange_w_parts(&mut write_part, &mut read_part, SocketType::PUB)
+            .await
+            .expect("Failed to exchange ready messages");
 
-            let _ready_repl: Option<ZmqResult<Message>> = read_part.next().await;
-        }
 
         let mut subscriber_id = None;
         {
