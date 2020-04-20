@@ -15,8 +15,7 @@ use std::fmt::{Display, Debug};
 
 mod codec;
 mod error;
-mod req;
-mod rep;
+mod req_rep;
 mod pub_sub;
 mod util;
 
@@ -25,8 +24,7 @@ mod tests;
 
 use crate::codec::*;
 use crate::error::ZmqError;
-pub use crate::req::*;
-pub use crate::rep::*;
+pub use crate::req_rep::*;
 pub use crate::pub_sub::*;
 use crate::util::*;
 
