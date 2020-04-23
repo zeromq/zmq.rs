@@ -138,8 +138,7 @@ impl TryFrom<BytesMut> for ZmqCommand {
     type Error = ZmqError;
 
     fn try_from(mut buf: BytesMut) -> Result<Self, Self::Error> {
-        let command_len = buf[0] as usize;
-        buf.advance(1);
+        let command_len = buf.get_u8() as usize;
         // command-name-char = ALPHA according to https://rfc.zeromq.org/spec:23/ZMTP/
         let command_name =
             unsafe { String::from_utf8_unchecked(buf.split_to(command_len).to_vec()) };
@@ -151,14 +150,10 @@ impl TryFrom<BytesMut> for ZmqCommand {
 
         while !buf.is_empty() {
             // Collect command properties
-            let prop_len = buf[0] as usize;
-            buf.advance(1);
+            let prop_len = buf.get_u8() as usize;
             let property = unsafe { String::from_utf8_unchecked(buf.split_to(prop_len).to_vec()) };
 
-            use std::u32;
-            let prop_val_len = unsafe {
-                u32::from_be_bytes(*(buf.split_to(4).as_ptr() as *const [u8; 4])) as usize
-            };
+            let prop_val_len = buf.get_u32() as usize;
             let prop_value =
                 unsafe { String::from_utf8_unchecked(buf.split_to(prop_val_len).to_vec()) };
             properties.insert(property, prop_value);
