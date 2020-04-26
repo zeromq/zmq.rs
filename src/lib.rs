@@ -17,7 +17,8 @@ mod codec;
 mod error;
 mod req_rep;
 mod pub_sub;
-mod util;
+mod dealer_router;
+pub mod util;
 
 #[cfg(test)]
 mod tests;
@@ -26,6 +27,7 @@ use crate::codec::*;
 use crate::error::ZmqError;
 pub use crate::req_rep::*;
 pub use crate::pub_sub::*;
+pub use crate::dealer_router::*;
 use crate::util::*;
 
 pub use crate::codec::ZmqMessage;
@@ -106,4 +108,8 @@ pub async fn bind(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<dyn 
         SocketType::REP => Ok(Box::new(RepSocketServer { _inner: listener })),
         _ => todo!()
     }
+}
+
+pub async fn proxy(s1: Box<dyn Socket>, s2: Box<dyn Socket>) -> ZmqResult<()> {
+    todo!()
 }
