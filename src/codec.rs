@@ -200,21 +200,31 @@ impl From<ZmqCommand> for BytesMut {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Frame {
+    command: bool,
+    long: bool,
+    more: bool,
+}
+
 #[derive(Debug)]
 enum DecoderState {
     Greeting,
     FrameHeader,
-    Frame(bool, usize, bool),
+    FrameLen(Frame),
+    Frame(Frame),
 }
 
 pub(crate) struct ZmqCodec {
     state: DecoderState,
+    waiting_for: usize, // Number of bytes needed to decode frame
 }
 
 impl ZmqCodec {
     pub fn new() -> Self {
         Self {
             state: DecoderState::Greeting,
+            waiting_for: 64, // len of the greeting frame
         }
     }
 }
@@ -224,57 +234,58 @@ impl Decoder for ZmqCodec {
     type Error = ZmqError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if src.is_empty() {
+        dbg!(&src);
+        if src.len() < self.waiting_for {
+            src.reserve(self.waiting_for - src.len());
             return Ok(None);
         }
         match self.state {
             DecoderState::Greeting => {
-                if src.len() >= 64 {
-                    self.state = DecoderState::FrameHeader;
-                    Ok(Some(Message::Greeting(ZmqGreeting::try_from(
-                        src.split_to(64).freeze(),
-                    )?)))
-                } else {
-                    if src[0] == 0xff {
-                        src.reserve(64);
-                        Ok(None)
-                    } else {
-                        Err(ZmqError::Codec("Bad first byte of greeting"))
-                    }
+                if src[0] != 0xff {
+                    return Err(ZmqError::Codec("Bad first byte of greeting"))
                 }
+                self.state = DecoderState::FrameHeader;
+                self.waiting_for = 1;
+                Ok(Some(Message::Greeting(ZmqGreeting::try_from(
+                    src.split_to(64).freeze(),
+                )?)))
             }
             DecoderState::FrameHeader => {
-                let flags = src[0];
+                let flags = src.get_u8();
                 let command = (flags & 0b0000_0100) != 0;
                 let long = (flags & 0b0000_0010) != 0;
                 let more = ((flags & 0b0000_0001) != 0) | command;
 
-                let frame_len = if !long && src.len() >= 2 {
-                    src.advance(1);
-                    src.get_u8() as usize
-                } else if long && src.len() >= 9 {
-                    src.advance(1);
-                    src.get_u64() as usize
-                } else {
-                    return Ok(None);
+                let frame = Frame {
+                    command,
+                    long,
+                    more,
                 };
-                self.state = DecoderState::Frame(command, frame_len, more);
+
+                self.state = DecoderState::FrameLen(frame);
+                self.waiting_for = if frame.long { 8 } else { 1 };
                 return self.decode(src);
             }
-            DecoderState::Frame(command, frame_len, more) => {
-                if src.len() < frame_len {
-                    src.reserve(frame_len);
-                    return Ok(None);
-                }
-                self.state = DecoderState::FrameHeader;
-                let message = if command {
-                    Message::Command(ZmqCommand::try_from(src.split_to(frame_len))?)
+            DecoderState::FrameLen(frame) => {
+                self.state = DecoderState::Frame(frame);
+                self.waiting_for = if frame.long {
+                    src.get_u64() as usize
+                } else {
+                    src.get_u8() as usize
+                };
+                return self.decode(src);
+            }
+            DecoderState::Frame(frame) => {
+                let message = if frame.command {
+                    Message::Command(ZmqCommand::try_from(src.split_to(self.waiting_for))?)
                 } else {
                     Message::Message(ZmqMessage {
-                        data: src.split_to(frame_len).freeze(),
-                        more,
+                        data: src.split_to(self.waiting_for).freeze(),
+                        more: frame.more,
                     })
                 };
+                self.state = DecoderState::FrameHeader;
+                self.waiting_for = 1;
                 return Ok(Some(message));
             }
         }
