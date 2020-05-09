@@ -1,41 +1,43 @@
 use async_trait::async_trait;
 use futures::select;
-use futures_util::sink::SinkExt;
 use futures_util::future::FutureExt;
 use tokio::net::TcpStream;
-use tokio::net::tcp::WriteHalf;
-use tokio::net::TcpListener;
 use tokio_util::codec::Framed;
-use tokio::stream::StreamExt;
 
 use crate::codec::*;
 use crate::error::*;
 use crate::util::*;
-use crate::{Socket, ZmqResult, SocketType};
-use bytes::{BytesMut, BufMut, Bytes, Buf};
-use std::net::SocketAddr;
+use crate::{Socket, ZmqResult};
 use std::sync::Arc;
-use futures::lock::Mutex;
+use dashmap::DashMap;
+use crossbeam::queue::ArrayQueue;
 
 pub(crate) struct Peer {
+    pub(crate) _identity: PeerIdentity,
     pub(crate) _inner: Framed<TcpStream, ZmqCodec>,
+    _send_queue: Arc<ArrayQueue<Message>>,
+    _recv_queue: Arc<ArrayQueue<Message>>,
+    _io_close_handle: futures::channel::oneshot::Sender<bool>
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub(crate) struct PeerIdentity(u64);
+
 pub struct RouterSocket {
-    pub(crate) peers: Arc<Mutex<Vec<Peer>>>,
-    accept_handle: futures::channel::oneshot::Sender<bool>
+    pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
+    _accept_close_handle: futures::channel::oneshot::Sender<bool>
 }
 
 impl RouterSocket {
 
-    async fn peer_connected(socket: tokio::net::TcpStream, peers: Arc<Mutex<Vec<Peer>>>) {
+    async fn peer_connected(socket: tokio::net::TcpStream, peers: Arc<DashMap<PeerIdentity, Peer>>) {
 
     }
 
     pub async fn bind(endpoint: &str) -> ZmqResult<Self> {
         let mut listener = tokio::net::TcpListener::bind(endpoint).await?;
         let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
-        let mut router_socket = Self { peers: Arc::new(Mutex::new(vec![])), accept_handle: sender };
+        let router_socket = Self { peers: Arc::new(DashMap::new()), _accept_close_handle: sender };
         let peers = router_socket.peers.clone();
         tokio::spawn(async move {
             let mut stop_callback = receiver.fuse();
@@ -72,7 +74,7 @@ pub struct DealerSocket {
 }
 
 impl DealerSocket {
-    pub async fn bind(endpoint: &str) -> ZmqResult<Self> {
+    pub async fn bind(_endpoint: &str) -> ZmqResult<Self> {
         todo!()
     }
 }

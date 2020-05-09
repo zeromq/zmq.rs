@@ -37,7 +37,7 @@ impl TryFrom<Vec<u8>> for ZmqMechanism {
             "NULL" => Ok(ZmqMechanism::NULL),
             "PLAIN" => Ok(ZmqMechanism::PLAIN),
             "CURVE" => Ok(ZmqMechanism::CURVE),
-            _ => Err(ZmqError::OTHER("Failed to parse ZmqMechanism")),
+            _ => Err(ZmqError::Other("Failed to parse ZmqMechanism")),
         }
     }
 }
@@ -64,7 +64,7 @@ impl TryFrom<Bytes> for ZmqGreeting {
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
         if !(value[0] == 0xff && value[9] == 0x7f) {
-            return Err(ZmqError::CODEC("Failed to parse greeting"));
+            return Err(ZmqError::Codec("Failed to parse greeting"));
         }
         Ok(ZmqGreeting {
             version: (value[10], value[11]),
@@ -144,7 +144,7 @@ impl TryFrom<BytesMut> for ZmqCommand {
             unsafe { String::from_utf8_unchecked(buf.split_to(command_len).to_vec()) };
         let command = match command_name.as_str() {
             "READY" => ZmqCommandName::READY,
-            _ => return Err(ZmqError::CODEC("Uknown command received")),
+            _ => return Err(ZmqError::Codec("Uknown command received")),
         };
         let mut properties = HashMap::new();
 
@@ -205,7 +205,6 @@ enum DecoderState {
     Greeting,
     FrameHeader,
     Frame(bool, usize, bool),
-    End,
 }
 
 pub(crate) struct ZmqCodec {
@@ -240,7 +239,7 @@ impl Decoder for ZmqCodec {
                         src.reserve(64);
                         Ok(None)
                     } else {
-                        Err(ZmqError::CODEC("Bad first byte of greeting"))
+                        Err(ZmqError::Codec("Bad first byte of greeting"))
                     }
                 }
             }
@@ -278,7 +277,6 @@ impl Decoder for ZmqCodec {
                 };
                 return Ok(Some(message));
             }
-            DecoderState::End => Err(ZmqError::NO_MESSAGE),
         }
     }
 }

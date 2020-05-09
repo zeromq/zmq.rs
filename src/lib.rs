@@ -1,12 +1,11 @@
 #[macro_use]
 extern crate enum_primitive_derive;
-use num_traits::{FromPrimitive, ToPrimitive};
+use num_traits::ToPrimitive;
 
 use async_trait::async_trait;
 use futures_util::sink::SinkExt;
 use tokio::net::TcpListener;
 use std::net::SocketAddr;
-use tokio::net::TcpStream;
 use tokio::stream::StreamExt;
 use tokio_util::codec::Framed;
 
@@ -67,7 +66,7 @@ impl TryFrom<&str> for SocketType {
             "XPUB" => SocketType::XPUB,
             "XSUB" => SocketType::XSUB,
             "STREAM" => SocketType::STREAM,
-            _ => return Err(ZmqError::CODEC("Unknown socket type")),
+            _ => return Err(ZmqError::Codec("Unknown socket type")),
         })
     }
 }

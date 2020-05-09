@@ -3,8 +3,6 @@ use futures::select;
 use futures_util::sink::SinkExt;
 use futures_util::future::FutureExt;
 use tokio::net::TcpStream;
-use tokio::net::tcp::WriteHalf;
-use tokio::net::TcpListener;
 use tokio_util::codec::Framed;
 use tokio::stream::StreamExt;
 
@@ -12,8 +10,7 @@ use crate::codec::*;
 use crate::error::*;
 use crate::util::*;
 use crate::{Socket, ZmqResult, SocketType};
-use bytes::{BytesMut, BufMut, Bytes, Buf};
-use std::net::SocketAddr;
+use bytes::{BytesMut, BufMut, Bytes};
 use std::sync::Arc;
 use futures::lock::Mutex;
 
@@ -24,7 +21,7 @@ pub(crate) struct Subscriber {
 
 pub struct PubSocket {
     pub(crate) subscribers: Arc<Mutex<Vec<Subscriber>>>,
-    accept_handle: futures::channel::oneshot::Sender<bool>
+    _accept_close_handle: futures::channel::oneshot::Sender<bool>
 }
 
 #[async_trait]
@@ -49,7 +46,7 @@ impl Socket for PubSocket {
     }
 
     async fn recv(&mut self) -> ZmqResult<Vec<u8>> {
-        Err(ZmqError::SOCKET("This socket doesn't support receiving messages"))
+        Err(ZmqError::Socket("This socket doesn't support receiving messages"))
     }
 }
 
@@ -125,7 +122,7 @@ impl PubSocket {
     pub async fn bind(endpoint: &str) -> ZmqResult<Self> {
         let mut listener = tokio::net::TcpListener::bind(endpoint).await?;
         let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
-        let mut pub_socket = Self { subscribers: Arc::new(Mutex::new(vec![])), accept_handle: sender };
+        let pub_socket = Self { subscribers: Arc::new(Mutex::new(vec![])), _accept_close_handle: sender };
         let subscribers = pub_socket.subscribers.clone();
         tokio::spawn(async move {
             let mut stop_callback = receiver.fuse();
@@ -154,16 +151,16 @@ pub struct SubSocket {
 #[async_trait]
 impl Socket for SubSocket {
     async fn send(&mut self, _data: Vec<u8>) -> ZmqResult<()> {
-        Err(ZmqError::SOCKET("This socket doesn't support sending messages"))
+        Err(ZmqError::Socket("This socket doesn't support sending messages"))
     }
 
     async fn recv(&mut self) -> ZmqResult<Vec<u8>> {
         let message: Option<ZmqResult<Message>> = self._inner.next().await;
         match message {
             Some(Ok(Message::Message(m))) => Ok(m.data.to_vec()),
-            Some(Ok(_)) => Err(ZmqError::OTHER("Wrong message type received")),
+            Some(Ok(_)) => Err(ZmqError::Other("Wrong message type received")),
             Some(Err(e)) => Err(e),
-            None => Err(ZmqError::NO_MESSAGE),
+            None => Err(ZmqError::NoMessage),
         }
     }
 }

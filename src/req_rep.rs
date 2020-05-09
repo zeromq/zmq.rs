@@ -38,18 +38,18 @@ impl Socket for ReqSocket {
             let delimeter: Option<ZmqResult<Message>> = self._inner.next().await;
             let delim = match delimeter {
                 Some(Ok(Message::Message(m))) => m,
-                Some(Ok(_)) => return Err(ZmqError::OTHER("Wrong message type received")),
+                Some(Ok(_)) => return Err(ZmqError::Other("Wrong message type received")),
                 Some(Err(e)) => return Err(e),
-                None => return Err(ZmqError::NO_MESSAGE),
+                None => return Err(ZmqError::NoMessage),
             };
             assert!(delim.data.is_empty() && delim.more); // Drop delimeter frame
         }
         let message: Option<ZmqResult<Message>> = self._inner.next().await;
         match message {
             Some(Ok(Message::Message(m))) => Ok(m.data.to_vec()),
-            Some(Ok(_)) => Err(ZmqError::OTHER("Wrong message type received")),
+            Some(Ok(_)) => Err(ZmqError::Other("Wrong message type received")),
             Some(Err(e)) => Err(e),
-            None => Err(ZmqError::NO_MESSAGE),
+            None => Err(ZmqError::NoMessage),
         }
     }
 }
@@ -93,18 +93,18 @@ impl Socket for RepSocket {
             let delimeter: Option<ZmqResult<Message>> = self._inner.next().await;
             let delim = match delimeter {
                 Some(Ok(Message::Message(m))) => m,
-                Some(Ok(_)) => return Err(ZmqError::OTHER("Wrong message type received")),
+                Some(Ok(_)) => return Err(ZmqError::Other("Wrong message type received")),
                 Some(Err(e)) => return Err(e),
-                None => return Err(ZmqError::NO_MESSAGE),
+                None => return Err(ZmqError::NoMessage),
             };
             assert!(delim.data.is_empty() && delim.more); // Drop delimeter frame
         }
         let message: Option<ZmqResult<Message>> = self._inner.next().await;
         match message {
             Some(Ok(Message::Message(m))) => Ok(m.data.to_vec()),
-            Some(Ok(_)) => Err(ZmqError::OTHER("Wrong message type received")),
+            Some(Ok(_)) => Err(ZmqError::Other("Wrong message type received")),
             Some(Err(e)) => Err(e),
-            None => Err(ZmqError::NO_MESSAGE),
+            None => Err(ZmqError::NoMessage),
         }
     }
 }

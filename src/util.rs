@@ -40,9 +40,9 @@ pub(crate) async fn greet_exchange(socket: &mut Framed<TcpStream, ZmqCodec>) -> 
     match greeting {
         Some(Ok(Message::Greeting(greet))) => match greet.version {
             (3, 0) => Ok(()),
-            _ => Err(ZmqError::OTHER("Unsupported protocol version")),
+            _ => Err(ZmqError::Other("Unsupported protocol version")),
         },
-        _ => Err(ZmqError::CODEC("Failed Greeting exchange")),
+        _ => Err(ZmqError::Codec("Failed Greeting exchange")),
     }
 }
 
@@ -59,9 +59,9 @@ pub(crate) async fn greet_exchange_w_parts(
     match greeting {
         Some(Ok(Message::Greeting(greet))) => match greet.version {
             (3, 0) => Ok(()),
-            _ => Err(ZmqError::OTHER("Unsupported protocol version")),
+            _ => Err(ZmqError::Other("Unsupported protocol version")),
         },
-        _ => Err(ZmqError::CODEC("Failed Greeting exchange")),
+        _ => Err(ZmqError::Codec("Failed Greeting exchange")),
     }
 }
 
@@ -77,20 +77,20 @@ pub(crate) async fn ready_exchange(socket: &mut Framed<TcpStream, ZmqCodec>, soc
                     .properties
                     .get("Socket-Type")
                     .map(|x| SocketType::try_from(x.as_str()))
-                    .unwrap_or(Err(ZmqError::CODEC("Failed to parse other socket type")))?;
+                    .unwrap_or(Err(ZmqError::Codec("Failed to parse other socket type")))?;
 
                 if sockets_compatible(socket_type, other_sock_type) {
                     Ok(())
                 } else {
-                    Err(ZmqError::OTHER(
+                    Err(ZmqError::Other(
                         "Provided sockets combination is not compatible",
                     ))
                 }
             }
         },
-        Some(Ok(_)) => Err(ZmqError::CODEC("Failed to confirm ready state")),
+        Some(Ok(_)) => Err(ZmqError::Codec("Failed to confirm ready state")),
         Some(Err(e)) => Err(e),
-        None => Err(ZmqError::OTHER("No reply from server")),
+        None => Err(ZmqError::Other("No reply from server")),
     }
 }
 
@@ -111,20 +111,20 @@ pub(crate) async fn ready_exchange_w_parts(
                     .properties
                     .get("Socket-Type")
                     .map(|x| SocketType::try_from(x.as_str()))
-                    .unwrap_or(Err(ZmqError::CODEC("Failed to parse other socket type")))?;
+                    .unwrap_or(Err(ZmqError::Codec("Failed to parse other socket type")))?;
 
                 if sockets_compatible(socket_type, other_sock_type) {
                     Ok(())
                 } else {
-                    Err(ZmqError::OTHER(
+                    Err(ZmqError::Other(
                         "Provided sockets combination is not compatible",
                     ))
                 }
             }
         },
-        Some(Ok(_)) => Err(ZmqError::CODEC("Failed to confirm ready state")),
+        Some(Ok(_)) => Err(ZmqError::Codec("Failed to confirm ready state")),
         Some(Err(e)) => Err(e),
-        None => Err(ZmqError::OTHER("No reply from server")),
+        None => Err(ZmqError::Other("No reply from server")),
     }
 }
 
