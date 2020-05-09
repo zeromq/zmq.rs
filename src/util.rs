@@ -1,6 +1,34 @@
 use crate::*;
 use tokio::net::TcpStream;
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Clone)]
+pub(crate) struct PeerIdentity(Vec<u8>);
+
+impl PeerIdentity {
+    pub fn new() -> Self {
+        // TODO implement proper random/autoinc ids
+        Self(vec![0, 1, 2, 3, 4, 5, 6, 7])
+    }
+}
+
+impl From<Vec<u8>> for PeerIdentity {
+    fn from(data: Vec<u8>) -> Self {
+        if data.len() == 0 {
+            PeerIdentity::new()
+        } else if data.len() > 255 {
+            panic!("ZMQ_IDENTITY should not be more than 255 bytes long")
+        } else {
+            Self(data)
+        }
+    }
+}
+
+impl From<PeerIdentity> for Vec<u8> {
+    fn from(p_id: PeerIdentity) -> Self {
+        p_id.0
+    }
+}
+
 const COMPATIBILITY_MATRIX: [u8; 121] = [
     // PAIR, PUB, SUB, REQ, REP, DEALER, ROUTER, PULL, PUSH, XPUB, XSUB
     1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // PAIR
@@ -72,7 +100,7 @@ pub(crate) async fn greet_exchange_w_parts(
 pub(crate) async fn ready_exchange(
     socket: &mut Framed<TcpStream, ZmqCodec>,
     socket_type: SocketType,
-) -> ZmqResult<()> {
+) -> ZmqResult<PeerIdentity> {
     let ready = ZmqCommand::ready(socket_type);
     socket.send(Message::Command(ready)).await?;
 
@@ -86,8 +114,13 @@ pub(crate) async fn ready_exchange(
                     .map(|x| SocketType::try_from(x.as_str()))
                     .unwrap_or(Err(ZmqError::Codec("Failed to parse other socket type")))?;
 
+                let peer_id = command.properties.get("Identity").map_or_else(
+                    || PeerIdentity::new(),
+                    |x| PeerIdentity(x.clone().into_bytes()),
+                );
+
                 if sockets_compatible(socket_type, other_sock_type) {
-                    Ok(())
+                    Ok(peer_id)
                 } else {
                     Err(ZmqError::Other(
                         "Provided sockets combination is not compatible",
@@ -111,7 +144,7 @@ pub(crate) async fn ready_exchange_w_parts(
         ZmqCodec,
     >,
     socket_type: SocketType,
-) -> ZmqResult<()> {
+) -> ZmqResult<PeerIdentity> {
     let ready = ZmqCommand::ready(socket_type);
     sink.send(Message::Command(ready)).await?;
 
@@ -125,8 +158,13 @@ pub(crate) async fn ready_exchange_w_parts(
                     .map(|x| SocketType::try_from(x.as_str()))
                     .unwrap_or(Err(ZmqError::Codec("Failed to parse other socket type")))?;
 
+                let peer_id = command.properties.get("Identity").map_or_else(
+                    || PeerIdentity::new(),
+                    |x| PeerIdentity::from(x.clone().into_bytes()),
+                );
+
                 if sockets_compatible(socket_type, other_sock_type) {
-                    Ok(())
+                    Ok(peer_id)
                 } else {
                     Err(ZmqError::Other(
                         "Provided sockets combination is not compatible",
