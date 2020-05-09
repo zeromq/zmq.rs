@@ -10,7 +10,10 @@ async fn test_pub_sub_sockets() {
 
         for i in 0..10i32 {
             let message = format!("Message - {}", i);
-            pub_socket.send(message.into_bytes()).await.expect("Failed to send");
+            pub_socket
+                .send(message.into_bytes())
+                .await
+                .expect("Failed to send");
         }
     });
 

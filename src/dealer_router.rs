@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use futures::select;
+use futures::{select, Future};
 use futures_util::future::FutureExt;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
@@ -8,36 +8,40 @@ use crate::codec::*;
 use crate::error::*;
 use crate::util::*;
 use crate::{Socket, ZmqResult};
-use std::sync::Arc;
-use dashmap::DashMap;
 use crossbeam::queue::ArrayQueue;
+use dashmap::DashMap;
+use std::sync::Arc;
 
 pub(crate) struct Peer {
     pub(crate) _identity: PeerIdentity,
     pub(crate) _inner: Framed<TcpStream, ZmqCodec>,
     _send_queue: Arc<ArrayQueue<Message>>,
     _recv_queue: Arc<ArrayQueue<Message>>,
-    _io_close_handle: futures::channel::oneshot::Sender<bool>
+    _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub(crate) struct PeerIdentity(u64);
+pub(crate) struct PeerIdentity(Vec<u8>);
 
 pub struct RouterSocket {
     pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
-    _accept_close_handle: futures::channel::oneshot::Sender<bool>
+    _accept_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
 impl RouterSocket {
-
-    async fn peer_connected(socket: tokio::net::TcpStream, peers: Arc<DashMap<PeerIdentity, Peer>>) {
-
+    async fn peer_connected(
+        socket: tokio::net::TcpStream,
+        peers: Arc<DashMap<PeerIdentity, Peer>>,
+    ) {
     }
 
     pub async fn bind(endpoint: &str) -> ZmqResult<Self> {
         let mut listener = tokio::net::TcpListener::bind(endpoint).await?;
         let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
-        let router_socket = Self { peers: Arc::new(DashMap::new()), _accept_close_handle: sender };
+        let router_socket = Self {
+            peers: Arc::new(DashMap::new()),
+            _accept_close_handle: sender,
+        };
         let peers = router_socket.peers.clone();
         tokio::spawn(async move {
             let mut stop_callback = receiver.fuse();

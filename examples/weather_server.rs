@@ -1,9 +1,9 @@
+use rand::Rng;
 use tokio::net::TcpListener;
 use tokio::prelude::*;
-use rand::Rng;
 
-use zmq_rs::*;
 use std::time::Duration;
+use zmq_rs::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

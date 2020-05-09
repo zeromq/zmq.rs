@@ -4,12 +4,12 @@ use tokio::net::TcpStream;
 use tokio::stream::StreamExt;
 use tokio_util::codec::Framed;
 
-use crate::*;
 use crate::codec::*;
 use crate::error::*;
-use crate::{Socket, ZmqResult, SocketType};
-use bytes::BytesMut;
 use crate::util::raw_connect;
+use crate::*;
+use crate::{Socket, SocketType, ZmqResult};
+use bytes::BytesMut;
 
 pub struct ReqSocket {
     pub(crate) _inner: Framed<TcpStream, ZmqCodec>,
@@ -60,7 +60,6 @@ impl ReqSocket {
         Ok(Self { _inner: raw_socket })
     }
 }
-
 
 pub(crate) struct RepSocketServer {
     pub(crate) _inner: TcpListener,

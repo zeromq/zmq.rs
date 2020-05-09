@@ -17,7 +17,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut repl = String::from_utf8(message).unwrap();
                 dbg!(&repl);
                 repl.push_str(" Reply");
-                socket.send(repl.into_bytes()).await.expect("Failed to send");
+                socket
+                    .send(repl.into_bytes())
+                    .await
+                    .expect("Failed to send");
             }
         });
     }

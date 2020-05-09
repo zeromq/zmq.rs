@@ -1,8 +1,7 @@
 use bytes::Bytes;
 use std::error::Error;
-use zmq_rs::{ZmqMessage, SubSocket};
 use zmq_rs::{Socket, SocketType};
-
+use zmq_rs::{SubSocket, ZmqMessage};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

@@ -47,12 +47,16 @@ pub(crate) async fn greet_exchange(socket: &mut Framed<TcpStream, ZmqCodec>) -> 
 }
 
 pub(crate) async fn greet_exchange_w_parts(
-    sink: &mut tokio_util::codec::FramedWrite<tokio::io::WriteHalf<tokio::net::TcpStream>, ZmqCodec>,
-    stream: &mut tokio_util::codec::FramedRead<tokio::io::ReadHalf<tokio::net::TcpStream>, ZmqCodec>
+    sink: &mut tokio_util::codec::FramedWrite<
+        tokio::io::WriteHalf<tokio::net::TcpStream>,
+        ZmqCodec,
+    >,
+    stream: &mut tokio_util::codec::FramedRead<
+        tokio::io::ReadHalf<tokio::net::TcpStream>,
+        ZmqCodec,
+    >,
 ) -> ZmqResult<()> {
-    sink
-        .send(Message::Greeting(ZmqGreeting::default()))
-        .await?;
+    sink.send(Message::Greeting(ZmqGreeting::default())).await?;
 
     let greeting: Option<Result<Message, ZmqError>> = stream.next().await;
 
@@ -65,7 +69,10 @@ pub(crate) async fn greet_exchange_w_parts(
     }
 }
 
-pub(crate) async fn ready_exchange(socket: &mut Framed<TcpStream, ZmqCodec>, socket_type: SocketType) -> ZmqResult<()> {
+pub(crate) async fn ready_exchange(
+    socket: &mut Framed<TcpStream, ZmqCodec>,
+    socket_type: SocketType,
+) -> ZmqResult<()> {
     let ready = ZmqCommand::ready(socket_type);
     socket.send(Message::Command(ready)).await?;
 
@@ -94,11 +101,16 @@ pub(crate) async fn ready_exchange(socket: &mut Framed<TcpStream, ZmqCodec>, soc
     }
 }
 
-
 pub(crate) async fn ready_exchange_w_parts(
-    sink: &mut tokio_util::codec::FramedWrite<tokio::io::WriteHalf<tokio::net::TcpStream>, ZmqCodec>,
-    stream: &mut tokio_util::codec::FramedRead<tokio::io::ReadHalf<tokio::net::TcpStream>, ZmqCodec>,
-    socket_type: SocketType
+    sink: &mut tokio_util::codec::FramedWrite<
+        tokio::io::WriteHalf<tokio::net::TcpStream>,
+        ZmqCodec,
+    >,
+    stream: &mut tokio_util::codec::FramedRead<
+        tokio::io::ReadHalf<tokio::net::TcpStream>,
+        ZmqCodec,
+    >,
+    socket_type: SocketType,
 ) -> ZmqResult<()> {
     let ready = ZmqCommand::ready(socket_type);
     sink.send(Message::Command(ready)).await?;
@@ -128,8 +140,10 @@ pub(crate) async fn ready_exchange_w_parts(
     }
 }
 
-
-pub(crate) async fn raw_connect(socket_type: SocketType, endpoint: &str) -> ZmqResult<Framed<TcpStream, ZmqCodec>> {
+pub(crate) async fn raw_connect(
+    socket_type: SocketType,
+    endpoint: &str,
+) -> ZmqResult<Framed<TcpStream, ZmqCodec>> {
     let addr = endpoint.parse::<SocketAddr>()?;
     let mut raw_socket = Framed::new(TcpStream::connect(addr).await?, ZmqCodec::new());
     greet_exchange(&mut raw_socket).await?;

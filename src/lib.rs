@@ -4,29 +4,29 @@ use num_traits::ToPrimitive;
 
 use async_trait::async_trait;
 use futures_util::sink::SinkExt;
-use tokio::net::TcpListener;
 use std::net::SocketAddr;
+use tokio::net::TcpListener;
 use tokio::stream::StreamExt;
 use tokio_util::codec::Framed;
 
 use std::convert::TryFrom;
-use std::fmt::{Display, Debug};
+use std::fmt::{Debug, Display};
 
 mod codec;
-mod error;
-mod req_rep;
-mod pub_sub;
 mod dealer_router;
+mod error;
+mod pub_sub;
+mod req_rep;
 pub mod util;
 
 #[cfg(test)]
 mod tests;
 
 use crate::codec::*;
-use crate::error::ZmqError;
-pub use crate::req_rep::*;
-pub use crate::pub_sub::*;
 pub use crate::dealer_router::*;
+use crate::error::ZmqError;
+pub use crate::pub_sub::*;
+pub use crate::req_rep::*;
 use crate::util::*;
 
 pub use crate::codec::ZmqMessage;
@@ -105,7 +105,7 @@ pub async fn bind(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<dyn 
     let listener = TcpListener::bind(endpoint).await?;
     match socket_type {
         SocketType::REP => Ok(Box::new(RepSocketServer { _inner: listener })),
-        _ => todo!()
+        _ => todo!(),
     }
 }
 
