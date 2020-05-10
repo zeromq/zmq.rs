@@ -1,5 +1,6 @@
 use crate::*;
 use tokio::net::TcpStream;
+use bytes::Bytes;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Clone)]
 pub(crate) struct PeerIdentity(Vec<u8>);
@@ -26,6 +27,12 @@ impl From<Vec<u8>> for PeerIdentity {
 impl From<PeerIdentity> for Vec<u8> {
     fn from(p_id: PeerIdentity) -> Self {
         p_id.0
+    }
+}
+
+impl From<PeerIdentity> for Bytes {
+    fn from(p_id: PeerIdentity) -> Self {
+        Bytes::from(p_id.0)
     }
 }
 

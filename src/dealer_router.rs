@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use futures::{select, Future};
+use futures::{select, Future, SinkExt};
+use futures::channel::mpsc::*;
 use futures_util::future::FutureExt;
 use tokio::net::TcpStream;
 use tokio::stream::{Stream, StreamExt};
@@ -15,8 +16,8 @@ use std::sync::Arc;
 
 pub(crate) struct Peer {
     pub(crate) identity: PeerIdentity,
-    _send_queue: Arc<ArrayQueue<Message>>,
-    _recv_queue: Arc<ArrayQueue<Message>>,
+    _send_queue: futures::channel::mpsc::Sender<Message>,
+    _recv_queue: futures::channel::mpsc::Receiver<Message>,
     _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
@@ -50,14 +51,14 @@ impl RouterSocket {
         println!("Peer connected {:?}", peer_id);
 
         let default_queue_size = 100;
-        let _send_queue = Arc::new(ArrayQueue::new(default_queue_size));
-        let _recv_queue = Arc::new(ArrayQueue::new(default_queue_size));
+        let (_send_queue, _send_queue_receiver) = futures::channel::mpsc::channel(default_queue_size);
+        let (mut _recv_queue, _recv_queue_receiver) = futures::channel::mpsc::channel(default_queue_size);
         let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
 
         let peer = Peer {
             identity: peer_id.clone(),
-            _send_queue: _send_queue.clone(),
-            _recv_queue: _recv_queue.clone(),
+            _send_queue: _send_queue,
+            _recv_queue: _recv_queue_receiver,
             _io_close_handle: sender,
         };
 
@@ -65,11 +66,17 @@ impl RouterSocket {
 
         let mut stop_handle = receiver.fuse();
         //let mut write_part = write_part.fuse();
+        let mut messages = vec![ZmqMessage { data: peer_id.clone().into(), more: true}];
         loop {
             match read_part.next().await {
-                Some(Ok(message)) => {
+                Some(Ok(Message::Message(message))) => {
                     dbg!(&message);
-                    _recv_queue.push(message)
+                    let more = message.more;
+                    messages.push(message);
+                    if !more {
+                        _recv_queue.send(Message::MultipartMessage(messages)).await;
+                        messages = vec![ZmqMessage { data: peer_id.clone().into(), more: true}];
+                    }
                 }
                 None => {
                     println!("Client disconnected {:?}", &peer_id);
@@ -89,6 +96,7 @@ impl RouterSocket {
             _accept_close_handle: sender,
         };
         let peers = router_socket.peers.clone();
+        let f = RouterSocket::peer_connected;
         tokio::spawn(async move {
             let mut stop_callback = receiver.fuse();
             loop {
@@ -115,14 +123,19 @@ impl Socket for RouterSocket {
     }
 
     async fn recv(&mut self) -> ZmqResult<Vec<u8>> {
-        for peer in self.peers.iter() {
-            if let Ok(message) = peer._recv_queue.pop() {
-                let mut data = Vec::from(peer.identity.clone());
-                match message {
-                    Message::Message(m) => data.extend(m.data.to_vec()),
-                    _ => todo!(),
+        for mut peer in self.peers.iter_mut() {
+            match peer.value_mut()._recv_queue.try_next() {
+                Ok(Some(Message::MultipartMessage(messages))) => {
+                    let mut data = Vec::new();
+                    for m in messages {
+                        data.extend(m.data.to_vec());
+                    }
+                    return Ok(data)
+                },
+                Err(TryRecvError) => {
+                    continue
                 }
-                return Ok(data);
+                _ => todo!(),
             }
         }
         Err(ZmqError::NoMessage)
