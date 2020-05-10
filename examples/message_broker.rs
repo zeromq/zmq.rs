@@ -1,7 +1,8 @@
 use std::error::Error;
 use std::time::Duration;
-use zmq_rs::ZmqMessage;
+use zmq_rs::{ZmqMessage, ZmqError};
 use zmq_rs::{Socket, SocketType};
+use bytes::{BytesMut, Buf};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -15,9 +16,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
     //
     // zmq_rs::proxy(Box::new(frontend), Box::new(backend)).await?;
     loop {
-        let mess = frontend.recv().await;
-        dbg!(mess);
+        let mut mess = frontend.recv_multipart().await;
+        match mess {
+            Ok(mut message) => {
+                let request = message.remove(2);
+                let mut reply = BytesMut::from(request.data.bytes());
+                reply.extend_from_slice(b" Reply");
+                message.push(ZmqMessage { data: reply.freeze(), more: false });
+                frontend.send_multipart(message).await?;
+            },
+            Err(ZmqError::NoMessage) => {
+                println!("No messages");
+            },
+            Err(e) => {
+                dbg!(e);
+            },
+        }
         tokio::time::delay_for(Duration::from_millis(500)).await;
+
     }
     drop(frontend);
     tokio::time::delay_for(Duration::from_millis(1000)).await;

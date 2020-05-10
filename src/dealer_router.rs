@@ -137,6 +137,35 @@ impl RouterSocket {
         });
         Ok(router_socket)
     }
+
+    pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
+        for mut peer in self.peers.iter_mut() {
+            match peer.value_mut()._recv_queue.try_next() {
+                Ok(Some(Message::MultipartMessage(messages))) => {
+                    return Ok(messages)
+                },
+                Err(TryRecvError) => {
+                    continue
+                }
+                _ => todo!(),
+            }
+        }
+        Err(ZmqError::NoMessage)
+    }
+
+    pub async fn send_multipart(&mut self, messages: Vec<ZmqMessage>) -> ZmqResult<()> {
+        assert!(messages.len() > 2);
+        let peer_id: PeerIdentity = messages[0].data.to_vec().into();
+        match self.peers.get_mut(&peer_id) {
+            Some(mut peer) => {
+                peer._send_queue.try_send(Message::MultipartMessage(messages[1..].to_vec()))?;
+                Ok(())
+            },
+            None => {
+                return Err(ZmqError::Other("Destination client not found by identity"))
+            }
+        }
+    }
 }
 
 #[async_trait]

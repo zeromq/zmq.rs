@@ -25,7 +25,7 @@ mod tests;
 
 use crate::codec::*;
 pub use crate::dealer_router::*;
-use crate::error::ZmqError;
+pub use crate::error::ZmqError;
 pub use crate::pub_sub::*;
 pub use crate::req_rep::*;
 use crate::util::*;

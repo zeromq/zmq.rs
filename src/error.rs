@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt::Display;
+use crate::codec::Message;
 
 #[derive(Debug)]
 pub enum ZmqError {
@@ -32,5 +33,11 @@ impl From<std::net::AddrParseError> for ZmqError {
 impl From<std::io::Error> for ZmqError {
     fn from(reason: std::io::Error) -> Self {
         ZmqError::Network(reason.to_string())
+    }
+}
+
+impl From<futures::channel::mpsc::TrySendError<Message>> for ZmqError {
+    fn from(_: futures::channel::mpsc::TrySendError<Message>) -> Self {
+        ZmqError::Other("Failed to send message. Send queue full")
     }
 }
