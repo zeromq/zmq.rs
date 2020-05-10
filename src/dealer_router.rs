@@ -11,7 +11,6 @@ use crate::codec::*;
 use crate::error::*;
 use crate::util::*;
 use crate::{Socket, SocketType, ZmqResult};
-use crossbeam::queue::ArrayQueue;
 use dashmap::DashMap;
 use std::sync::Arc;
 
