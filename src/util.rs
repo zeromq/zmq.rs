@@ -71,6 +71,7 @@ const COMPATIBILITY_MATRIX: [u8; 121] = [
 /// assert!(sockets_compatible(SocketType::PUB, SocketType::SUB));
 /// assert!(sockets_compatible(SocketType::REQ, SocketType::REP));
 /// assert!(sockets_compatible(SocketType::DEALER, SocketType::ROUTER));
+/// assert!(!sockets_compatible(SocketType::PUB, SocketType::REP));
 /// ```
 pub fn sockets_compatible(one: SocketType, another: SocketType) -> bool {
     let row_index = one.to_usize().unwrap();
