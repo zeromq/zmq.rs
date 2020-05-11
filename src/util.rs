@@ -6,14 +6,15 @@ use dashmap::DashMap;
 use futures::stream::StreamExt;
 use futures::{select, Future, SinkExt};
 use futures_util::future::FutureExt;
+use uuid::Uuid;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Clone)]
 pub(crate) struct PeerIdentity(Vec<u8>);
 
 impl PeerIdentity {
     pub fn new() -> Self {
-        // TODO implement proper random/autoinc ids
-        Self(vec![0, 1, 2, 3, 4, 5, 6, 7])
+        let id = Uuid::new_v4();
+        Self(id.as_bytes().to_vec())
     }
 }
 
