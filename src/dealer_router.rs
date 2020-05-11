@@ -32,7 +32,7 @@ impl RouterSocket {
         let peers = Arc::new(DashMap::new());
         let router_socket = Self {
             peers: peers.clone(),
-            _accept_close_handle: util::start_accepting_connections(endpoint, peers).await?,
+            _accept_close_handle: util::start_accepting_connections(endpoint, peers, SocketType::ROUTER).await?,
         };
         Ok(router_socket)
     }

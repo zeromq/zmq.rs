@@ -211,6 +211,7 @@ pub(crate) async fn raw_connect(
 pub(crate) async fn peer_connected(
     socket: tokio::net::TcpStream,
     peers: Arc<DashMap<PeerIdentity, Peer>>,
+    socket_type: SocketType
 ) {
     let (read, write) = tokio::io::split(socket);
     let mut read_part = tokio_util::codec::FramedRead::new(read, ZmqCodec::new());
@@ -220,7 +221,7 @@ pub(crate) async fn peer_connected(
         .await
         .expect("Failed to exchange greetings");
 
-    let peer_id = ready_exchange_w_parts(&mut write_part, &mut read_part, SocketType::ROUTER)
+    let peer_id = ready_exchange_w_parts(&mut write_part, &mut read_part, socket_type)
         .await
         .expect("Failed to exchange ready messages");
     println!("Peer connected {:?}", peer_id);
@@ -286,7 +287,11 @@ pub(crate) async fn peer_connected(
 
 /// Opens port described by endpoint and starts a coroutine to accept new connections on it
 /// Returns stop_handle channel that can be used to stop accepting new connections
-pub(crate) async fn start_accepting_connections(endpoint: &str, peers: Arc<DashMap<PeerIdentity, Peer>>) -> ZmqResult<futures::channel::oneshot::Sender<bool>> {
+pub(crate) async fn start_accepting_connections(
+    endpoint: &str,
+    peers: Arc<DashMap<PeerIdentity, Peer>>,
+    socket_type: SocketType
+) -> ZmqResult<futures::channel::oneshot::Sender<bool>> {
     let mut listener = tokio::net::TcpListener::bind(endpoint).await?;
     let (stop_handle, stop_callback) = futures::channel::oneshot::channel::<bool>();
     tokio::spawn(async move {
@@ -295,7 +300,7 @@ pub(crate) async fn start_accepting_connections(endpoint: &str, peers: Arc<DashM
             select! {
                     incoming = listener.accept().fuse() => {
                         let (socket, _) = incoming.expect("Failed to accept connection");
-                        tokio::spawn(util::peer_connected(socket, peers.clone()));
+                        tokio::spawn(peer_connected(socket, peers.clone(), socket_type));
                     },
                     _ = stop_callback => {
                         println!("Stop signal received");
