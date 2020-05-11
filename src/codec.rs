@@ -329,21 +329,18 @@ impl Decoder for ZmqCodec {
                 } else if frame.more {
                     // cache incoming multipart message
                     match &mut self.buffered_message {
-                        Some(Message::MultipartMessage(message)) => message.push(ZmqMessage {
-                            data: data.freeze(),
-                        }),
+                        Some(Message::MultipartMessage(message)) => message.push(data.into()),
                         _ => panic!("Corrupted decoder state"),
                     }
                     return self.decode(src);
                 } else {
-                    let mess = ZmqMessage { data: data.freeze() };
                     if let Some(Message::MultipartMessage(mut message)) =
                         self.buffered_message.take()
                     {
-                        message.push(mess);
+                        message.push(data.into());
                         Ok(Some(Message::MultipartMessage(message)))
                     } else {
-                        Ok(Some(Message::Message(mess)))
+                        Ok(Some(Message::Message(data.into())))
                     }
                 }
             }

@@ -3,6 +3,7 @@ use std::error::Error;
 use std::time::Duration;
 use zmq_rs::{Socket, SocketType};
 use zmq_rs::{ZmqError, ZmqMessage};
+use std::convert::TryInto;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -20,12 +21,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         match mess {
             Ok(mut message) => {
                 dbg!(&message);
-                let request = message.remove(2);
-                let mut reply = BytesMut::from(request.data.bytes());
-                reply.extend_from_slice(b" Reply");
-                message.push(ZmqMessage {
-                    data: reply.freeze(),
-                });
+                let request: String = message.remove(2).try_into()?;
+
+                let mut reply = format!("{} Reply", request);
+                message.push(reply.into());
                 frontend.send_multipart(message).await?;
             }
             Err(ZmqError::NoMessage) => {
