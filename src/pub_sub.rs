@@ -30,7 +30,6 @@ impl Socket for PubSocket {
     async fn send(&mut self, data: Vec<u8>) -> ZmqResult<()> {
         let message = ZmqMessage {
             data: Bytes::from(data),
-            more: false,
         };
         let mut fanout = vec![];
         {
@@ -203,10 +202,7 @@ impl SubSocket {
         sub.put_u8(1);
         sub.extend_from_slice(subscription.as_bytes());
         self._inner
-            .send(Message::Message(ZmqMessage {
-                data: sub.freeze(),
-                more: false,
-            }))
+            .send(Message::Message(ZmqMessage { data: sub.freeze() }))
             .await?;
         Ok(())
     }
@@ -216,10 +212,7 @@ impl SubSocket {
         sub.put_u8(0);
         sub.extend_from_slice(subscription.as_bytes());
         self._inner
-            .send(Message::Message(ZmqMessage {
-                data: sub.freeze(),
-                more: false,
-            }))
+            .send(Message::Message(ZmqMessage { data: sub.freeze() }))
             .await?;
         Ok(())
     }

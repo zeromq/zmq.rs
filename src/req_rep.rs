@@ -23,11 +23,9 @@ impl Socket for ReqSocket {
         let frames = vec![
             ZmqMessage {
                 data: BytesMut::new().freeze(),
-                more: true,
             }, // delimiter frame
             ZmqMessage {
                 data: f_data.freeze(),
-                more: false,
             },
         ];
         self._inner.send(Message::MultipartMessage(frames)).await
@@ -42,7 +40,7 @@ impl Socket for ReqSocket {
                 Some(Err(e)) => return Err(e),
                 None => return Err(ZmqError::NoMessage),
             };
-            assert!(delim.data.is_empty() && delim.more); // Drop delimeter frame
+            assert!(delim.data.is_empty()); // Drop delimeter frame
         }
         let message: Option<ZmqResult<Message>> = self._inner.next().await;
         match message {
@@ -77,11 +75,9 @@ impl Socket for RepSocket {
         let frames = vec![
             ZmqMessage {
                 data: BytesMut::new().freeze(),
-                more: true,
             }, // delimiter frame
             ZmqMessage {
                 data: f_data.freeze(),
-                more: false,
             },
         ];
         self._inner.send(Message::MultipartMessage(frames)).await
@@ -96,7 +92,7 @@ impl Socket for RepSocket {
                 Some(Err(e)) => return Err(e),
                 None => return Err(ZmqError::NoMessage),
             };
-            assert!(delim.data.is_empty() && delim.more); // Drop delimeter frame
+            assert!(delim.data.is_empty()); // Drop delimeter frame
         }
         let message: Option<ZmqResult<Message>> = self._inner.next().await;
         match message {

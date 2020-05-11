@@ -1,6 +1,6 @@
+use crate::codec::Message;
 use std::error::Error;
 use std::fmt::Display;
-use crate::codec::Message;
 
 #[derive(Debug)]
 pub enum ZmqError {

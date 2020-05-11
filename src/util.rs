@@ -1,6 +1,6 @@
 use crate::*;
-use tokio::net::TcpStream;
 use bytes::Bytes;
+use tokio::net::TcpStream;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Clone)]
 pub(crate) struct PeerIdentity(Vec<u8>);
