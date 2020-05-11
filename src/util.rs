@@ -1,6 +1,11 @@
 use crate::*;
 use bytes::Bytes;
 use tokio::net::TcpStream;
+use std::sync::Arc;
+use dashmap::DashMap;
+use futures::stream::StreamExt;
+use futures::{select, Future, SinkExt};
+use futures_util::future::FutureExt;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Clone)]
 pub(crate) struct PeerIdentity(Vec<u8>);
@@ -34,6 +39,13 @@ impl From<PeerIdentity> for Bytes {
     fn from(p_id: PeerIdentity) -> Self {
         Bytes::from(p_id.0)
     }
+}
+
+pub(crate) struct Peer {
+    pub(crate) identity: PeerIdentity,
+    pub(crate) send_queue: futures::channel::mpsc::Sender<Message>,
+    pub(crate) recv_queue: futures::channel::mpsc::Receiver<Message>,
+    _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
 const COMPATIBILITY_MATRIX: [u8; 121] = [
@@ -194,4 +206,103 @@ pub(crate) async fn raw_connect(
     greet_exchange(&mut raw_socket).await?;
     ready_exchange(&mut raw_socket, socket_type).await?;
     Ok(raw_socket)
+}
+
+pub(crate) async fn peer_connected(
+    socket: tokio::net::TcpStream,
+    peers: Arc<DashMap<PeerIdentity, Peer>>,
+) {
+    let (read, write) = tokio::io::split(socket);
+    let mut read_part = tokio_util::codec::FramedRead::new(read, ZmqCodec::new());
+    let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
+
+    greet_exchange_w_parts(&mut write_part, &mut read_part)
+        .await
+        .expect("Failed to exchange greetings");
+
+    let peer_id = ready_exchange_w_parts(&mut write_part, &mut read_part, SocketType::ROUTER)
+        .await
+        .expect("Failed to exchange ready messages");
+    println!("Peer connected {:?}", peer_id);
+
+    let default_queue_size = 100;
+    let (_send_queue, _send_queue_receiver) = futures::channel::mpsc::channel(default_queue_size);
+    let (mut _recv_queue, _recv_queue_receiver) = futures::channel::mpsc::channel(default_queue_size);
+    let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
+
+    let peer = Peer {
+        identity: peer_id.clone(),
+        send_queue: _send_queue,
+        recv_queue: _recv_queue_receiver,
+        _io_close_handle: sender,
+    };
+
+    peers.insert(peer_id.clone(), peer);
+
+    let mut stop_handle = receiver.fuse();
+    //let mut write_part = write_part.fuse();
+    let mut incoming_queue = read_part.fuse();
+    let mut outgoing_queue = _send_queue_receiver.fuse();
+    loop {
+        futures::select! {
+                incoming = incoming_queue.next() => {
+                    match incoming {
+                        Some(Ok(Message::MultipartMessage(message))) => {
+                            let mut envelope = vec![ZmqMessage { data: peer_id.clone().into()}];
+                            envelope.extend(message);
+                            dbg!(&envelope);
+                            _recv_queue.send(Message::MultipartMessage(envelope))
+                                .await
+                                .expect("Failed to send");
+                            println!("Sent message");
+                        }
+                        None => {
+                            println!("Client disconnected {:?}", &peer_id);
+                            peers.remove(&peer_id);
+                            break;
+                        }
+                        _ => todo!(),
+                    }
+                },
+                outgoing = outgoing_queue.next() => {
+                    match outgoing {
+                        Some(message) => {
+                            let result = write_part.send(message).await;
+                            dbg!(result);
+                        },
+                        None => {
+                            println!("Outgoing queue closed. Stopping send coro");
+                            break;
+                        }
+                    }
+                },
+                _ = stop_handle => {
+                    println!("Stop callback received");
+                    break;
+                }
+            }
+    }
+}
+
+/// Opens port described by endpoint and starts a coroutine to accept new connections on it
+/// Returns stop_handle channel that can be used to stop accepting new connections
+pub(crate) async fn start_accepting_connections(endpoint: &str, peers: Arc<DashMap<PeerIdentity, Peer>>) -> ZmqResult<futures::channel::oneshot::Sender<bool>> {
+    let mut listener = tokio::net::TcpListener::bind(endpoint).await?;
+    let (stop_handle, stop_callback) = futures::channel::oneshot::channel::<bool>();
+    tokio::spawn(async move {
+        let mut stop_callback = stop_callback.fuse();
+        loop {
+            select! {
+                    incoming = listener.accept().fuse() => {
+                        let (socket, _) = incoming.expect("Failed to accept connection");
+                        tokio::spawn(util::peer_connected(socket, peers.clone()));
+                    },
+                    _ = stop_callback => {
+                        println!("Stop signal received");
+                        break
+                    }
+                }
+        }
+    });
+    Ok(stop_handle)
 }
