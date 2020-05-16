@@ -1,9 +1,9 @@
 use bytes::{Buf, BytesMut};
+use std::convert::TryInto;
 use std::error::Error;
 use std::time::Duration;
 use zmq_rs::{Socket, SocketType};
 use zmq_rs::{ZmqError, ZmqMessage};
-use std::convert::TryInto;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

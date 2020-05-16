@@ -9,8 +9,8 @@ use tokio_util::codec::Framed;
 
 use crate::codec::*;
 use crate::error::*;
-use crate::util::*;
 use crate::util;
+use crate::util::*;
 use crate::{Socket, SocketType, ZmqResult};
 use dashmap::DashMap;
 use std::sync::Arc;
@@ -27,12 +27,16 @@ impl Drop for RouterSocket {
 }
 
 impl RouterSocket {
-
     pub async fn bind(endpoint: &str) -> ZmqResult<Self> {
         let peers = Arc::new(DashMap::new());
         let router_socket = Self {
             peers: peers.clone(),
-            _accept_close_handle: util::start_accepting_connections(endpoint, peers, SocketType::ROUTER).await?,
+            _accept_close_handle: util::start_accepting_connections(
+                endpoint,
+                peers,
+                SocketType::ROUTER,
+            )
+            .await?,
         };
         Ok(router_socket)
     }
