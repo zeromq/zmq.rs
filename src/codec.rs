@@ -120,6 +120,12 @@ impl From<String> for ZmqMessage {
     }
 }
 
+impl From<&str> for ZmqMessage {
+    fn from(data: &str) -> Self {
+        BytesMut::from(data).into()
+    }
+}
+
 impl From<ZmqMessage> for Vec<u8> {
     fn from(m: ZmqMessage) -> Self {
         m.data.to_vec()
