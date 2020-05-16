@@ -18,44 +18,24 @@ pub struct ReqSocket {
 #[async_trait]
 impl Socket for ReqSocket {
     async fn send(&mut self, data: Vec<u8>) -> ZmqResult<()> {
-        let mut f_data = BytesMut::new();
-        f_data.extend_from_slice(data.as_ref());
         let frames = vec![
-            ZmqMessage {
-                data: BytesMut::new().freeze(),
-            }, // delimiter frame
-            ZmqMessage {
-                data: f_data.freeze(),
-            },
+            "".into(), // delimiter frame
+            data.into(),
         ];
         self._inner.send(Message::MultipartMessage(frames)).await
     }
 
     async fn recv(&mut self) -> ZmqResult<Vec<u8>> {
-        let message: Option<ZmqResult<Message>> = self._inner.next().await; // delimeter
+        let message: Option<ZmqResult<Message>> = self._inner.next().await;
         match message {
-            Some(Ok(Message::Message(message))) => {
-                assert!(message.data.is_empty()); // Drop delimeter frame
-                let message: Option<ZmqResult<Message>> = self._inner.next().await;
-                match message {
-                    Some(Ok(Message::Message(message))) => Ok(message.data.to_vec()),
-                    Some(Ok(_)) => Err(ZmqError::Other("Wrong message type received")),
-                    Some(Err(e)) => Err(e),
-                    None => Err(ZmqError::NoMessage)
-                }
-            },
             Some(Ok(Message::MultipartMessage(mut message))) => {
-                let delimeter = message.remove(0);
-                assert!(delimeter.data.is_empty()); // Drop delimeter frame
-                let mut data = Vec::new();
-                for m in message {
-                    data.extend(m.data.to_vec());
-                }
-                return Ok(data)
+                assert!(message.len() == 2);
+                assert!(message[0].data.is_empty()); // Ensure that we have delimeter as first part
+                return Ok(message.pop().unwrap().into());
             }
             Some(Ok(_)) => return Err(ZmqError::Other("Wrong message type received")),
             Some(Err(e)) => return Err(e),
-            None => return Err(ZmqError::NoMessage)
+            None => return Err(ZmqError::NoMessage),
         }
     }
 }
