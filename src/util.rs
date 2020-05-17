@@ -5,7 +5,7 @@ use futures::stream::StreamExt;
 use futures::{select, Future, SinkExt};
 use futures_util::future::FutureExt;
 use std::sync::Arc;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use tokio::net::TcpStream;
 use uuid::Uuid;
 
@@ -187,7 +187,7 @@ pub(crate) async fn ready_exchange_w_parts(
                     .get("Identity")
                     .map_or_else(
                         || PeerIdentity::new(),
-                        |x| PeerIdentity::try_from(x.clone().into_bytes()).unwrap()
+                        |x| x.clone().into_bytes().try_into().unwrap()
                     );
 
                 if sockets_compatible(socket_type, other_sock_type) {
