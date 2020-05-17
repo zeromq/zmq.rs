@@ -14,6 +14,7 @@ use crate::util::*;
 use crate::{Socket, SocketType, ZmqResult};
 use dashmap::DashMap;
 use std::sync::Arc;
+use std::convert::{TryFrom, TryInto};
 
 pub struct RouterSocket {
     pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
@@ -54,7 +55,7 @@ impl RouterSocket {
 
     pub async fn send_multipart(&mut self, messages: Vec<ZmqMessage>) -> ZmqResult<()> {
         assert!(messages.len() > 2);
-        let peer_id: PeerIdentity = messages[0].data.to_vec().into();
+        let peer_id: PeerIdentity = messages[0].data.to_vec().try_into()?;
         match self.peers.get_mut(&peer_id) {
             Some(mut peer) => {
                 peer.send_queue
