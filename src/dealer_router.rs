@@ -71,11 +71,15 @@ impl RouterSocket {
 #[async_trait]
 impl Socket for RouterSocket {
     async fn send(&mut self, _m: ZmqMessage) -> ZmqResult<()> {
-        Err(ZmqError::Other("This socket doesn't support sending individual messages"))
+        Err(ZmqError::Other(
+            "This socket doesn't support sending individual messages",
+        ))
     }
 
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
-        Err(ZmqError::Other("This socket doesn't support receiving individual messages"))
+        Err(ZmqError::Other(
+            "This socket doesn't support receiving individual messages",
+        ))
     }
 }
 
