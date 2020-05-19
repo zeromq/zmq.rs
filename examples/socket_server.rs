@@ -2,6 +2,7 @@ use tokio::net::TcpListener;
 use tokio::prelude::*;
 
 use zeromq::*;
+use std::convert::TryInto;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -13,12 +14,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         tokio::spawn(async move {
             loop {
-                let message = socket.recv().await.expect("Failed to receive");
-                let mut repl = String::from_utf8(message).unwrap();
+                // TODO refactor me
+                let mut repl: String = socket.recv().await.unwrap().try_into().unwrap();
                 dbg!(&repl);
                 repl.push_str(" Reply");
                 socket
-                    .send(repl.into_bytes())
+                    .send(repl.into())
                     .await
                     .expect("Failed to send");
             }

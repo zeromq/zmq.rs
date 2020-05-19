@@ -2,6 +2,7 @@ use bytes::Bytes;
 use std::error::Error;
 use zeromq::{Socket, SocketType};
 use zeromq::{SubSocket, ZmqMessage};
+use std::convert::TryInto;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -13,8 +14,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     for i in 0..10 {
         println!("Message {}", i);
-        let data = socket.recv().await?;
-        let repl = String::from_utf8(data)?;
+        let repl: String = socket.recv().await?.try_into()?;
         dbg!(repl);
     }
     Ok(())

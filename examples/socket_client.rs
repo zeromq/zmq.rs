@@ -2,6 +2,7 @@ use bytes::Bytes;
 use std::error::Error;
 use zeromq::ZmqMessage;
 use zeromq::{Socket, SocketType};
+use std::convert::TryInto;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -9,16 +10,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
         .expect("Failed to connect");
 
-    let hello = Vec::from("Hello");
-    socket.send(hello).await?;
-    let data = socket.recv().await?;
-    let repl = String::from_utf8(data)?;
+    socket.send("Hello".into()).await?;
+    let repl: String = socket.recv().await?.try_into()?;
     dbg!(repl);
 
-    let hello = Vec::from("NewHello");
-    socket.send(hello).await?;
-    let data = socket.recv().await?;
-    let repl = String::from_utf8(data)?;
+    socket.send("NewHello".into()).await?;
+    let repl: String = socket.recv().await?.try_into()?;
     dbg!(repl);
     Ok(())
 }

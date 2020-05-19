@@ -23,8 +23,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 dbg!(&message);
                 let request: String = message.remove(2).try_into()?;
 
-                let mut reply = format!("{} Reply", request);
-                message.push(reply.into());
+                message.push(format!("{} Reply", request).into());
                 frontend.send_multipart(message).await?;
             }
             Err(ZmqError::NoMessage) => {
