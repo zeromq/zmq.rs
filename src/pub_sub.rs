@@ -28,10 +28,7 @@ pub struct PubSocket {
 
 #[async_trait]
 impl Socket for PubSocket {
-    async fn send(&mut self, data: Vec<u8>) -> ZmqResult<()> {
-        let message = ZmqMessage {
-            data: Bytes::from(data),
-        };
+    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         let mut fanout = vec![];
         {
             let mut subscribers = self.subscribers.lock().await;
@@ -53,7 +50,7 @@ impl Socket for PubSocket {
         Ok(())
     }
 
-    async fn recv(&mut self) -> ZmqResult<Vec<u8>> {
+    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         Err(ZmqError::Socket(
             "This socket doesn't support receiving messages",
         ))
@@ -175,16 +172,16 @@ pub struct SubSocket {
 
 #[async_trait]
 impl Socket for SubSocket {
-    async fn send(&mut self, _data: Vec<u8>) -> ZmqResult<()> {
+    async fn send(&mut self, _m: ZmqMessage) -> ZmqResult<()> {
         Err(ZmqError::Socket(
             "This socket doesn't support sending messages",
         ))
     }
 
-    async fn recv(&mut self) -> ZmqResult<Vec<u8>> {
+    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         let message: Option<ZmqResult<Message>> = self._inner.next().await;
         match message {
-            Some(Ok(Message::Message(m))) => Ok(m.data.to_vec()),
+            Some(Ok(Message::Message(m))) => Ok(m),
             Some(Ok(_)) => Err(ZmqError::Other("Wrong message type received")),
             Some(Err(e)) => Err(e),
             None => Err(ZmqError::NoMessage),

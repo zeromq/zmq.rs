@@ -70,25 +70,12 @@ impl RouterSocket {
 
 #[async_trait]
 impl Socket for RouterSocket {
-    async fn send(&mut self, data: Vec<u8>) -> ZmqResult<()> {
-        unimplemented!()
+    async fn send(&mut self, _m: ZmqMessage) -> ZmqResult<()> {
+        Err(ZmqError::Other("This socket doesn't support sending individual messages"))
     }
 
-    async fn recv(&mut self) -> ZmqResult<Vec<u8>> {
-        for mut peer in self.peers.iter_mut() {
-            match peer.value_mut().recv_queue.try_next() {
-                Ok(Some(Message::MultipartMessage(messages))) => {
-                    let mut data = Vec::new();
-                    for m in messages {
-                        data.extend(m.data.to_vec());
-                    }
-                    return Ok(data);
-                }
-                Err(_) => continue,
-                _ => todo!(),
-            }
-        }
-        Err(ZmqError::NoMessage)
+    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
+        Err(ZmqError::Other("This socket doesn't support receiving individual messages"))
     }
 }
 
@@ -104,11 +91,11 @@ impl DealerSocket {
 
 #[async_trait]
 impl Socket for DealerSocket {
-    async fn send(&mut self, data: Vec<u8>) -> ZmqResult<()> {
+    async fn send(&mut self, _m: ZmqMessage) -> ZmqResult<()> {
         unimplemented!()
     }
 
-    async fn recv(&mut self) -> ZmqResult<Vec<u8>> {
+    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         unimplemented!()
     }
 }

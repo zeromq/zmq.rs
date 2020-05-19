@@ -93,8 +93,8 @@ impl Display for SocketType {
 
 #[async_trait]
 pub trait Socket: Send {
-    async fn send(&mut self, data: Vec<u8>) -> ZmqResult<()>;
-    async fn recv(&mut self) -> ZmqResult<Vec<u8>>;
+    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()>;
+    async fn recv(&mut self) -> ZmqResult<ZmqMessage>;
 }
 
 #[async_trait]

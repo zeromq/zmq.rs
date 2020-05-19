@@ -17,20 +17,20 @@ pub struct ReqSocket {
 
 #[async_trait]
 impl Socket for ReqSocket {
-    async fn send(&mut self, data: Vec<u8>) -> ZmqResult<()> {
+    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         let frames = vec![
             "".into(), // delimiter frame
-            data.into(),
+            message,
         ];
         self._inner.send(Message::MultipartMessage(frames)).await
     }
 
-    async fn recv(&mut self) -> ZmqResult<Vec<u8>> {
+    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         match self._inner.next().await {
             Some(Ok(Message::MultipartMessage(mut message))) => {
                 assert!(message.len() == 2);
                 assert!(message[0].data.is_empty()); // Ensure that we have delimeter as first part
-                Ok(message.pop().unwrap().into())
+                Ok(message.pop().unwrap())
             }
             Some(Ok(_)) => Err(ZmqError::Other("Wrong message type received")),
             Some(Err(e)) => Err(e),
@@ -56,20 +56,20 @@ pub struct RepSocket {
 
 #[async_trait]
 impl Socket for RepSocket {
-    async fn send(&mut self, data: Vec<u8>) -> ZmqResult<()> {
+    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         let frames = vec![
             "".into(), // delimiter frame
-            data.into(),
+            message,
         ];
         self._inner.send(Message::MultipartMessage(frames)).await
     }
 
-    async fn recv(&mut self) -> ZmqResult<Vec<u8>> {
+    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         match self._inner.next().await {
             Some(Ok(Message::MultipartMessage(mut message))) => {
                 assert!(message.len() == 2);
                 assert!(message[0].data.is_empty()); // Ensure that we have delimeter as first part
-                Ok(message.pop().unwrap().into())
+                Ok(message.pop().unwrap())
             }
             Some(Ok(_)) => Err(ZmqError::Other("Wrong message type received")),
             Some(Err(e)) => Err(e),
