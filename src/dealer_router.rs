@@ -1,20 +1,21 @@
 use async_trait::async_trait;
+use dashmap::DashMap;
 use futures::channel::mpsc::*;
 use futures::stream::StreamExt;
 use futures::{select, Future, SinkExt};
 use futures_util::future::FutureExt;
+use std::convert::{TryFrom, TryInto};
+use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::stream::Stream;
 use tokio_util::codec::Framed;
 
 use crate::codec::*;
 use crate::error::*;
+use crate::message::*;
 use crate::util;
 use crate::util::*;
 use crate::{Socket, SocketType, ZmqResult};
-use dashmap::DashMap;
-use std::sync::Arc;
-use std::convert::{TryFrom, TryInto};
 
 pub struct RouterSocket {
     pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,

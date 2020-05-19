@@ -16,6 +16,7 @@ use std::fmt::{Debug, Display};
 mod codec;
 mod dealer_router;
 mod error;
+mod message;
 mod pub_sub;
 mod req_rep;
 pub mod util;
@@ -29,8 +30,7 @@ pub use crate::error::ZmqError;
 pub use crate::pub_sub::*;
 pub use crate::req_rep::*;
 use crate::util::*;
-
-pub use crate::codec::ZmqMessage;
+pub use message::*;
 
 pub type ZmqResult<T> = Result<T, ZmqError>;
 

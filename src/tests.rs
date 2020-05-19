@@ -1,4 +1,5 @@
 use crate::{Socket, SocketType};
+use std::convert::TryInto;
 use std::io::Write;
 
 #[tokio::test]

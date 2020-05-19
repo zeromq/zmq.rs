@@ -4,8 +4,8 @@ use dashmap::DashMap;
 use futures::stream::StreamExt;
 use futures::{select, Future, SinkExt};
 use futures_util::future::FutureExt;
-use std::sync::Arc;
 use std::convert::{TryFrom, TryInto};
+use std::sync::Arc;
 use tokio::net::TcpStream;
 use uuid::Uuid;
 
@@ -26,7 +26,9 @@ impl TryFrom<Vec<u8>> for PeerIdentity {
         if data.len() == 0 {
             Ok(PeerIdentity::new())
         } else if data.len() > 255 {
-            Err(ZmqError::Other("ZMQ_IDENTITY should not be more than 255 bytes long"))
+            Err(ZmqError::Other(
+                "ZMQ_IDENTITY should not be more than 255 bytes long",
+            ))
         } else {
             Ok(Self(data))
         }
@@ -182,13 +184,10 @@ pub(crate) async fn ready_exchange_w_parts(
                     .map(|x| SocketType::try_from(x.as_str()))
                     .unwrap_or(Err(ZmqError::Codec("Failed to parse other socket type")))?;
 
-                let peer_id = command
-                    .properties
-                    .get("Identity")
-                    .map_or_else(
-                        || PeerIdentity::new(),
-                        |x| x.clone().into_bytes().try_into().unwrap()
-                    );
+                let peer_id = command.properties.get("Identity").map_or_else(
+                    || PeerIdentity::new(),
+                    |x| x.clone().into_bytes().try_into().unwrap(),
+                );
 
                 if sockets_compatible(socket_type, other_sock_type) {
                     Ok(peer_id)
