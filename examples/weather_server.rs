@@ -3,13 +3,13 @@ use tokio::net::TcpListener;
 use tokio::prelude::*;
 
 use std::time::Duration;
-use zmq_rs::*;
+use zeromq::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rng = rand::thread_rng();
     println!("Start server");
-    let mut socket = zmq_rs::PubSocket::bind("127.0.0.1:5556").await?;
+    let mut socket = zeromq::PubSocket::bind("127.0.0.1:5556").await?;
 
     println!("Start sending loop");
     loop {

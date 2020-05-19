@@ -1,12 +1,12 @@
 use tokio::net::TcpListener;
 use tokio::prelude::*;
 
-use zmq_rs::*;
+use zeromq::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Start server");
-    let mut server = zmq_rs::bind(SocketType::REP, "127.0.0.1:5555").await?;
+    let mut server = zeromq::bind(SocketType::REP, "127.0.0.1:5555").await?;
 
     loop {
         let mut socket = server.accept().await?;

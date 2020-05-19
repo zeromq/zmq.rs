@@ -1,11 +1,11 @@
 use bytes::Bytes;
 use std::error::Error;
-use zmq_rs::ZmqMessage;
-use zmq_rs::{Socket, SocketType};
+use zeromq::ZmqMessage;
+use zeromq::{Socket, SocketType};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let mut socket = zmq_rs::ReqSocket::connect("127.0.0.1:5559")
+    let mut socket = zeromq::ReqSocket::connect("127.0.0.1:5559")
         .await
         .expect("Failed to connect");
 
