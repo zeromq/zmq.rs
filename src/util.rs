@@ -2,7 +2,7 @@ use crate::*;
 use bytes::Bytes;
 use dashmap::DashMap;
 use futures::stream::StreamExt;
-use futures::{select, Future, SinkExt};
+use futures::{select, SinkExt};
 use futures_util::future::FutureExt;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;

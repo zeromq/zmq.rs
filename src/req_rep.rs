@@ -9,7 +9,6 @@ use crate::error::*;
 use crate::util::raw_connect;
 use crate::*;
 use crate::{Socket, SocketType, ZmqResult};
-use bytes::BytesMut;
 
 pub struct ReqSocket {
     pub(crate) _inner: Framed<TcpStream, ZmqCodec>,
