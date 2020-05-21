@@ -11,7 +11,7 @@ use crate::error::*;
 use crate::message::*;
 use crate::util::*;
 use crate::{Socket, SocketType, ZmqResult};
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{BufMut, BytesMut};
 use futures::lock::Mutex;
 use std::sync::Arc;
 

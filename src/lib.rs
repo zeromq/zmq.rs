@@ -4,10 +4,8 @@ extern crate enum_primitive_derive;
 use num_traits::ToPrimitive;
 
 use async_trait::async_trait;
-use futures_util::sink::SinkExt;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
-use tokio::stream::StreamExt;
 use tokio_util::codec::Framed;
 
 use std::convert::TryFrom;
@@ -110,6 +108,6 @@ pub async fn bind(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<dyn 
     }
 }
 
-pub async fn proxy(s1: Box<dyn Socket>, s2: Box<dyn Socket>) -> ZmqResult<()> {
+pub async fn proxy(_s1: Box<dyn Socket>, _s2: Box<dyn Socket>) -> ZmqResult<()> {
     todo!()
 }

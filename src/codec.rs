@@ -7,7 +7,6 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use crate::message::*;
 use crate::SocketType;
-use std::string::FromUtf8Error;
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) enum ZmqMechanism {
