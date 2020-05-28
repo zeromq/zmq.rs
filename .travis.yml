@@ -1,4 +1,4 @@
-languate: rust
+language: rust
 rust:
   - stable
 script:
