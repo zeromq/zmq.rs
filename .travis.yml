@@ -1,0 +1,5 @@
+languate: rust
+rust:
+  - stable
+script:
+  - cargo test
