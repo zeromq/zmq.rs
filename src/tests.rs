@@ -12,7 +12,7 @@ async fn test_pub_sub_sockets() {
         for i in 0..10i32 {
             let message = format!("Message - {}", i);
             pub_socket
-                .send(message.into_bytes())
+                .send(message.into())
                 .await
                 .expect("Failed to send");
         }
@@ -26,8 +26,12 @@ async fn test_pub_sub_sockets() {
         sub_socket.subscribe("").await.expect("Failed to subscribe");
 
         for i in 0..10i32 {
-            let data = sub_socket.recv().await.expect("Failed to recv");
-            let repl = String::from_utf8(data).expect("Malformed string");
+            let repl: String = sub_socket
+                .recv()
+                .await
+                .expect("Failed to recv")
+                .try_into()
+                .expect("Malformed string");
             assert_eq!(format!("Message - {}", i), repl)
         }
     });

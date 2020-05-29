@@ -71,8 +71,8 @@ const COMPATIBILITY_MATRIX: [u8; 121] = [
 
 /// Checks if two sokets are compatible with each other
 /// ```
-/// use zmq_rs::SocketType;
-/// use zmq_rs::util::sockets_compatible;
+/// use zeromq::SocketType;
+/// use zeromq::util::sockets_compatible;
 /// assert!(sockets_compatible(SocketType::PUB, SocketType::SUB));
 /// assert!(sockets_compatible(SocketType::REQ, SocketType::REP));
 /// assert!(sockets_compatible(SocketType::DEALER, SocketType::ROUTER));
