@@ -1,8 +1,8 @@
 use bytes::Bytes;
+use std::convert::TryInto;
 use std::error::Error;
 use zeromq::{Socket, SocketType};
 use zeromq::{SubSocket, ZmqMessage};
-use std::convert::TryInto;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
