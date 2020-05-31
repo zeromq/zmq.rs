@@ -266,7 +266,7 @@ pub(crate) async fn peer_connected(
                     }
                     None => {
                         println!("Client disconnected {:?}", &peer_id);
-                        peers.remove(&peer_id);
+                        //peers.remove(&peer_id);
                         break;
                     }
                     _ => todo!(),

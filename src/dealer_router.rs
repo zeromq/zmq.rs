@@ -11,6 +11,7 @@ use crate::message::*;
 use crate::util;
 use crate::util::*;
 use crate::{Socket, SocketType, ZmqResult};
+use futures::stream::{FuturesUnordered, StreamExt};
 
 pub struct RouterSocket {
     pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
@@ -39,21 +40,34 @@ impl RouterSocket {
     }
 
     pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
-        for mut peer in self.peers.iter_mut() {
-            match peer.recv_queue.lock().await.try_next() {
-                Ok(Some(Message::MultipartMessage(messages))) => {
+        println!("Try recv multipart");
+        let mut messages = FuturesUnordered::new();
+        for mut peer in self.peers.iter() {
+            let peer_id = peer.identity.clone();
+            let recv_queue = peer.recv_queue.clone();
+            messages.push(async move { (peer_id, recv_queue.lock().await.next().await) });
+        }
+        loop {
+            if messages.is_empty() {
+                // TODO block to wait for connections
+                return Err(ZmqError::NoMessage);
+            }
+            match messages.next().await {
+                Some((peer_id, Some(Message::MultipartMessage(messages)))) => {
                     let mut envelope = vec![ZmqMessage {
-                        data: peer.identity.clone().into(),
+                        data: peer_id.into(),
                     }];
                     envelope.extend(messages);
-                    dbg!(&envelope);
                     return Ok(envelope);
                 }
-                Err(_) => continue,
-                _ => todo!(),
-            }
+                Some((peer_id, None)) => {
+                    println!("Peer disconnected {:?}", peer_id);
+                    self.peers.remove(&peer_id);
+                }
+                Some((peer_id, _)) => todo!(),
+                None => continue,
+            };
         }
-        Err(ZmqError::NoMessage)
     }
 
     pub async fn send_multipart(&mut self, messages: Vec<ZmqMessage>) -> ZmqResult<()> {
