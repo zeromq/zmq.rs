@@ -40,8 +40,15 @@ impl RouterSocket {
 
     pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
         for mut peer in self.peers.iter_mut() {
-            match peer.value_mut().recv_queue.try_next() {
-                Ok(Some(Message::MultipartMessage(messages))) => return Ok(messages),
+            match peer.recv_queue.lock().await.try_next() {
+                Ok(Some(Message::MultipartMessage(messages))) => {
+                    let mut envelope = vec![ZmqMessage {
+                        data: peer.identity.clone().into(),
+                    }];
+                    envelope.extend(messages);
+                    dbg!(&envelope);
+                    return Ok(envelope);
+                }
                 Err(_) => continue,
                 _ => todo!(),
             }

@@ -1,6 +1,8 @@
 use crate::*;
 use bytes::Bytes;
 use dashmap::DashMap;
+use futures::channel::mpsc::{Receiver, Sender};
+use futures::lock::Mutex;
 use futures::stream::StreamExt;
 use futures::{select, SinkExt};
 use futures_util::future::FutureExt;
@@ -49,8 +51,8 @@ impl From<PeerIdentity> for Bytes {
 
 pub(crate) struct Peer {
     pub(crate) identity: PeerIdentity,
-    pub(crate) send_queue: futures::channel::mpsc::Sender<Message>,
-    pub(crate) recv_queue: futures::channel::mpsc::Receiver<Message>,
+    pub(crate) send_queue: Sender<Message>,
+    pub(crate) recv_queue: Arc<Mutex<Receiver<Message>>>,
     _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
@@ -242,7 +244,7 @@ pub(crate) async fn peer_connected(
     let peer = Peer {
         identity: peer_id.clone(),
         send_queue: _send_queue,
-        recv_queue: _recv_queue_receiver,
+        recv_queue: Arc::new(Mutex::new(_recv_queue_receiver)),
         _io_close_handle: sender,
     };
 
@@ -257,10 +259,7 @@ pub(crate) async fn peer_connected(
             incoming = incoming_queue.next() => {
                 match incoming {
                     Some(Ok(Message::MultipartMessage(message))) => {
-                        let mut envelope = vec![ZmqMessage { data: peer_id.clone().into()}];
-                        envelope.extend(message);
-                        dbg!(&envelope);
-                        _recv_queue.send(Message::MultipartMessage(envelope))
+                        _recv_queue.send(Message::MultipartMessage(message))
                             .await
                             .expect("Failed to send");
                         println!("Sent message");
