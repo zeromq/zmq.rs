@@ -55,18 +55,20 @@ impl PubSocket {
         socket: tokio::net::TcpStream,
         subscribers: Arc<DashMap<PeerIdentity, Subscriber>>,
     ) {
-        let (read, write) = tokio::io::split(socket);
-        let mut read_part = tokio_util::codec::FramedRead::new(read, ZmqCodec::new());
-        let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
+        let mut raw_socket = Framed::new(socket, ZmqCodec::new());
 
-        greet_exchange_w_parts(&mut write_part, &mut read_part)
+        greet_exchange(&mut raw_socket)
             .await
             .expect("Failed to exchange greetings");
+        let peer_id = ready_exchange(&mut raw_socket, SocketType::PUB)
+            .await
+            .expect("Failed to exchange ready messages");
+        println!("Peer connected {:?}", peer_id);
 
-        let subscriber_id =
-            ready_exchange_w_parts(&mut write_part, &mut read_part, SocketType::PUB)
-                .await
-                .expect("Failed to exchange ready messages");
+        let parts = raw_socket.into_parts();
+        let (read, write) = tokio::io::split(parts.io);
+        let mut read_part = tokio_util::codec::FramedRead::new(read, parts.codec);
+        let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
 
         let default_queue_size = 100;
         let (_send_queue, _send_queue_receiver) =
@@ -76,14 +78,14 @@ impl PubSocket {
         let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
 
         let peer = Peer {
-            identity: subscriber_id.clone(),
+            identity: peer_id.clone(),
             send_queue: _send_queue,
             recv_queue: Arc::new(Mutex::new(_recv_queue_receiver)),
             _io_close_handle: sender,
         };
 
         subscribers.insert(
-            subscriber_id.clone(),
+            peer_id.clone(),
             Subscriber {
                 subscriptions: vec![],
                 peer: peer,
@@ -122,7 +124,7 @@ impl PubSocket {
                                 1 => {
                                     // Subscribe
                                     subscribers
-                                        .get_mut(&subscriber_id)
+                                        .get_mut(&peer_id)
                                         .unwrap()
                                         .subscriptions
                                         .push(Vec::from(&data[1..]));
@@ -132,7 +134,7 @@ impl PubSocket {
                                     let mut del_index = None;
                                     let sub = Vec::from(&data[1..]);
                                     for (idx, subscription) in subscribers
-                                        .get(&subscriber_id)
+                                        .get(&peer_id)
                                         .unwrap()
                                         .subscriptions
                                         .iter()
@@ -145,7 +147,7 @@ impl PubSocket {
                                     }
                                     if let Some(index) = del_index {
                                         subscribers
-                                            .get_mut(&subscriber_id)
+                                            .get_mut(&peer_id)
                                             .unwrap()
                                             .subscriptions
                                             .remove(index);
@@ -155,7 +157,7 @@ impl PubSocket {
                             }
                         }
                         None => {
-                            println!("Client disconnected {:?}", &subscriber_id);
+                            println!("Client disconnected {:?}", &peer_id);
                             //peers.remove(&peer_id);
                             break;
                         }

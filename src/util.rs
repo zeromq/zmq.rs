@@ -102,29 +102,6 @@ pub(crate) async fn greet_exchange(socket: &mut Framed<TcpStream, ZmqCodec>) -> 
     }
 }
 
-pub(crate) async fn greet_exchange_w_parts(
-    sink: &mut tokio_util::codec::FramedWrite<
-        tokio::io::WriteHalf<tokio::net::TcpStream>,
-        ZmqCodec,
-    >,
-    stream: &mut tokio_util::codec::FramedRead<
-        tokio::io::ReadHalf<tokio::net::TcpStream>,
-        ZmqCodec,
-    >,
-) -> ZmqResult<()> {
-    sink.send(Message::Greeting(ZmqGreeting::default())).await?;
-
-    let greeting: Option<Result<Message, ZmqError>> = stream.next().await;
-
-    match greeting {
-        Some(Ok(Message::Greeting(greet))) => match greet.version {
-            (3, 0) => Ok(()),
-            _ => Err(ZmqError::Other("Unsupported protocol version")),
-        },
-        _ => Err(ZmqError::Codec("Failed Greeting exchange")),
-    }
-}
-
 pub(crate) async fn ready_exchange(
     socket: &mut Framed<TcpStream, ZmqCodec>,
     socket_type: SocketType,
@@ -133,50 +110,6 @@ pub(crate) async fn ready_exchange(
     socket.send(Message::Command(ready)).await?;
 
     let ready_repl: Option<ZmqResult<Message>> = socket.next().await;
-    match ready_repl {
-        Some(Ok(Message::Command(command))) => match command.name {
-            ZmqCommandName::READY => {
-                let other_sock_type = command
-                    .properties
-                    .get("Socket-Type")
-                    .map(|x| SocketType::try_from(x.as_str()))
-                    .unwrap_or(Err(ZmqError::Codec("Failed to parse other socket type")))?;
-
-                let peer_id = command.properties.get("Identity").map_or_else(
-                    || PeerIdentity::new(),
-                    |x| x.clone().into_bytes().try_into().unwrap(),
-                );
-
-                if sockets_compatible(socket_type, other_sock_type) {
-                    Ok(peer_id)
-                } else {
-                    Err(ZmqError::Other(
-                        "Provided sockets combination is not compatible",
-                    ))
-                }
-            }
-        },
-        Some(Ok(_)) => Err(ZmqError::Codec("Failed to confirm ready state")),
-        Some(Err(e)) => Err(e),
-        None => Err(ZmqError::Other("No reply from server")),
-    }
-}
-
-pub(crate) async fn ready_exchange_w_parts(
-    sink: &mut tokio_util::codec::FramedWrite<
-        tokio::io::WriteHalf<tokio::net::TcpStream>,
-        ZmqCodec,
-    >,
-    stream: &mut tokio_util::codec::FramedRead<
-        tokio::io::ReadHalf<tokio::net::TcpStream>,
-        ZmqCodec,
-    >,
-    socket_type: SocketType,
-) -> ZmqResult<PeerIdentity> {
-    let ready = ZmqCommand::ready(socket_type);
-    sink.send(Message::Command(ready)).await?;
-
-    let ready_repl: Option<ZmqResult<Message>> = stream.next().await;
     match ready_repl {
         Some(Ok(Message::Command(command))) => match command.name {
             ZmqCommandName::READY => {
