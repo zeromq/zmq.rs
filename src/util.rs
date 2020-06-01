@@ -53,7 +53,7 @@ pub(crate) struct Peer {
     pub(crate) identity: PeerIdentity,
     pub(crate) send_queue: Sender<Message>,
     pub(crate) recv_queue: Arc<Mutex<Receiver<Message>>>,
-    _io_close_handle: futures::channel::oneshot::Sender<bool>,
+    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
 const COMPATIBILITY_MATRIX: [u8; 121] = [
@@ -222,18 +222,20 @@ pub(crate) async fn peer_connected(
     peers: Arc<DashMap<PeerIdentity, Peer>>,
     socket_type: SocketType,
 ) {
-
     let mut raw_socket = Framed::new(socket, ZmqCodec::new());
 
-    greet_exchange(&mut raw_socket).await.expect("Failed to exchange greetings");
-    let peer_id = ready_exchange(&mut raw_socket, socket_type).await.expect("Failed to exchange ready messages");
+    greet_exchange(&mut raw_socket)
+        .await
+        .expect("Failed to exchange greetings");
+    let peer_id = ready_exchange(&mut raw_socket, socket_type)
+        .await
+        .expect("Failed to exchange ready messages");
     println!("Peer connected {:?}", peer_id);
 
     let parts = raw_socket.into_parts();
     let (read, write) = tokio::io::split(parts.io);
     let mut read_part = tokio_util::codec::FramedRead::new(read, parts.codec);
     let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
-
 
     let default_queue_size = 100;
     let (_send_queue, _send_queue_receiver) = futures::channel::mpsc::channel(default_queue_size);
