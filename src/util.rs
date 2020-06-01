@@ -144,7 +144,7 @@ pub(crate) async fn ready_exchange(
 
                 let peer_id = command.properties.get("Identity").map_or_else(
                     || PeerIdentity::new(),
-                    |x| PeerIdentity(x.clone().into_bytes()),
+                    |x| x.clone().into_bytes().try_into().unwrap(),
                 );
 
                 if sockets_compatible(socket_type, other_sock_type) {
@@ -222,18 +222,18 @@ pub(crate) async fn peer_connected(
     peers: Arc<DashMap<PeerIdentity, Peer>>,
     socket_type: SocketType,
 ) {
-    let (read, write) = tokio::io::split(socket);
-    let mut read_part = tokio_util::codec::FramedRead::new(read, ZmqCodec::new());
+
+    let mut raw_socket = Framed::new(socket, ZmqCodec::new());
+
+    greet_exchange(&mut raw_socket).await.expect("Failed to exchange greetings");
+    let peer_id = ready_exchange(&mut raw_socket, socket_type).await.expect("Failed to exchange ready messages");
+    println!("Peer connected {:?}", peer_id);
+
+    let parts = raw_socket.into_parts();
+    let (read, write) = tokio::io::split(parts.io);
+    let mut read_part = tokio_util::codec::FramedRead::new(read, parts.codec);
     let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
 
-    greet_exchange_w_parts(&mut write_part, &mut read_part)
-        .await
-        .expect("Failed to exchange greetings");
-
-    let peer_id = ready_exchange_w_parts(&mut write_part, &mut read_part, socket_type)
-        .await
-        .expect("Failed to exchange ready messages");
-    println!("Peer connected {:?}", peer_id);
 
     let default_queue_size = 100;
     let (_send_queue, _send_queue_receiver) = futures::channel::mpsc::channel(default_queue_size);

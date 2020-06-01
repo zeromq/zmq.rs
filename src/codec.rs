@@ -210,6 +210,7 @@ enum DecoderState {
     Frame(Frame),
 }
 
+#[derive(Debug)]
 pub(crate) struct ZmqCodec {
     state: DecoderState,
     waiting_for: usize, // Number of bytes needed to decode frame
