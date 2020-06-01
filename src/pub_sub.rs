@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use futures::select;
-use futures_util::future::FutureExt;
-use futures_util::sink::SinkExt;
+use futures::FutureExt;
+use futures::SinkExt;
+use futures::StreamExt;
 use tokio::net::TcpStream;
-use tokio::stream::StreamExt;
 use tokio_util::codec::Framed;
 
 use crate::codec::*;
@@ -12,40 +12,33 @@ use crate::message::*;
 use crate::util::*;
 use crate::{Socket, SocketType, ZmqResult};
 use bytes::{BufMut, BytesMut};
+use dashmap::DashMap;
 use futures::lock::Mutex;
 use std::sync::Arc;
 
 pub(crate) struct Subscriber {
     pub subscriptions: Vec<Vec<u8>>,
-    pub connection:
-        tokio_util::codec::FramedWrite<tokio::io::WriteHalf<tokio::net::TcpStream>, ZmqCodec>,
+    pub peer: Peer,
 }
 
 pub struct PubSocket {
-    pub(crate) subscribers: Arc<Mutex<Vec<Subscriber>>>,
+    pub(crate) subscribers: Arc<DashMap<PeerIdentity, Subscriber>>,
     _accept_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
 #[async_trait]
 impl Socket for PubSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
-        let mut fanout = vec![];
-        {
-            let mut subscribers = self.subscribers.lock().await;
-            for subscriber in subscribers.iter_mut() {
-                for sub_filter in &subscriber.subscriptions {
-                    if sub_filter.as_slice() == &message.data[0..sub_filter.len()] {
-                        fanout.push(
-                            subscriber
-                                .connection
-                                .send(Message::Message(message.clone())),
-                        );
-                        break;
-                    }
+        for mut subscriber in self.subscribers.iter_mut() {
+            for sub_filter in &subscriber.subscriptions {
+                if sub_filter.as_slice() == &message.data[0..sub_filter.len()] {
+                    subscriber
+                        .peer
+                        .send_queue
+                        .try_send(Message::Message(message.clone()));
+                    break;
                 }
             }
-            println!("Sending message to all piers");
-            futures::future::join_all(fanout).await; // Ignore errors for now
         }
         Ok(())
     }
@@ -60,81 +53,117 @@ impl Socket for PubSocket {
 impl PubSocket {
     async fn handle_subscriber(
         socket: tokio::net::TcpStream,
-        subscribers: Arc<Mutex<Vec<Subscriber>>>,
+        subscribers: Arc<DashMap<PeerIdentity, Subscriber>>,
     ) {
-        let (read, write) = tokio::io::split(socket);
-        let mut read_part = tokio_util::codec::FramedRead::new(read, ZmqCodec::new());
-        let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
+        let mut raw_socket = Framed::new(socket, ZmqCodec::new());
 
-        greet_exchange_w_parts(&mut write_part, &mut read_part)
+        greet_exchange(&mut raw_socket)
             .await
             .expect("Failed to exchange greetings");
-
-        ready_exchange_w_parts(&mut write_part, &mut read_part, SocketType::PUB)
+        let peer_id = ready_exchange(&mut raw_socket, SocketType::PUB)
             .await
             .expect("Failed to exchange ready messages");
+        println!("Peer connected {:?}", peer_id);
 
-        let mut subscriber_id = None;
-        {
-            let mut locked_subscribers = subscribers.lock().await;
-            locked_subscribers.push(Subscriber {
+        let parts = raw_socket.into_parts();
+        let (read, write) = tokio::io::split(parts.io);
+        let mut read_part = tokio_util::codec::FramedRead::new(read, parts.codec);
+        let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
+
+        let default_queue_size = 100;
+        let (_send_queue, _send_queue_receiver) =
+            futures::channel::mpsc::channel(default_queue_size);
+        let (mut _recv_queue, _recv_queue_receiver) =
+            futures::channel::mpsc::channel(default_queue_size);
+        let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
+
+        let peer = Peer {
+            identity: peer_id.clone(),
+            send_queue: _send_queue,
+            recv_queue: Arc::new(Mutex::new(_recv_queue_receiver)),
+            _io_close_handle: sender,
+        };
+
+        subscribers.insert(
+            peer_id.clone(),
+            Subscriber {
                 subscriptions: vec![],
-                connection: write_part,
-            });
-            subscriber_id = Some(locked_subscribers.len() - 1);
-        }
+                peer: peer,
+            },
+        );
 
+        let mut stop_handle = receiver.fuse();
+        let mut incoming_queue = read_part.fuse();
+        let mut outgoing_queue = _send_queue_receiver.fuse();
         loop {
-            let msg: Option<ZmqResult<Message>> = read_part.next().await;
-            match msg {
-                Some(Ok(Message::Message(message))) => {
-                    let data = message.data.to_vec();
-                    if data.len() < 1 {
-                        panic!("Unable to handle message")
-                    }
-                    {
-                        let mut locked_subscribers = subscribers.lock().await;
-                        match data[0] {
-                            1 => {
-                                // Subscribe
-                                locked_subscribers[subscriber_id.unwrap()]
-                                    .subscriptions
-                                    .push(Vec::from(&data[1..]));
-                            }
-                            0 => {
-                                // Unsubscribe
-                                let mut del_index = None;
-                                let sub = Vec::from(&data[1..]);
-                                for (idx, subscription) in locked_subscribers
-                                    [subscriber_id.unwrap()]
-                                .subscriptions
-                                .iter()
-                                .enumerate()
-                                {
-                                    if &sub == subscription {
-                                        del_index = Some(idx);
-                                        break;
-                                    }
-                                }
-                                if let Some(index) = del_index {
-                                    locked_subscribers[subscriber_id.unwrap()]
-                                        .subscriptions
-                                        .remove(index);
-                                }
-                            }
-                            _ => panic!("Malformed message"),
+            futures::select! {
+                _ = stop_handle => {
+                    println!("Stop callback received");
+                    break;
+                },
+                outgoing = outgoing_queue.next() => {
+                    match outgoing {
+                        Some(message) => {
+                            let result = write_part.send(message).await;
+                            dbg!(result); // TODO add errors processing
+                        },
+                        None => {
+                            println!("Outgoing queue closed. Stopping send coro");
+                            break;
                         }
                     }
-                }
-                Some(other) => {
-                    dbg!(other);
-                    todo!()
-                }
-                None => {
-                    println!("None received");
-                    // TODO implement handling for disconnected client
-                    todo!()
-                }
+                },
+                incoming = incoming_queue.next() => {
+                    match incoming {
+                        Some(Ok(Message::Message(message))) => {
+                            let data: Vec<u8> = message.into();
+                            if data.len() < 1 {
+                                panic!("Unable to handle message")
+                            }
+                            match data[0] {
+                                1 => {
+                                    // Subscribe
+                                    subscribers
+                                        .get_mut(&peer_id)
+                                        .unwrap()
+                                        .subscriptions
+                                        .push(Vec::from(&data[1..]));
+                                }
+                                0 => {
+                                    // Unsubscribe
+                                    let mut del_index = None;
+                                    let sub = Vec::from(&data[1..]);
+                                    for (idx, subscription) in subscribers
+                                        .get(&peer_id)
+                                        .unwrap()
+                                        .subscriptions
+                                        .iter()
+                                        .enumerate()
+                                    {
+                                        if &sub == subscription {
+                                            del_index = Some(idx);
+                                            break;
+                                        }
+                                    }
+                                    if let Some(index) = del_index {
+                                        subscribers
+                                            .get_mut(&peer_id)
+                                            .unwrap()
+                                            .subscriptions
+                                            .remove(index);
+                                    }
+                                }
+                                _ => panic!("Malformed message"),
+                            }
+                        }
+                        None => {
+                            println!("Client disconnected {:?}", &peer_id);
+                            //peers.remove(&peer_id);
+                            break;
+                        }
+                        _ => todo!(),
+                    }
+                },
             }
         }
     }
@@ -143,7 +172,7 @@ impl PubSocket {
         let mut listener = tokio::net::TcpListener::bind(endpoint).await?;
         let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
         let pub_socket = Self {
-            subscribers: Arc::new(Mutex::new(vec![])),
+            subscribers: Arc::new(DashMap::new()),
             _accept_close_handle: sender,
         };
         let subscribers = pub_socket.subscribers.clone();

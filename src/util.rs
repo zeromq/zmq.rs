@@ -1,6 +1,8 @@
 use crate::*;
 use bytes::Bytes;
 use dashmap::DashMap;
+use futures::channel::mpsc::{Receiver, Sender};
+use futures::lock::Mutex;
 use futures::stream::StreamExt;
 use futures::{select, SinkExt};
 use futures_util::future::FutureExt;
@@ -49,9 +51,9 @@ impl From<PeerIdentity> for Bytes {
 
 pub(crate) struct Peer {
     pub(crate) identity: PeerIdentity,
-    pub(crate) send_queue: futures::channel::mpsc::Sender<Message>,
-    pub(crate) recv_queue: futures::channel::mpsc::Receiver<Message>,
-    _io_close_handle: futures::channel::oneshot::Sender<bool>,
+    pub(crate) send_queue: Sender<Message>,
+    pub(crate) recv_queue: Arc<Mutex<Receiver<Message>>>,
+    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
 const COMPATIBILITY_MATRIX: [u8; 121] = [
@@ -100,29 +102,6 @@ pub(crate) async fn greet_exchange(socket: &mut Framed<TcpStream, ZmqCodec>) -> 
     }
 }
 
-pub(crate) async fn greet_exchange_w_parts(
-    sink: &mut tokio_util::codec::FramedWrite<
-        tokio::io::WriteHalf<tokio::net::TcpStream>,
-        ZmqCodec,
-    >,
-    stream: &mut tokio_util::codec::FramedRead<
-        tokio::io::ReadHalf<tokio::net::TcpStream>,
-        ZmqCodec,
-    >,
-) -> ZmqResult<()> {
-    sink.send(Message::Greeting(ZmqGreeting::default())).await?;
-
-    let greeting: Option<Result<Message, ZmqError>> = stream.next().await;
-
-    match greeting {
-        Some(Ok(Message::Greeting(greet))) => match greet.version {
-            (3, 0) => Ok(()),
-            _ => Err(ZmqError::Other("Unsupported protocol version")),
-        },
-        _ => Err(ZmqError::Codec("Failed Greeting exchange")),
-    }
-}
-
 pub(crate) async fn ready_exchange(
     socket: &mut Framed<TcpStream, ZmqCodec>,
     socket_type: SocketType,
@@ -131,50 +110,6 @@ pub(crate) async fn ready_exchange(
     socket.send(Message::Command(ready)).await?;
 
     let ready_repl: Option<ZmqResult<Message>> = socket.next().await;
-    match ready_repl {
-        Some(Ok(Message::Command(command))) => match command.name {
-            ZmqCommandName::READY => {
-                let other_sock_type = command
-                    .properties
-                    .get("Socket-Type")
-                    .map(|x| SocketType::try_from(x.as_str()))
-                    .unwrap_or(Err(ZmqError::Codec("Failed to parse other socket type")))?;
-
-                let peer_id = command.properties.get("Identity").map_or_else(
-                    || PeerIdentity::new(),
-                    |x| PeerIdentity(x.clone().into_bytes()),
-                );
-
-                if sockets_compatible(socket_type, other_sock_type) {
-                    Ok(peer_id)
-                } else {
-                    Err(ZmqError::Other(
-                        "Provided sockets combination is not compatible",
-                    ))
-                }
-            }
-        },
-        Some(Ok(_)) => Err(ZmqError::Codec("Failed to confirm ready state")),
-        Some(Err(e)) => Err(e),
-        None => Err(ZmqError::Other("No reply from server")),
-    }
-}
-
-pub(crate) async fn ready_exchange_w_parts(
-    sink: &mut tokio_util::codec::FramedWrite<
-        tokio::io::WriteHalf<tokio::net::TcpStream>,
-        ZmqCodec,
-    >,
-    stream: &mut tokio_util::codec::FramedRead<
-        tokio::io::ReadHalf<tokio::net::TcpStream>,
-        ZmqCodec,
-    >,
-    socket_type: SocketType,
-) -> ZmqResult<PeerIdentity> {
-    let ready = ZmqCommand::ready(socket_type);
-    sink.send(Message::Command(ready)).await?;
-
-    let ready_repl: Option<ZmqResult<Message>> = stream.next().await;
     match ready_repl {
         Some(Ok(Message::Command(command))) => match command.name {
             ZmqCommandName::READY => {
@@ -220,18 +155,20 @@ pub(crate) async fn peer_connected(
     peers: Arc<DashMap<PeerIdentity, Peer>>,
     socket_type: SocketType,
 ) {
-    let (read, write) = tokio::io::split(socket);
-    let mut read_part = tokio_util::codec::FramedRead::new(read, ZmqCodec::new());
-    let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
+    let mut raw_socket = Framed::new(socket, ZmqCodec::new());
 
-    greet_exchange_w_parts(&mut write_part, &mut read_part)
+    greet_exchange(&mut raw_socket)
         .await
         .expect("Failed to exchange greetings");
-
-    let peer_id = ready_exchange_w_parts(&mut write_part, &mut read_part, socket_type)
+    let peer_id = ready_exchange(&mut raw_socket, socket_type)
         .await
         .expect("Failed to exchange ready messages");
     println!("Peer connected {:?}", peer_id);
+
+    let parts = raw_socket.into_parts();
+    let (read, write) = tokio::io::split(parts.io);
+    let mut read_part = tokio_util::codec::FramedRead::new(read, parts.codec);
+    let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
 
     let default_queue_size = 100;
     let (_send_queue, _send_queue_receiver) = futures::channel::mpsc::channel(default_queue_size);
@@ -242,32 +179,28 @@ pub(crate) async fn peer_connected(
     let peer = Peer {
         identity: peer_id.clone(),
         send_queue: _send_queue,
-        recv_queue: _recv_queue_receiver,
+        recv_queue: Arc::new(Mutex::new(_recv_queue_receiver)),
         _io_close_handle: sender,
     };
 
     peers.insert(peer_id.clone(), peer);
 
     let mut stop_handle = receiver.fuse();
-    //let mut write_part = write_part.fuse();
     let mut incoming_queue = read_part.fuse();
     let mut outgoing_queue = _send_queue_receiver.fuse();
     loop {
         futures::select! {
             incoming = incoming_queue.next() => {
                 match incoming {
-                    Some(Ok(Message::MultipartMessage(message))) => {
-                        let mut envelope = vec![ZmqMessage { data: peer_id.clone().into()}];
-                        envelope.extend(message);
-                        dbg!(&envelope);
-                        _recv_queue.send(Message::MultipartMessage(envelope))
+                    Some(Ok(message)) => {
+                        _recv_queue.send(message)
                             .await
                             .expect("Failed to send");
                         println!("Sent message");
                     }
                     None => {
                         println!("Client disconnected {:?}", &peer_id);
-                        peers.remove(&peer_id);
+                        //peers.remove(&peer_id);
                         break;
                     }
                     _ => todo!(),
@@ -277,7 +210,7 @@ pub(crate) async fn peer_connected(
                 match outgoing {
                     Some(message) => {
                         let result = write_part.send(message).await;
-                        dbg!(result);
+                        dbg!(result); // TODO add errors processing
                     },
                     None => {
                         println!("Outgoing queue closed. Stopping send coro");
