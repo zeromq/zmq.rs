@@ -251,15 +251,14 @@ pub(crate) async fn peer_connected(
     peers.insert(peer_id.clone(), peer);
 
     let mut stop_handle = receiver.fuse();
-    //let mut write_part = write_part.fuse();
     let mut incoming_queue = read_part.fuse();
     let mut outgoing_queue = _send_queue_receiver.fuse();
     loop {
         futures::select! {
             incoming = incoming_queue.next() => {
                 match incoming {
-                    Some(Ok(Message::MultipartMessage(message))) => {
-                        _recv_queue.send(Message::MultipartMessage(message))
+                    Some(Ok(message)) => {
+                        _recv_queue.send(message)
                             .await
                             .expect("Failed to send");
                         println!("Sent message");
@@ -276,7 +275,7 @@ pub(crate) async fn peer_connected(
                 match outgoing {
                     Some(message) => {
                         let result = write_part.send(message).await;
-                        dbg!(result);
+                        dbg!(result); // TODO add errors processing
                     },
                     None => {
                         println!("Outgoing queue closed. Stopping send coro");
