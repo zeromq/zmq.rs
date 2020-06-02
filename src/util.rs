@@ -1,8 +1,5 @@
 use crate::*;
 use bytes::Bytes;
-use dashmap::DashMap;
-use futures::channel::mpsc::{Receiver, Sender};
-use futures::lock::Mutex;
 use futures::stream::StreamExt;
 use futures::{select, SinkExt};
 use futures_util::future::FutureExt;
@@ -143,7 +140,7 @@ pub(crate) async fn raw_connect(
     Ok(raw_socket)
 }
 
-pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<MultiPeer>) {
+pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<dyn MultiPeer>) {
     let mut raw_socket = Framed::new(socket, ZmqCodec::new());
 
     greet_exchange(&mut raw_socket)
@@ -156,7 +153,7 @@ pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<M
 
     let parts = raw_socket.into_parts();
     let (read, write) = tokio::io::split(parts.io);
-    let mut read_part = tokio_util::codec::FramedRead::new(read, parts.codec);
+    let read_part = tokio_util::codec::FramedRead::new(read, parts.codec);
     let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
 
     let (outgoing_queue, stop_callback) = backend.peer_connected(&peer_id);
@@ -202,7 +199,7 @@ pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<M
 /// Returns stop_handle channel that can be used to stop accepting new connections
 pub(crate) async fn start_accepting_connections(
     endpoint: &str,
-    backend: Arc<MultiPeer>,
+    backend: Arc<dyn MultiPeer>,
 ) -> ZmqResult<futures::channel::oneshot::Sender<bool>> {
     let mut listener = tokio::net::TcpListener::bind(endpoint).await?;
     let (stop_handle, stop_callback) = futures::channel::oneshot::channel::<bool>();

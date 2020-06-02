@@ -35,7 +35,7 @@ impl MultiPeer for RouterSocketBackend {
     ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
         let default_queue_size = 100;
         let (out_queue, out_queue_receiver) = mpsc::channel(default_queue_size);
-        let (mut in_queue, in_queue_receiver) = mpsc::channel(default_queue_size);
+        let (in_queue, in_queue_receiver) = mpsc::channel(default_queue_size);
         let (stop_handle, stop_callback) = oneshot::channel::<bool>();
 
         self.peers.insert(
@@ -104,7 +104,7 @@ impl RouterSocket {
     pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
         println!("Try recv multipart");
         let mut messages = FuturesUnordered::new();
-        for mut peer in self.backend.peers.iter() {
+        for peer in self.backend.peers.iter() {
             let peer_id = peer.identity.clone();
             let recv_queue = peer.recv_queue.clone();
             messages.push(async move { (peer_id, recv_queue.lock().await.next().await) });
@@ -126,7 +126,7 @@ impl RouterSocket {
                     println!("Peer disconnected {:?}", peer_id);
                     self.backend.peers.remove(&peer_id);
                 }
-                Some((peer_id, _)) => todo!(),
+                Some((_peer_id, _)) => todo!(),
                 None => continue,
             };
         }

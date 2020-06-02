@@ -14,12 +14,10 @@ use crate::util::*;
 use crate::{MultiPeer, Socket, SocketBackend, SocketType, ZmqResult};
 use bytes::{BufMut, BytesMut};
 use dashmap::DashMap;
-use futures::lock::Mutex;
 use std::sync::Arc;
 
 pub(crate) struct Subscriber {
     pub(crate) subscriptions: Vec<Vec<u8>>,
-    pub(crate) identity: PeerIdentity,
     pub(crate) send_queue: mpsc::Sender<Message>,
     pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
@@ -33,7 +31,7 @@ impl SocketBackend for PubSocketBackend {
     async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
         let message = match message {
             Message::Message(m) => m,
-            _ => panic!("Unexpected message received") // TODO handle errors properly
+            _ => panic!("Unexpected message received"), // TODO handle errors properly
         };
         let data: Vec<u8> = message.into();
         if data.len() < 1 {
@@ -99,7 +97,6 @@ impl MultiPeer for PubSocketBackend {
             peer_id.clone(),
             Subscriber {
                 subscriptions: vec![],
-                identity: peer_id.clone(),
                 send_queue: out_queue,
                 _io_close_handle: stop_handle,
             },
@@ -130,9 +127,10 @@ impl Socket for PubSocket {
         for mut subscriber in self.backend.subscribers.iter_mut() {
             for sub_filter in &subscriber.subscriptions {
                 if sub_filter.as_slice() == &message.data[0..sub_filter.len()] {
-                    subscriber
+                    let _res = subscriber
                         .send_queue
                         .try_send(Message::Message(message.clone()));
+                    // TODO handle result
                     break;
                 }
             }
@@ -158,7 +156,6 @@ impl PubSocket {
             _accept_close_handle: sender,
             backend: socket_backend.clone(),
         };
-        let subscribers = pub_socket.backend.subscribers.clone();
         tokio::spawn(async move {
             let mut stop_callback = receiver.fuse();
             loop {
