@@ -2,12 +2,13 @@ use bytes::{Buf, BytesMut};
 use std::convert::TryInto;
 use std::error::Error;
 use std::time::Duration;
-use zeromq::{Socket, SocketType};
+use zeromq::{Socket, SocketType, SocketFrontend};
 use zeromq::{ZmqError, ZmqMessage};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let mut frontend = zeromq::RouterSocket::bind("127.0.0.1:5559")
+    let mut frontend = zeromq::RouterSocket::new();
+    frontend.bind("127.0.0.1:5559")
         .await
         .expect("Failed to bind");
 

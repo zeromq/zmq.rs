@@ -8,7 +8,6 @@ use futures::channel::{mpsc, oneshot};
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tokio_util::codec::Framed;
-
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 
@@ -110,6 +109,15 @@ trait SocketBackend: Send + Sync {
 pub trait Socket: Send {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()>;
     async fn recv(&mut self) -> ZmqResult<ZmqMessage>;
+}
+
+#[async_trait]
+pub trait SocketFrontend {
+    fn new() -> Self;
+
+    /// Opens port described by endpoint and starts a coroutine to accept new connections on it
+    async fn bind(&mut self, endpoint: &str) -> ZmqResult<()>;
+    async fn connect(&mut self, endpoint: &str) -> ZmqResult<()>;
 }
 
 #[async_trait]

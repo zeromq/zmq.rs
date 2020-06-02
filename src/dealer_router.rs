@@ -12,7 +12,7 @@ use crate::codec::*;
 use crate::error::*;
 use crate::message::*;
 use crate::util::*;
-use crate::{util, MultiPeer, SocketBackend};
+use crate::{util, MultiPeer, SocketBackend, SocketFrontend};
 use crate::{Socket, SocketType, ZmqResult};
 use futures::stream::{FuturesUnordered, StreamExt};
 
@@ -80,7 +80,7 @@ impl SocketBackend for RouterSocketBackend {
 
 pub struct RouterSocket {
     backend: Arc<RouterSocketBackend>,
-    _accept_close_handle: futures::channel::oneshot::Sender<bool>,
+    _accept_close_handle: Option<oneshot::Sender<bool>>,
 }
 
 impl Drop for RouterSocket {
@@ -89,18 +89,29 @@ impl Drop for RouterSocket {
     }
 }
 
-impl RouterSocket {
-    pub async fn bind(endpoint: &str) -> ZmqResult<Self> {
-        let backend = Arc::new(RouterSocketBackend {
-            peers: Arc::new(DashMap::new()),
-        });
-        let router_socket = Self {
-            backend: backend.clone(),
-            _accept_close_handle: util::start_accepting_connections(endpoint, backend).await?,
-        };
-        Ok(router_socket)
+#[async_trait]
+impl SocketFrontend for RouterSocket {
+    fn new() -> Self {
+        Self {
+            backend: Arc::new(RouterSocketBackend {
+                peers: Arc::new(DashMap::new()),
+            }),
+            _accept_close_handle: None,
+        }
     }
 
+    async fn bind(&mut self, endpoint: &str) -> ZmqResult<()> {
+        let stop_handle = util::start_accepting_connections(endpoint, self.backend.clone()).await?;
+        self._accept_close_handle = Some(stop_handle);
+        Ok(())
+    }
+
+    async fn connect(&mut self, _endpoint: &str) -> ZmqResult<()> {
+        unimplemented!()
+    }
+}
+
+impl RouterSocket {
     pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
         println!("Try recv multipart");
         let mut messages = FuturesUnordered::new();
@@ -143,21 +154,6 @@ impl RouterSocket {
             }
             None => return Err(ZmqError::Other("Destination client not found by identity")),
         }
-    }
-}
-
-#[async_trait]
-impl Socket for RouterSocket {
-    async fn send(&mut self, _m: ZmqMessage) -> ZmqResult<()> {
-        Err(ZmqError::Other(
-            "This socket doesn't support sending individual messages",
-        ))
-    }
-
-    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
-        Err(ZmqError::Other(
-            "This socket doesn't support receiving individual messages",
-        ))
     }
 }
 
