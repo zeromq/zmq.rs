@@ -49,13 +49,6 @@ impl From<PeerIdentity> for Bytes {
     }
 }
 
-pub(crate) struct Peer {
-    pub(crate) identity: PeerIdentity,
-    pub(crate) send_queue: Sender<Message>,
-    pub(crate) recv_queue: Arc<Mutex<Receiver<Message>>>,
-    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
-}
-
 const COMPATIBILITY_MATRIX: [u8; 121] = [
     // PAIR, PUB, SUB, REQ, REP, DEALER, ROUTER, PULL, PUSH, XPUB, XSUB
     1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // PAIR
@@ -150,17 +143,13 @@ pub(crate) async fn raw_connect(
     Ok(raw_socket)
 }
 
-pub(crate) async fn peer_connected(
-    socket: tokio::net::TcpStream,
-    peers: Arc<DashMap<PeerIdentity, Peer>>,
-    socket_type: SocketType,
-) {
+pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<MultiPeer>) {
     let mut raw_socket = Framed::new(socket, ZmqCodec::new());
 
     greet_exchange(&mut raw_socket)
         .await
         .expect("Failed to exchange greetings");
-    let peer_id = ready_exchange(&mut raw_socket, socket_type)
+    let peer_id = ready_exchange(&mut raw_socket, backend.socket_type())
         .await
         .expect("Failed to exchange ready messages");
     println!("Peer connected {:?}", peer_id);
@@ -170,41 +159,16 @@ pub(crate) async fn peer_connected(
     let mut read_part = tokio_util::codec::FramedRead::new(read, parts.codec);
     let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
 
-    let default_queue_size = 100;
-    let (_send_queue, _send_queue_receiver) = futures::channel::mpsc::channel(default_queue_size);
-    let (mut _recv_queue, _recv_queue_receiver) =
-        futures::channel::mpsc::channel(default_queue_size);
-    let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
+    let (outgoing_queue, stop_callback) = backend.peer_connected(&peer_id);
 
-    let peer = Peer {
-        identity: peer_id.clone(),
-        send_queue: _send_queue,
-        recv_queue: Arc::new(Mutex::new(_recv_queue_receiver)),
-        _io_close_handle: sender,
-    };
-
-    peers.insert(peer_id.clone(), peer);
-
-    let mut stop_handle = receiver.fuse();
+    let mut stop_callback = stop_callback.fuse();
     let mut incoming_queue = read_part.fuse();
-    let mut outgoing_queue = _send_queue_receiver.fuse();
+    let mut outgoing_queue = outgoing_queue.fuse();
     loop {
         futures::select! {
-            incoming = incoming_queue.next() => {
-                match incoming {
-                    Some(Ok(message)) => {
-                        _recv_queue.send(message)
-                            .await
-                            .expect("Failed to send");
-                        println!("Sent message");
-                    }
-                    None => {
-                        println!("Client disconnected {:?}", &peer_id);
-                        //peers.remove(&peer_id);
-                        break;
-                    }
-                    _ => todo!(),
-                }
+            _ = stop_callback => {
+                println!("Stop callback received");
+                break;
             },
             outgoing = outgoing_queue.next() => {
                 match outgoing {
@@ -218,10 +182,18 @@ pub(crate) async fn peer_connected(
                     }
                 }
             },
-            _ = stop_handle => {
-                println!("Stop callback received");
-                break;
-            }
+            incoming = incoming_queue.next() => {
+                match incoming {
+                    Some(Ok(message)) => {
+                        backend.message_received(&peer_id, message).await;
+                    }
+                    None => {
+                        backend.peer_disconnected(&peer_id);
+                        break;
+                    }
+                    _ => todo!(),
+                }
+            },
         }
     }
 }
@@ -230,8 +202,7 @@ pub(crate) async fn peer_connected(
 /// Returns stop_handle channel that can be used to stop accepting new connections
 pub(crate) async fn start_accepting_connections(
     endpoint: &str,
-    peers: Arc<DashMap<PeerIdentity, Peer>>,
-    socket_type: SocketType,
+    backend: Arc<MultiPeer>,
 ) -> ZmqResult<futures::channel::oneshot::Sender<bool>> {
     let mut listener = tokio::net::TcpListener::bind(endpoint).await?;
     let (stop_handle, stop_callback) = futures::channel::oneshot::channel::<bool>();
@@ -241,7 +212,7 @@ pub(crate) async fn start_accepting_connections(
             select! {
                 incoming = listener.accept().fuse() => {
                     let (socket, _) = incoming.expect("Failed to accept connection");
-                    tokio::spawn(peer_connected(socket, peers.clone(), socket_type));
+                    tokio::spawn(peer_connected(socket, backend.clone()));
                 },
                 _ = stop_callback => {
                     println!("Stop signal received");

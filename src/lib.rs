@@ -4,6 +4,7 @@ extern crate enum_primitive_derive;
 use num_traits::ToPrimitive;
 
 use async_trait::async_trait;
+use futures::channel::{mpsc, oneshot};
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tokio_util::codec::Framed;
@@ -87,6 +88,22 @@ impl Display for SocketType {
             SocketType::STREAM => write!(f, "STREAM"),
         }
     }
+}
+
+trait MultiPeer: SocketBackend {
+    fn peer_connected(
+        &self,
+        peer_id: &PeerIdentity,
+    ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>);
+    fn peer_disconnected(&self, peer_id: &PeerIdentity);
+}
+
+#[async_trait]
+trait SocketBackend: Send + Sync {
+    async fn message_received(&self, peer_id: &PeerIdentity, message: Message);
+
+    fn socket_type(&self) -> SocketType;
+    fn shutdown(&self);
 }
 
 #[async_trait]
