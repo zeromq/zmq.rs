@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use futures::channel::{mpsc, oneshot};
 use futures::select;
 use futures::FutureExt;
 use futures::SinkExt;
@@ -10,7 +11,7 @@ use crate::codec::*;
 use crate::error::*;
 use crate::message::*;
 use crate::util::*;
-use crate::{Socket, SocketType, ZmqResult};
+use crate::{MultiPeer, Socket, SocketBackend, SocketType, ZmqResult};
 use bytes::{BufMut, BytesMut};
 use dashmap::DashMap;
 use futures::lock::Mutex;
@@ -21,15 +22,98 @@ pub(crate) struct Subscriber {
     pub peer: Peer,
 }
 
+pub(crate) struct PubSocketBackend {
+    subscribers: Arc<DashMap<PeerIdentity, Subscriber>>,
+}
+
+#[async_trait]
+impl SocketBackend for PubSocketBackend {
+    async fn message_received(&self, peer_id: &PeerIdentity, message: ZmqMessage) {
+        let data: Vec<u8> = message.into();
+        if data.len() < 1 {
+            panic!("Unable to handle message")
+        }
+        match data[0] {
+            1 => {
+                // Subscribe
+                self.subscribers
+                    .get_mut(&peer_id)
+                    .unwrap()
+                    .subscriptions
+                    .push(Vec::from(&data[1..]));
+            }
+            0 => {
+                // Unsubscribe
+                let mut del_index = None;
+                let sub = Vec::from(&data[1..]);
+                for (idx, subscription) in self
+                    .subscribers
+                    .get(&peer_id)
+                    .unwrap()
+                    .subscriptions
+                    .iter()
+                    .enumerate()
+                {
+                    if &sub == subscription {
+                        del_index = Some(idx);
+                        break;
+                    }
+                }
+                if let Some(index) = del_index {
+                    self.subscribers
+                        .get_mut(&peer_id)
+                        .unwrap()
+                        .subscriptions
+                        .remove(index);
+                }
+            }
+            _ => panic!("Malformed message"),
+        }
+    }
+}
+
+impl MultiPeer for PubSocketBackend {
+    fn peer_connected(
+        &self,
+        peer_id: &PeerIdentity,
+    ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
+        let default_queue_size = 100;
+        let (out_queue, out_queue_receiver) = mpsc::channel(default_queue_size);
+        let (mut in_queue, in_queue_receiver) = mpsc::channel(default_queue_size);
+        let (stop_handle, stop_callback) = oneshot::channel::<bool>();
+
+        let peer = Peer {
+            identity: peer_id.clone(),
+            send_queue: out_queue,
+            recv_queue: Arc::new(Mutex::new(in_queue_receiver)), // TODO this socket doesn't have recv queue
+            _io_close_handle: stop_handle,
+        };
+
+        self.subscribers.insert(
+            peer_id.clone(),
+            Subscriber {
+                subscriptions: vec![],
+                peer: peer,
+            },
+        );
+        (out_queue_receiver, stop_callback)
+    }
+
+    fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+        println!("Client disconnected {:?}", peer_id);
+        self.subscribers.remove(peer_id);
+    }
+}
+
 pub struct PubSocket {
-    pub(crate) subscribers: Arc<DashMap<PeerIdentity, Subscriber>>,
     _accept_close_handle: futures::channel::oneshot::Sender<bool>,
+    pub(crate) backend: Arc<PubSocketBackend>,
 }
 
 #[async_trait]
 impl Socket for PubSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
-        for mut subscriber in self.subscribers.iter_mut() {
+        for mut subscriber in self.backend.subscribers.iter_mut() {
             for sub_filter in &subscriber.subscriptions {
                 if sub_filter.as_slice() == &message.data[0..sub_filter.len()] {
                     subscriber
@@ -54,6 +138,7 @@ impl PubSocket {
     async fn handle_subscriber(
         socket: tokio::net::TcpStream,
         subscribers: Arc<DashMap<PeerIdentity, Subscriber>>,
+        backend: Arc<PubSocketBackend>,
     ) {
         let mut raw_socket = Framed::new(socket, ZmqCodec::new());
 
@@ -70,34 +155,14 @@ impl PubSocket {
         let mut read_part = tokio_util::codec::FramedRead::new(read, parts.codec);
         let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
 
-        let default_queue_size = 100;
-        let (_send_queue, _send_queue_receiver) =
-            futures::channel::mpsc::channel(default_queue_size);
-        let (mut _recv_queue, _recv_queue_receiver) =
-            futures::channel::mpsc::channel(default_queue_size);
-        let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
+        let (outgoing_queue, stop_callback) = backend.peer_connected(&peer_id);
 
-        let peer = Peer {
-            identity: peer_id.clone(),
-            send_queue: _send_queue,
-            recv_queue: Arc::new(Mutex::new(_recv_queue_receiver)),
-            _io_close_handle: sender,
-        };
-
-        subscribers.insert(
-            peer_id.clone(),
-            Subscriber {
-                subscriptions: vec![],
-                peer: peer,
-            },
-        );
-
-        let mut stop_handle = receiver.fuse();
+        let mut stop_callback = stop_callback.fuse();
         let mut incoming_queue = read_part.fuse();
-        let mut outgoing_queue = _send_queue_receiver.fuse();
+        let mut outgoing_queue = outgoing_queue.fuse();
         loop {
             futures::select! {
-                _ = stop_handle => {
+                _ = stop_callback => {
                     println!("Stop callback received");
                     break;
                 },
@@ -116,49 +181,10 @@ impl PubSocket {
                 incoming = incoming_queue.next() => {
                     match incoming {
                         Some(Ok(Message::Message(message))) => {
-                            let data: Vec<u8> = message.into();
-                            if data.len() < 1 {
-                                panic!("Unable to handle message")
-                            }
-                            match data[0] {
-                                1 => {
-                                    // Subscribe
-                                    subscribers
-                                        .get_mut(&peer_id)
-                                        .unwrap()
-                                        .subscriptions
-                                        .push(Vec::from(&data[1..]));
-                                }
-                                0 => {
-                                    // Unsubscribe
-                                    let mut del_index = None;
-                                    let sub = Vec::from(&data[1..]);
-                                    for (idx, subscription) in subscribers
-                                        .get(&peer_id)
-                                        .unwrap()
-                                        .subscriptions
-                                        .iter()
-                                        .enumerate()
-                                    {
-                                        if &sub == subscription {
-                                            del_index = Some(idx);
-                                            break;
-                                        }
-                                    }
-                                    if let Some(index) = del_index {
-                                        subscribers
-                                            .get_mut(&peer_id)
-                                            .unwrap()
-                                            .subscriptions
-                                            .remove(index);
-                                    }
-                                }
-                                _ => panic!("Malformed message"),
-                            }
+                            backend.message_received(&peer_id, message).await;
                         }
                         None => {
-                            println!("Client disconnected {:?}", &peer_id);
-                            //peers.remove(&peer_id);
+                            backend.peer_disconnected(&peer_id);
                             break;
                         }
                         _ => todo!(),
@@ -171,18 +197,21 @@ impl PubSocket {
     pub async fn bind(endpoint: &str) -> ZmqResult<Self> {
         let mut listener = tokio::net::TcpListener::bind(endpoint).await?;
         let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
-        let pub_socket = Self {
+        let socket_backend = Arc::new(PubSocketBackend {
             subscribers: Arc::new(DashMap::new()),
+        });
+        let pub_socket = Self {
             _accept_close_handle: sender,
+            backend: socket_backend.clone(),
         };
-        let subscribers = pub_socket.subscribers.clone();
+        let subscribers = pub_socket.backend.subscribers.clone();
         tokio::spawn(async move {
             let mut stop_callback = receiver.fuse();
             loop {
                 select! {
                     incoming = listener.accept().fuse() => {
                         let (socket, _) = incoming.expect("Failed to accept connection");
-                        tokio::spawn(PubSocket::handle_subscriber(socket, subscribers.clone()));
+                        tokio::spawn(PubSocket::handle_subscriber(socket, subscribers.clone(), socket_backend.clone()));
                     },
                     _ = stop_callback => {
                         println!("Stop signal received");
