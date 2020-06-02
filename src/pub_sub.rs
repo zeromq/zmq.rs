@@ -1,7 +1,5 @@
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
-use futures::select;
-use futures::FutureExt;
 use futures::SinkExt;
 use futures::StreamExt;
 use tokio::net::TcpStream;
@@ -11,7 +9,7 @@ use crate::codec::*;
 use crate::error::*;
 use crate::message::*;
 use crate::util::*;
-use crate::{MultiPeer, Socket, SocketBackend, SocketType, ZmqResult};
+use crate::{MultiPeer, Socket, SocketBackend, SocketType, ZmqResult, SocketFrontend, util};
 use bytes::{BufMut, BytesMut};
 use dashmap::DashMap;
 use std::sync::Arc;
@@ -111,8 +109,8 @@ impl MultiPeer for PubSocketBackend {
 }
 
 pub struct PubSocket {
-    _accept_close_handle: futures::channel::oneshot::Sender<bool>,
     pub(crate) backend: Arc<PubSocketBackend>,
+    _accept_close_handle: Option<oneshot::Sender<bool>>,
 }
 
 impl Drop for PubSocket {
@@ -145,33 +143,25 @@ impl Socket for PubSocket {
     }
 }
 
-impl PubSocket {
-    pub async fn bind(endpoint: &str) -> ZmqResult<Self> {
-        let mut listener = tokio::net::TcpListener::bind(endpoint).await?;
-        let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
-        let socket_backend = Arc::new(PubSocketBackend {
-            subscribers: Arc::new(DashMap::new()),
-        });
-        let pub_socket = Self {
-            _accept_close_handle: sender,
-            backend: socket_backend.clone(),
-        };
-        tokio::spawn(async move {
-            let mut stop_callback = receiver.fuse();
-            loop {
-                select! {
-                    incoming = listener.accept().fuse() => {
-                        let (socket, _) = incoming.expect("Failed to accept connection");
-                        tokio::spawn(peer_connected(socket, socket_backend.clone()));
-                    },
-                    _ = stop_callback => {
-                        println!("Stop signal received");
-                        break
-                    }
-                }
-            }
-        });
-        Ok(pub_socket)
+#[async_trait]
+impl SocketFrontend for PubSocket {
+    fn new() -> Self {
+        Self {
+            backend: Arc::new(PubSocketBackend {
+                subscribers: Arc::new(DashMap::new()),
+            }),
+            _accept_close_handle: None,
+        }
+    }
+
+    async fn bind(&mut self, endpoint: &str) -> ZmqResult<()> {
+        let stop_handle = util::start_accepting_connections(endpoint, self.backend.clone()).await?;
+        self._accept_close_handle = Some(stop_handle);
+        Ok(())
+    }
+
+    async fn connect(&mut self, _endpoint: &str) -> ZmqResult<()> {
+        unimplemented!()
     }
 }
 
