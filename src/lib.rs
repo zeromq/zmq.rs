@@ -90,7 +90,7 @@ impl Display for SocketType {
     }
 }
 
-trait MultiPeer {
+trait MultiPeer: SocketBackend {
     fn peer_connected(
         &self,
         peer_id: &PeerIdentity,
@@ -99,8 +99,11 @@ trait MultiPeer {
 }
 
 #[async_trait]
-trait SocketBackend {
-    async fn message_received(&self, peer_id: &PeerIdentity, message: ZmqMessage);
+trait SocketBackend: Send + Sync {
+    async fn message_received(&self, peer_id: &PeerIdentity, message: Message);
+
+    fn socket_type(&self) -> SocketType;
+    fn shutdown(&self);
 }
 
 #[async_trait]

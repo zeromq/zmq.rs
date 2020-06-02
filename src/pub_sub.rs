@@ -18,8 +18,10 @@ use futures::lock::Mutex;
 use std::sync::Arc;
 
 pub(crate) struct Subscriber {
-    pub subscriptions: Vec<Vec<u8>>,
-    pub peer: Peer,
+    pub(crate) subscriptions: Vec<Vec<u8>>,
+    pub(crate) identity: PeerIdentity,
+    pub(crate) send_queue: mpsc::Sender<Message>,
+    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
 pub(crate) struct PubSocketBackend {
@@ -28,7 +30,11 @@ pub(crate) struct PubSocketBackend {
 
 #[async_trait]
 impl SocketBackend for PubSocketBackend {
-    async fn message_received(&self, peer_id: &PeerIdentity, message: ZmqMessage) {
+    async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
+        let message = match message {
+            Message::Message(m) => m,
+            _ => panic!("Unexpected message received") // TODO handle errors properly
+        };
         let data: Vec<u8> = message.into();
         if data.len() < 1 {
             panic!("Unable to handle message")
@@ -70,6 +76,14 @@ impl SocketBackend for PubSocketBackend {
             _ => panic!("Malformed message"),
         }
     }
+
+    fn socket_type(&self) -> SocketType {
+        SocketType::PUB
+    }
+
+    fn shutdown(&self) {
+        self.subscribers.clear();
+    }
 }
 
 impl MultiPeer for PubSocketBackend {
@@ -79,21 +93,15 @@ impl MultiPeer for PubSocketBackend {
     ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
         let default_queue_size = 100;
         let (out_queue, out_queue_receiver) = mpsc::channel(default_queue_size);
-        let (mut in_queue, in_queue_receiver) = mpsc::channel(default_queue_size);
         let (stop_handle, stop_callback) = oneshot::channel::<bool>();
-
-        let peer = Peer {
-            identity: peer_id.clone(),
-            send_queue: out_queue,
-            recv_queue: Arc::new(Mutex::new(in_queue_receiver)), // TODO this socket doesn't have recv queue
-            _io_close_handle: stop_handle,
-        };
 
         self.subscribers.insert(
             peer_id.clone(),
             Subscriber {
                 subscriptions: vec![],
-                peer: peer,
+                identity: peer_id.clone(),
+                send_queue: out_queue,
+                _io_close_handle: stop_handle,
             },
         );
         (out_queue_receiver, stop_callback)
@@ -110,6 +118,12 @@ pub struct PubSocket {
     pub(crate) backend: Arc<PubSocketBackend>,
 }
 
+impl Drop for PubSocket {
+    fn drop(&mut self) {
+        self.backend.shutdown();
+    }
+}
+
 #[async_trait]
 impl Socket for PubSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
@@ -117,7 +131,6 @@ impl Socket for PubSocket {
             for sub_filter in &subscriber.subscriptions {
                 if sub_filter.as_slice() == &message.data[0..sub_filter.len()] {
                     subscriber
-                        .peer
                         .send_queue
                         .try_send(Message::Message(message.clone()));
                     break;
@@ -135,65 +148,6 @@ impl Socket for PubSocket {
 }
 
 impl PubSocket {
-    async fn handle_subscriber(
-        socket: tokio::net::TcpStream,
-        subscribers: Arc<DashMap<PeerIdentity, Subscriber>>,
-        backend: Arc<PubSocketBackend>,
-    ) {
-        let mut raw_socket = Framed::new(socket, ZmqCodec::new());
-
-        greet_exchange(&mut raw_socket)
-            .await
-            .expect("Failed to exchange greetings");
-        let peer_id = ready_exchange(&mut raw_socket, SocketType::PUB)
-            .await
-            .expect("Failed to exchange ready messages");
-        println!("Peer connected {:?}", peer_id);
-
-        let parts = raw_socket.into_parts();
-        let (read, write) = tokio::io::split(parts.io);
-        let mut read_part = tokio_util::codec::FramedRead::new(read, parts.codec);
-        let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
-
-        let (outgoing_queue, stop_callback) = backend.peer_connected(&peer_id);
-
-        let mut stop_callback = stop_callback.fuse();
-        let mut incoming_queue = read_part.fuse();
-        let mut outgoing_queue = outgoing_queue.fuse();
-        loop {
-            futures::select! {
-                _ = stop_callback => {
-                    println!("Stop callback received");
-                    break;
-                },
-                outgoing = outgoing_queue.next() => {
-                    match outgoing {
-                        Some(message) => {
-                            let result = write_part.send(message).await;
-                            dbg!(result); // TODO add errors processing
-                        },
-                        None => {
-                            println!("Outgoing queue closed. Stopping send coro");
-                            break;
-                        }
-                    }
-                },
-                incoming = incoming_queue.next() => {
-                    match incoming {
-                        Some(Ok(Message::Message(message))) => {
-                            backend.message_received(&peer_id, message).await;
-                        }
-                        None => {
-                            backend.peer_disconnected(&peer_id);
-                            break;
-                        }
-                        _ => todo!(),
-                    }
-                },
-            }
-        }
-    }
-
     pub async fn bind(endpoint: &str) -> ZmqResult<Self> {
         let mut listener = tokio::net::TcpListener::bind(endpoint).await?;
         let (sender, receiver) = futures::channel::oneshot::channel::<bool>();
@@ -211,7 +165,7 @@ impl PubSocket {
                 select! {
                     incoming = listener.accept().fuse() => {
                         let (socket, _) = incoming.expect("Failed to accept connection");
-                        tokio::spawn(PubSocket::handle_subscriber(socket, subscribers.clone(), socket_backend.clone()));
+                        tokio::spawn(peer_connected(socket, socket_backend.clone()));
                     },
                     _ = stop_callback => {
                         println!("Stop signal received");
