@@ -1,11 +1,12 @@
-use crate::{Socket, SocketType};
+use crate::{Socket, SocketType, SocketFrontend};
 use std::convert::TryInto;
 use std::io::Write;
 
 #[tokio::test]
 async fn test_pub_sub_sockets() {
     tokio::spawn(async move {
-        let mut pub_socket = crate::PubSocket::bind("127.0.0.1:5556")
+        let mut pub_socket = crate::PubSocket::new();
+        pub_socket.bind("127.0.0.1:5556")
             .await
             .expect("Failed to bind socket");
 
