@@ -2,12 +2,22 @@ use crate::codec::Message;
 use std::error::Error;
 use std::fmt::Display;
 
+/// A library error.
 #[derive(Debug)]
 pub enum ZmqError {
+    /// A network related error (typically IO)
     Network(String),
+
+    /// A codec related error.
     Codec(&'static str),
+
+    /// A socket related error.
     Socket(&'static str),
+
+    /// Some other error.
     Other(&'static str),
+
+    /// No data was received.
     NoMessage,
 }
 

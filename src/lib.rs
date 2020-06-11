@@ -1,4 +1,33 @@
+//! An asynchronous ZMQ library for Rust.
+//!
+//! # Examples
+//!
+//! ```
+//! use std::convert::TryInto;
+//! use std::error::Error;
+//! use zeromq::ZmqMessage;
+//! use zeromq::{Socket, SocketType};
+//! 
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn Error>> {
+//!     let mut socket = zeromq::ReqSocket::connect("127.0.0.1:5555")
+//!         .await
+//!         .expect("Failed to connect");
+//! 
+//!     socket.send("Hello".into()).await?;
+//!     let repl: String = socket.recv().await?.try_into()?;
+//!     dbg!(repl);
+//! 
+//!     socket.send("NewHello".into()).await?;
+//!     let repl: String = socket.recv().await?.try_into()?;
+//!     dbg!(repl);
+//!     Ok(())
+//! }
+//! ```
+
 #![recursion_limit = "1024"]
+#![deny(missing_docs)]
+
 #[macro_use]
 extern crate enum_primitive_derive;
 use num_traits::ToPrimitive;
@@ -30,21 +59,46 @@ pub use crate::req_rep::*;
 use crate::util::*;
 pub use message::*;
 
+/// The library result type.
 pub type ZmqResult<T> = Result<T, ZmqError>;
 
+/// An enum of all various ZMQ socket types.
 #[derive(Clone, Copy, Debug, PartialEq, Primitive)]
 pub enum SocketType {
+    /// A ZMQ `PAIR` type socket.
     PAIR = 0,
+
+    /// A ZMQ `PUB` type socket.
     PUB = 1,
+
+    /// A ZMQ `SUB` type socket.
     SUB = 2,
+
+    /// A ZMQ `REQ` type socket.
     REQ = 3,
+
+    /// A ZMQ `REP` type socket.
     REP = 4,
+
+    /// A ZMQ `DEALER` type socket.
     DEALER = 5,
+
+    /// A ZMQ `ROUTER` type socket.
     ROUTER = 6,
+
+    /// A ZMQ `PULL` type socket.
     PULL = 7,
+
+    /// A ZMQ `PUSH` type socket.
     PUSH = 8,
+
+    /// A ZMQ `XPUB` type socket.
     XPUB = 9,
+
+    /// A ZMQ `XSUB` type socket.
     XSUB = 10,
+
+    /// A ZMQ `STREAM` type socket.
     STREAM = 11,
 }
 
@@ -105,26 +159,38 @@ trait SocketBackend: Send + Sync {
     fn shutdown(&self);
 }
 
+/// A trait to represent socket types.
 #[async_trait]
 pub trait Socket: Send {
+    /// Send a message through the socket.
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()>;
+
+    /// Receive a message through the socket.
     async fn recv(&mut self) -> ZmqResult<ZmqMessage>;
 }
 
+
+/// A frontend for socket types to implement.
 #[async_trait]
 pub trait SocketFrontend {
+    /// A trait level constructor.
     fn new() -> Self;
 
     /// Opens port described by endpoint and starts a coroutine to accept new connections on it
     async fn bind(&mut self, endpoint: &str) -> ZmqResult<()>;
+
+    /// Connect to another socket on some endpoint.
     async fn connect(&mut self, endpoint: &str) -> ZmqResult<()>;
 }
 
+/// A trait for all bound sockets, acting like servers.
 #[async_trait]
 pub trait SocketServer {
+    /// Accept a connection.
     async fn accept(&mut self) -> ZmqResult<Box<dyn Socket>>;
 }
 
+/// Create a bound socket of some type.
 pub async fn bind(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<dyn SocketServer>> {
     let listener = TcpListener::bind(endpoint).await?;
     match socket_type {
@@ -133,6 +199,7 @@ pub async fn bind(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<dyn 
     }
 }
 
+/// Not implemented.
 pub async fn proxy(_s1: Box<dyn Socket>, _s2: Box<dyn Socket>) -> ZmqResult<()> {
     todo!()
 }

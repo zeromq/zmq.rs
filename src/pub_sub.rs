@@ -108,6 +108,7 @@ impl MultiPeer for PubSocketBackend {
     }
 }
 
+/// A ZMQ `PUB` type socket.
 pub struct PubSocket {
     pub(crate) backend: Arc<PubSocketBackend>,
     _accept_close_handle: Option<oneshot::Sender<bool>>,
@@ -165,6 +166,7 @@ impl SocketFrontend for PubSocket {
     }
 }
 
+/// A ZMQ `SUB` type socket.
 pub struct SubSocket {
     pub(crate) _inner: Framed<TcpStream, ZmqCodec>,
 }
@@ -189,11 +191,13 @@ impl Socket for SubSocket {
 }
 
 impl SubSocket {
+    /// Connect to some endpoint.
     pub async fn connect(endpoint: &str) -> ZmqResult<Self> {
         let raw_socket = raw_connect(SocketType::SUB, endpoint).await?;
         Ok(Self { _inner: raw_socket })
     }
 
+    /// Subscribe to some topic.
     pub async fn subscribe(&mut self, subscription: &str) -> ZmqResult<()> {
         let mut sub = BytesMut::with_capacity(subscription.len() + 1);
         sub.put_u8(1);
@@ -204,6 +208,7 @@ impl SubSocket {
         Ok(())
     }
 
+    /// Unsubscribe from some topic.
     pub async fn unsubscribe(&mut self, subscription: &str) -> ZmqResult<()> {
         let mut sub = BytesMut::with_capacity(subscription.len() + 1);
         sub.put_u8(0);

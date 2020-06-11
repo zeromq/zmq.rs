@@ -2,8 +2,10 @@ use bytes::{Bytes, BytesMut};
 use std::convert::TryFrom;
 use std::string::FromUtf8Error;
 
+/// A ZMQ message.
 #[derive(Debug, Clone)]
 pub struct ZmqMessage {
+    /// The "raw" inner contents of the message.
     pub data: Bytes,
 }
 

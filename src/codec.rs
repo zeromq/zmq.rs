@@ -213,10 +213,13 @@ enum DecoderState {
 #[derive(Debug)]
 pub(crate) struct ZmqCodec {
     state: DecoderState,
-    waiting_for: usize, // Number of bytes needed to decode frame
-    // Needed to store incoming multipart message
-    // This allows to incapsulate it's processing inside codec and not expose
-    // internal details to higher levels
+
+    /// Number of bytes needed to decode frame
+    waiting_for: usize,
+
+    /// Needed to store incoming multipart message
+    /// This allows to encapsulate it's processing inside codec and not expose
+    /// internal details to higher levels
     buffered_message: Option<Message>,
 }
 

@@ -78,6 +78,7 @@ impl SocketBackend for RouterSocketBackend {
     }
 }
 
+/// A ZMQ `ROUTER` type socket.
 pub struct RouterSocket {
     backend: Arc<RouterSocketBackend>,
     _accept_close_handle: Option<oneshot::Sender<bool>>,
@@ -112,6 +113,7 @@ impl SocketFrontend for RouterSocket {
 }
 
 impl RouterSocket {
+    /// Receive a message in multipart.
     pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
         println!("Try recv multipart");
         let mut messages = FuturesUnordered::new();
@@ -143,6 +145,7 @@ impl RouterSocket {
         }
     }
 
+    /// Send a message in multipart.
     pub async fn send_multipart(&mut self, messages: Vec<ZmqMessage>) -> ZmqResult<()> {
         assert!(messages.len() > 2);
         let peer_id: PeerIdentity = messages[0].data.to_vec().try_into()?;
@@ -157,11 +160,13 @@ impl RouterSocket {
     }
 }
 
+/// A ZMQ `DEALER` type socket.
 pub struct DealerSocket {
     pub(crate) _inner: Framed<TcpStream, ZmqCodec>,
 }
 
 impl DealerSocket {
+    /// Bind the socket to an endpoint.
     pub async fn bind(_endpoint: &str) -> ZmqResult<Self> {
         todo!()
     }

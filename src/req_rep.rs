@@ -10,6 +10,7 @@ use crate::util::raw_connect;
 use crate::*;
 use crate::{Socket, SocketType, ZmqResult};
 
+/// A ZMQ `REQ` type socket.
 pub struct ReqSocket {
     pub(crate) _inner: Framed<TcpStream, ZmqCodec>,
 }
@@ -39,6 +40,7 @@ impl Socket for ReqSocket {
 }
 
 impl ReqSocket {
+    /// Connect to some endpoint.
     pub async fn connect(endpoint: &str) -> ZmqResult<Self> {
         let raw_socket = raw_connect(SocketType::REQ, endpoint).await?;
         Ok(Self { _inner: raw_socket })
@@ -49,6 +51,7 @@ pub(crate) struct RepSocketServer {
     pub(crate) _inner: TcpListener,
 }
 
+/// A ZMQ `REP` type socket.
 pub struct RepSocket {
     pub(crate) _inner: Framed<TcpStream, ZmqCodec>,
 }

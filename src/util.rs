@@ -1,3 +1,5 @@
+//! Various utilities used by the library.
+
 use crate::*;
 use bytes::Bytes;
 use futures::stream::StreamExt;
