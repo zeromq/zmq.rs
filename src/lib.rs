@@ -5,11 +5,11 @@ use num_traits::ToPrimitive;
 
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
+use std::convert::TryFrom;
+use std::fmt::{Debug, Display};
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tokio_util::codec::Framed;
-use std::convert::TryFrom;
-use std::fmt::{Debug, Display};
 
 mod codec;
 mod dealer_router;
@@ -118,19 +118,6 @@ pub trait SocketFrontend {
     /// Opens port described by endpoint and starts a coroutine to accept new connections on it
     async fn bind(&mut self, endpoint: &str) -> ZmqResult<()>;
     async fn connect(&mut self, endpoint: &str) -> ZmqResult<()>;
-}
-
-#[async_trait]
-pub trait SocketServer {
-    async fn accept(&mut self) -> ZmqResult<Box<dyn Socket>>;
-}
-
-pub async fn bind(socket_type: SocketType, endpoint: &str) -> ZmqResult<Box<dyn SocketServer>> {
-    let listener = TcpListener::bind(endpoint).await?;
-    match socket_type {
-        SocketType::REP => Ok(Box::new(RepSocketServer { _inner: listener })),
-        _ => todo!(),
-    }
 }
 
 pub async fn proxy(_s1: Box<dyn Socket>, _s2: Box<dyn Socket>) -> ZmqResult<()> {

@@ -9,7 +9,7 @@ use crate::codec::*;
 use crate::error::*;
 use crate::message::*;
 use crate::util::*;
-use crate::{MultiPeer, Socket, SocketBackend, SocketType, ZmqResult, SocketFrontend, util};
+use crate::{util, MultiPeer, Socket, SocketBackend, SocketFrontend, SocketType, ZmqResult};
 use bytes::{BufMut, BytesMut};
 use dashmap::DashMap;
 use std::sync::Arc;

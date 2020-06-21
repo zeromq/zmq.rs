@@ -1,5 +1,6 @@
 use crate::*;
 use bytes::Bytes;
+use futures::lock::Mutex;
 use futures::stream::StreamExt;
 use futures::{select, SinkExt};
 use futures_util::future::FutureExt;
@@ -44,6 +45,14 @@ impl From<PeerIdentity> for Bytes {
     fn from(p_id: PeerIdentity) -> Self {
         Bytes::from(p_id.0)
     }
+}
+
+pub(crate) struct Peer {
+    pub(crate) identity: PeerIdentity,
+    pub(crate) send_queue: mpsc::Sender<Message>,
+    pub(crate) recv_queue: Arc<Mutex<mpsc::Receiver<Message>>>,
+    pub(crate) recv_queue_in: mpsc::Sender<Message>,
+    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
 const COMPATIBILITY_MATRIX: [u8; 121] = [
