@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use std::convert::TryInto;
 use std::error::Error;
-use zeromq::{Socket, SocketType};
+use zeromq::{BlockingRecv, BlockingSend, Socket, SocketType};
 use zeromq::{SocketFrontend, ZmqMessage};
 
 #[tokio::main]

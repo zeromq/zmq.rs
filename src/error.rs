@@ -41,3 +41,9 @@ impl From<futures::channel::mpsc::TrySendError<Message>> for ZmqError {
         ZmqError::Other("Failed to send message. Send queue full")
     }
 }
+
+impl From<futures::channel::mpsc::SendError> for ZmqError {
+    fn from(_: futures::channel::mpsc::SendError) -> Self {
+        ZmqError::Other("Failed to send message. Send queue full/broken")
+    }
+}

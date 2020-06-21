@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 use futures::lock::Mutex;
+use futures::stream::FuturesUnordered;
 use futures_util::sink::SinkExt;
 use std::sync::Arc;
 use tokio::net::TcpStream;
@@ -12,6 +13,7 @@ use crate::error::*;
 use crate::util::raw_connect;
 use crate::*;
 use crate::{Socket, SocketType, ZmqResult};
+use std::time::Duration;
 
 struct ReqSocketBackend {
     pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
@@ -20,31 +22,57 @@ struct ReqSocketBackend {
 pub struct ReqSocket {
     backend: Arc<ReqSocketBackend>,
     _accept_close_handle: Option<oneshot::Sender<bool>>,
+    current_request: Option<PeerIdentity>,
 }
 
 #[async_trait]
-impl Socket for ReqSocket {
+impl BlockingSend for ReqSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
-        todo!()
-        // let frames = vec![
-        //     "".into(), // delimiter frame
-        //     message,
-        // ];
-        // self._inner.send(Message::MultipartMessage(frames)).await
+        let frames = vec![
+            "".into(), // delimiter frame
+            message,
+        ];
+        // TODO this is supposed to be round robin
+        for mut peer in self.backend.peers.iter_mut() {
+            peer.send_queue
+                .send(Message::MultipartMessage(frames))
+                .await;
+            self.current_request = Some(peer.identity.clone());
+            return Ok(());
+        }
+        Err(ZmqError::Other(
+            "Not connected to peers. Unable to send messages",
+        ))
     }
+}
 
+#[async_trait]
+impl BlockingRecv for ReqSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
-        todo!()
-        // match self._inner.next().await {
-        //     Some(Ok(Message::MultipartMessage(mut message))) => {
-        //         assert!(message.len() == 2);
-        //         assert!(message[0].data.is_empty()); // Ensure that we have delimeter as first part
-        //         Ok(message.pop().unwrap())
-        //     }
-        //     Some(Ok(_)) => Err(ZmqError::Other("Wrong message type received")),
-        //     Some(Err(e)) => Err(e),
-        //     None => Err(ZmqError::NoMessage),
-        // }
+        match self.current_request.take() {
+            Some(peer_id) => {
+                if let Some(recv_queue) = self
+                    .backend
+                    .peers
+                    .get(&peer_id)
+                    .map(|p| p.recv_queue.clone())
+                {
+                    let message = recv_queue.lock().await.next().await;
+                    match message {
+                        Some(Message::MultipartMessage(mut message)) => {
+                            assert!(message.len() == 2);
+                            assert!(message[0].data.is_empty()); // Ensure that we have delimeter as first part
+                            Ok(message.pop().unwrap())
+                        }
+                        Some(_) => Err(ZmqError::Other("Wrong message type received")),
+                        None => Err(ZmqError::NoMessage),
+                    }
+                } else {
+                    Err(ZmqError::Other("Server disconnected"))
+                }
+            }
+            None => Err(ZmqError::Other("Unable to recv. No request in progress")),
+        }
     }
 }
 
@@ -56,6 +84,7 @@ impl SocketFrontend for ReqSocket {
                 peers: Arc::new(DashMap::new()),
             }),
             _accept_close_handle: None,
+            current_request: None,
         }
     }
 
@@ -68,7 +97,10 @@ impl SocketFrontend for ReqSocket {
     async fn connect(&mut self, endpoint: &str) -> ZmqResult<()> {
         let addr = endpoint.parse::<SocketAddr>()?;
         let raw_socket = tokio::net::TcpStream::connect(addr).await?;
-        util::peer_connected(raw_socket, self.backend.clone());
+        tokio::spawn(util::peer_connected(raw_socket, self.backend.clone()));
+        // TODO this is a dirty hack to ensure that handshake is finished
+        // Needs to be refactored
+        tokio::time::delay_for(Duration::from_millis(100)).await;
         Ok(())
     }
 }
@@ -130,6 +162,7 @@ struct RepSocketBackend {
 pub struct RepSocket {
     backend: Arc<RepSocketBackend>,
     _accept_close_handle: Option<oneshot::Sender<bool>>,
+    current_request: Option<PeerIdentity>,
 }
 
 #[async_trait]
@@ -140,6 +173,7 @@ impl SocketFrontend for RepSocket {
                 peers: Arc::new(DashMap::new()),
             }),
             _accept_close_handle: None,
+            current_request: None,
         }
     }
 
@@ -205,27 +239,65 @@ impl SocketBackend for RepSocketBackend {
 }
 
 #[async_trait]
-impl Socket for RepSocket {
+impl BlockingSend for RepSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
-        todo!()
-        // let frames = vec![
-        //     "".into(), // delimiter frame
-        //     message,
-        // ];
-        // self._inner.send(Message::MultipartMessage(frames)).await
+        match self.current_request.take() {
+            Some(peer_id) => {
+                if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
+                    let frames = vec![
+                        "".into(), // delimiter frame
+                        message,
+                    ];
+                    peer.send_queue
+                        .send(Message::MultipartMessage(frames))
+                        .await?;
+                    Ok(())
+                } else {
+                    Err(ZmqError::Other("Client disconnected"))
+                }
+            }
+            None => Err(ZmqError::Other(
+                "Unable to send reply. No request in progress",
+            )),
+        }
     }
+}
 
+#[async_trait]
+impl BlockingRecv for RepSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
-        todo!()
-        // match self._inner.next().await {
-        //     Some(Ok(Message::MultipartMessage(mut message))) => {
-        //         assert!(message.len() == 2);
-        //         assert!(message[0].data.is_empty()); // Ensure that we have delimeter as first part
-        //         Ok(message.pop().unwrap())
-        //     }
-        //     Some(Ok(_)) => Err(ZmqError::Other("Wrong message type received")),
-        //     Some(Err(e)) => Err(e),
-        //     None => Err(ZmqError::NoMessage),
-        // }
+        let mut messages = FuturesUnordered::new();
+        loop {
+            for peer in self.backend.peers.iter() {
+                let peer_id = peer.identity.clone();
+                let recv_queue = peer.recv_queue.clone();
+                messages.push(async move { (peer_id, recv_queue.lock().await.next().await) });
+            }
+
+            if messages.is_empty() {
+                // TODO this is super stupid way of waiting for new connections
+                // Needs to be refactored
+                tokio::time::delay_for(Duration::from_millis(100)).await;
+                continue;
+            } else {
+                break;
+            }
+        }
+        loop {
+            match messages.next().await {
+                Some((peer_id, Some(Message::MultipartMessage(mut messages)))) => {
+                    assert!(messages.len() == 2);
+                    assert!(messages[0].data.is_empty()); // Ensure that we have delimeter as first part
+                    self.current_request = Some(peer_id);
+                    return Ok(messages.pop().unwrap());
+                }
+                Some((peer_id, None)) => {
+                    println!("Peer disconnected {:?}", peer_id);
+                    self.backend.peers.remove(&peer_id);
+                }
+                Some((_peer_id, _)) => todo!(),
+                None => continue,
+            };
+        }
     }
 }
