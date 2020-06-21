@@ -16,14 +16,6 @@ use crate::{util, MultiPeer, SocketBackend, SocketFrontend};
 use crate::{Socket, SocketType, ZmqResult};
 use futures::stream::{FuturesUnordered, StreamExt};
 
-struct Peer {
-    pub(crate) identity: PeerIdentity,
-    pub(crate) send_queue: mpsc::Sender<Message>,
-    pub(crate) recv_queue: Arc<Mutex<mpsc::Receiver<Message>>>,
-    pub(crate) recv_queue_in: mpsc::Sender<Message>,
-    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
-}
-
 struct RouterSocketBackend {
     pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
 }
