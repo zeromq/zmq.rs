@@ -1,6 +1,6 @@
-use crate::{BlockingRecv, BlockingSend, Socket, SocketFrontend, SocketType};
+use crate::{BlockingRecv, BlockingSend, Socket, SocketFrontend};
 use std::convert::TryInto;
-use std::io::Write;
+use std::error::Error;
 use std::time::Duration;
 
 #[tokio::test]
@@ -41,7 +41,7 @@ async fn test_pub_sub_sockets() {
 }
 
 #[tokio::test]
-async fn test_req_rep_sockets() {
+async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
     tokio::spawn(async move {
         let mut rep_socket = crate::RepSocket::new();
         rep_socket
@@ -59,29 +59,21 @@ async fn test_req_rep_sockets() {
                 .expect("Failed to unpack");
             rep_socket
                 .send(format!("{} Rep - {}", mess, i).into())
-                .await;
+                .await
+                .expect("Failed to send repl");
         }
     });
 
+    // yield for a moment to ensure that server has some time to open socket
     tokio::time::delay_for(Duration::from_millis(10)).await;
     let mut req_socket = crate::ReqSocket::new();
-    req_socket
-        .connect("127.0.0.1:5557")
-        .await
-        .expect("Failed to connect");
+    req_socket.connect("127.0.0.1:5557").await?;
     println!("Connected to server");
 
     for i in 0..10i32 {
-        req_socket
-            .send(format!("Req - {}", i).into())
-            .await
-            .expect("Failed to send");
-        let repl: String = req_socket
-            .recv()
-            .await
-            .expect("Failed to recv")
-            .try_into()
-            .expect("Failed to unpack");
+        req_socket.send(format!("Req - {}", i).into()).await?;
+        let repl: String = req_socket.recv().await?.try_into()?;
         assert_eq!(format!("Req - {} Rep - {}", i, i), repl)
     }
+    Ok(())
 }

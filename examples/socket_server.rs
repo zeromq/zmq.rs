@@ -1,6 +1,3 @@
-use tokio::net::TcpListener;
-use tokio::prelude::*;
-
 use std::convert::TryInto;
 use zeromq::*;
 
