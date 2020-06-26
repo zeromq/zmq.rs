@@ -63,7 +63,7 @@ async fn test_req_rep_sockets() {
         }
     });
 
-    tokio::time::delay_for(Duration::from_millis(100)).await;
+    tokio::time::delay_for(Duration::from_millis(10)).await;
     let mut req_socket = crate::ReqSocket::new();
     req_socket
         .connect("127.0.0.1:5557")

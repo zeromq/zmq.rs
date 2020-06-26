@@ -160,48 +160,44 @@ pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<d
         .expect("Failed to exchange ready messages");
     println!("Peer connected {:?}", peer_id);
 
-    let parts = raw_socket.into_parts();
-    let (read, write) = tokio::io::split(parts.io);
-    let read_part = tokio_util::codec::FramedRead::new(read, parts.codec);
-    let mut write_part = tokio_util::codec::FramedWrite::new(write, ZmqCodec::new());
-
     let (outgoing_queue, stop_callback) = backend.peer_connected(&peer_id);
 
-    let mut stop_callback = stop_callback.fuse();
-    let mut incoming_queue = read_part.fuse();
-    let mut outgoing_queue = outgoing_queue.fuse();
-    loop {
-        futures::select! {
-            _ = stop_callback => {
-                println!("Stop callback received");
-                break;
-            },
-            outgoing = outgoing_queue.next() => {
-                match outgoing {
-                    Some(message) => {
-                        let result = write_part.send(message).await;
-                        dbg!(result); // TODO add errors processing
-                    },
-                    None => {
-                        println!("Outgoing queue closed. Stopping send coro");
-                        break;
+    tokio::spawn(async move {
+        let mut stop_callback = stop_callback.fuse();
+        let mut outgoing_queue = outgoing_queue.fuse();
+        loop {
+            futures::select! {
+                _ = stop_callback => {
+                    println!("Stop callback received");
+                    break;
+                },
+                outgoing = outgoing_queue.next() => {
+                    match outgoing {
+                        Some(message) => {
+                            let result = raw_socket.send(message).await;
+                            dbg!(result); // TODO add errors processing
+                        },
+                        None => {
+                            println!("Outgoing queue closed. Stopping send coro");
+                            break;
+                        }
                     }
-                }
-            },
-            incoming = incoming_queue.next() => {
-                match incoming {
-                    Some(Ok(message)) => {
-                        backend.message_received(&peer_id, message).await;
+                },
+                incoming = raw_socket.next().fuse() => {
+                    match incoming {
+                        Some(Ok(message)) => {
+                            backend.message_received(&peer_id, message).await;
+                        }
+                        None => {
+                            backend.peer_disconnected(&peer_id);
+                            break;
+                        }
+                        _ => todo!(),
                     }
-                    None => {
-                        backend.peer_disconnected(&peer_id);
-                        break;
-                    }
-                    _ => todo!(),
-                }
-            },
+                },
+            }
         }
-    }
+    });
 }
 
 /// Opens port described by endpoint and starts a coroutine to accept new connections on it

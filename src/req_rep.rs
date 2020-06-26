@@ -97,10 +97,7 @@ impl SocketFrontend for ReqSocket {
     async fn connect(&mut self, endpoint: &str) -> ZmqResult<()> {
         let addr = endpoint.parse::<SocketAddr>()?;
         let raw_socket = tokio::net::TcpStream::connect(addr).await?;
-        tokio::spawn(util::peer_connected(raw_socket, self.backend.clone()));
-        // TODO this is a dirty hack to ensure that handshake is finished
-        // Needs to be refactored
-        tokio::time::delay_for(Duration::from_millis(100)).await;
+        util::peer_connected(raw_socket, self.backend.clone()).await;
         Ok(())
     }
 }

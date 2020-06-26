@@ -11,8 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     socket.bind("127.0.0.1:5555").await?;
 
     loop {
-        // TODO refactor me
-        let mut repl: String = socket.recv().await.unwrap().try_into().unwrap();
+        let mut repl: String = socket.recv().await?.try_into()?;
         dbg!(&repl);
         repl.push_str(" Reply");
         socket.send(repl.into()).await.expect("Failed to send");
