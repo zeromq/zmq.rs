@@ -8,7 +8,6 @@ use futures::channel::{mpsc, oneshot};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 use std::net::SocketAddr;
-use tokio::net::TcpListener;
 use tokio_util::codec::Framed;
 
 mod codec;

@@ -4,15 +4,12 @@ use futures::lock::Mutex;
 use futures::stream::FuturesUnordered;
 use futures_util::sink::SinkExt;
 use std::sync::Arc;
-use tokio::net::TcpStream;
 use tokio::stream::StreamExt;
-use tokio_util::codec::Framed;
 
 use crate::codec::*;
 use crate::error::*;
-use crate::util::raw_connect;
 use crate::*;
-use crate::{Socket, SocketType, ZmqResult};
+use crate::{SocketType, ZmqResult};
 use std::time::Duration;
 
 struct ReqSocketBackend {
@@ -36,7 +33,7 @@ impl BlockingSend for ReqSocket {
         for mut peer in self.backend.peers.iter_mut() {
             peer.send_queue
                 .send(Message::MultipartMessage(frames))
-                .await;
+                .await?;
             self.current_request = Some(peer.identity.clone());
             return Ok(());
         }
