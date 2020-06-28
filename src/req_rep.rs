@@ -48,6 +48,7 @@ impl BlockingSend for ReqSocket {
             };
             match self.backend.peers.get_mut(&next_peer_id) {
                 Some(mut peer) => {
+                    self.backend.round_robin.push(next_peer_id.clone());
                     let frames = vec![
                         "".into(), // delimiter frame
                         message,
@@ -55,11 +56,10 @@ impl BlockingSend for ReqSocket {
                     peer.send_queue
                         .send(Message::MultipartMessage(frames))
                         .await?;
-                    self.current_request = Some(next_peer_id.clone());
                     self.backend
                         .current_request_peer_id
                         .store(self.backend.peers.hash_usize(&next_peer_id));
-                    self.backend.round_robin.push(next_peer_id);
+                    self.current_request = Some(next_peer_id);
                     return Ok(());
                 }
                 None => continue,
