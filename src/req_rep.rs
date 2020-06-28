@@ -1,19 +1,20 @@
+use crate::codec::*;
+use crate::error::*;
+use crate::*;
+use crate::{SocketType, ZmqResult};
 use async_trait::async_trait;
+use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use futures::lock::Mutex;
 use futures::stream::FuturesUnordered;
 use futures_util::sink::SinkExt;
 use std::sync::Arc;
-use tokio::stream::StreamExt;
-
-use crate::codec::*;
-use crate::error::*;
-use crate::*;
-use crate::{SocketType, ZmqResult};
 use std::time::Duration;
+use tokio::stream::StreamExt;
 
 struct ReqSocketBackend {
     pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
+    pub(crate) round_robin: SegQueue<PeerIdentity>,
 }
 
 pub struct ReqSocket {
@@ -26,23 +27,39 @@ pub struct ReqSocket {
 impl BlockingSend for ReqSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         if self.current_request.is_some() {
-            return Err(ZmqError::Other("Unable to send message. Request already in progress"))
+            return Err(ZmqError::Socket(
+                "Unable to send message. Request already in progress",
+            ));
         }
-        let frames = vec![
-            "".into(), // delimiter frame
-            message,
-        ];
-        // TODO this is supposed to be round robin
-        for mut peer in self.backend.peers.iter_mut() {
-            peer.send_queue
-                .send(Message::MultipartMessage(frames))
-                .await?;
-            self.current_request = Some(peer.identity.clone());
-            return Ok(());
+        // In normal scenario this will always be only 1 iteration
+        // There can be special case when peer has disconnected and his id is still in RR queue
+        // This happens because SegQueue don't have an api to delete items from queue.
+        // So in such case we'll just pop item and skip it if we don't have a matching peer in peers map
+        loop {
+            let next_peer_id = match self.backend.round_robin.pop() {
+                Ok(peer) => peer,
+                Err(_) => {
+                    return Err(ZmqError::Other(
+                        "Not connected to peers. Unable to send messages",
+                    ))
+                }
+            };
+            match self.backend.peers.get_mut(&next_peer_id) {
+                Some(mut peer) => {
+                    let frames = vec![
+                        "".into(), // delimiter frame
+                        message,
+                    ];
+                    peer.send_queue
+                        .send(Message::MultipartMessage(frames))
+                        .await?;
+                    self.current_request = Some(peer.identity.clone());
+                    self.backend.round_robin.push(next_peer_id);
+                    return Ok(());
+                }
+                None => continue,
+            }
         }
-        Err(ZmqError::Other(
-            "Not connected to peers. Unable to send messages",
-        ))
     }
 }
 
@@ -82,6 +99,7 @@ impl SocketFrontend for ReqSocket {
         Self {
             backend: Arc::new(ReqSocketBackend {
                 peers: Arc::new(DashMap::new()),
+                round_robin: SegQueue::new(),
             }),
             _accept_close_handle: None,
             current_request: None,
@@ -122,6 +140,7 @@ impl MultiPeer for ReqSocketBackend {
                 _io_close_handle: stop_handle,
             },
         );
+        self.round_robin.push(peer_id.clone());
 
         (out_queue_receiver, stop_callback)
     }
