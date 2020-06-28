@@ -136,7 +136,7 @@ impl MultiPeer for ReqSocketBackend {
         &self,
         peer_id: &PeerIdentity,
     ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
-        let default_queue_size = 100;
+        let default_queue_size = 1;
         let (out_queue, out_queue_receiver) = mpsc::channel(default_queue_size);
         let (in_queue, in_queue_receiver) = mpsc::channel(default_queue_size);
         let (stop_handle, stop_callback) = oneshot::channel::<bool>();
