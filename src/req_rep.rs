@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio::stream::StreamExt;
 
 struct ReqSocketBackend {
-    pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
+    pub(crate) peers: DashMap<PeerIdentity, Peer>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
     pub(crate) current_request_peer_id: AtomicCell<usize>,
 }
@@ -103,7 +103,7 @@ impl SocketFrontend for ReqSocket {
     fn new() -> Self {
         Self {
             backend: Arc::new(ReqSocketBackend {
-                peers: Arc::new(DashMap::new()),
+                peers: DashMap::new(),
                 round_robin: SegQueue::new(),
                 current_request_peer_id: AtomicCell::new(0),
             }),
