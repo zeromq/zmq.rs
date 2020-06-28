@@ -113,6 +113,11 @@ impl SocketFrontend for ReqSocket {
     }
 
     async fn bind(&mut self, endpoint: &str) -> ZmqResult<()> {
+        if self._accept_close_handle.is_some() {
+            return Err(ZmqError::Other(
+                "Socket server already started. Currently only one server is supported",
+            ));
+        }
         let stop_handle = util::start_accepting_connections(endpoint, self.backend.clone()).await?;
         self._accept_close_handle = Some(stop_handle);
         Ok(())
