@@ -3,6 +3,7 @@ use crate::error::*;
 use crate::*;
 use crate::{SocketType, ZmqResult};
 use async_trait::async_trait;
+use crossbeam::atomic::AtomicCell;
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use futures::lock::Mutex;
@@ -15,6 +16,7 @@ use tokio::stream::StreamExt;
 struct ReqSocketBackend {
     pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
+    pub(crate) current_request_peer_id: AtomicCell<usize>,
 }
 
 pub struct ReqSocket {
@@ -53,7 +55,10 @@ impl BlockingSend for ReqSocket {
                     peer.send_queue
                         .send(Message::MultipartMessage(frames))
                         .await?;
-                    self.current_request = Some(peer.identity.clone());
+                    self.current_request = Some(next_peer_id.clone());
+                    self.backend
+                        .current_request_peer_id
+                        .store(self.backend.peers.hash_usize(&next_peer_id));
                     self.backend.round_robin.push(next_peer_id);
                     return Ok(());
                 }
@@ -100,6 +105,7 @@ impl SocketFrontend for ReqSocket {
             backend: Arc::new(ReqSocketBackend {
                 peers: Arc::new(DashMap::new()),
                 round_robin: SegQueue::new(),
+                current_request_peer_id: AtomicCell::new(0),
             }),
             _accept_close_handle: None,
             current_request: None,
@@ -153,13 +159,20 @@ impl MultiPeer for ReqSocketBackend {
 #[async_trait]
 impl SocketBackend for ReqSocketBackend {
     async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
-        self.peers
-            .get_mut(peer_id)
-            .expect("Not found peer by id")
-            .recv_queue_in
-            .send(message)
-            .await
-            .expect("Failed to send");
+        let hash = self.peers.hash_usize(&peer_id);
+        let current = self.current_request_peer_id.compare_and_swap(hash, 0);
+        // This is needed to ensure that we only store messages that we are expecting to get
+        // Other messages are silently discarded according to spec
+        if current == hash {
+            // We've got reply that we were waiting for
+            self.peers
+                .get_mut(peer_id)
+                .expect("Not found peer by id")
+                .recv_queue_in
+                .send(message)
+                .await
+                .expect("Failed to send");
+        }
     }
 
     fn socket_type(&self) -> SocketType {
