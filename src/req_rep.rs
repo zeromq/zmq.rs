@@ -25,6 +25,9 @@ pub struct ReqSocket {
 #[async_trait]
 impl BlockingSend for ReqSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+        if self.current_request.is_some() {
+            return Err(ZmqError::Other("Unable to send message. Request already in progress"))
+        }
         let frames = vec![
             "".into(), // delimiter frame
             message,
