@@ -1,19 +1,22 @@
+use crate::codec::*;
+use crate::error::*;
+use crate::*;
+use crate::{SocketType, ZmqResult};
 use async_trait::async_trait;
+use crossbeam::atomic::AtomicCell;
+use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use futures::lock::Mutex;
 use futures::stream::FuturesUnordered;
 use futures_util::sink::SinkExt;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::stream::StreamExt;
 
-use crate::codec::*;
-use crate::error::*;
-use crate::*;
-use crate::{SocketType, ZmqResult};
-use std::time::Duration;
-
 struct ReqSocketBackend {
-    pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
+    pub(crate) peers: DashMap<PeerIdentity, Peer>,
+    pub(crate) round_robin: SegQueue<PeerIdentity>,
+    pub(crate) current_request_peer_id: Mutex<Option<PeerIdentity>>,
 }
 
 pub struct ReqSocket {
@@ -25,21 +28,45 @@ pub struct ReqSocket {
 #[async_trait]
 impl BlockingSend for ReqSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
-        let frames = vec![
-            "".into(), // delimiter frame
-            message,
-        ];
-        // TODO this is supposed to be round robin
-        for mut peer in self.backend.peers.iter_mut() {
-            peer.send_queue
-                .send(Message::MultipartMessage(frames))
-                .await?;
-            self.current_request = Some(peer.identity.clone());
-            return Ok(());
+        if self.current_request.is_some() {
+            return Err(ZmqError::Socket(
+                "Unable to send message. Request already in progress",
+            ));
         }
-        Err(ZmqError::Other(
-            "Not connected to peers. Unable to send messages",
-        ))
+        // In normal scenario this will always be only 1 iteration
+        // There can be special case when peer has disconnected and his id is still in RR queue
+        // This happens because SegQueue don't have an api to delete items from queue.
+        // So in such case we'll just pop item and skip it if we don't have a matching peer in peers map
+        loop {
+            let next_peer_id = match self.backend.round_robin.pop() {
+                Ok(peer) => peer,
+                Err(_) => {
+                    return Err(ZmqError::Other(
+                        "Not connected to peers. Unable to send messages",
+                    ))
+                }
+            };
+            match self.backend.peers.get_mut(&next_peer_id) {
+                Some(mut peer) => {
+                    self.backend.round_robin.push(next_peer_id.clone());
+                    let frames = vec![
+                        "".into(), // delimiter frame
+                        message,
+                    ];
+                    peer.send_queue
+                        .send(Message::MultipartMessage(frames))
+                        .await?;
+                    self.backend
+                        .current_request_peer_id
+                        .lock()
+                        .await
+                        .replace(next_peer_id.clone());
+                    self.current_request = Some(next_peer_id);
+                    return Ok(());
+                }
+                None => continue,
+            }
+        }
     }
 }
 
@@ -78,7 +105,9 @@ impl SocketFrontend for ReqSocket {
     fn new() -> Self {
         Self {
             backend: Arc::new(ReqSocketBackend {
-                peers: Arc::new(DashMap::new()),
+                peers: DashMap::new(),
+                round_robin: SegQueue::new(),
+                current_request_peer_id: Mutex::new(None),
             }),
             _accept_close_handle: None,
             current_request: None,
@@ -86,6 +115,11 @@ impl SocketFrontend for ReqSocket {
     }
 
     async fn bind(&mut self, endpoint: &str) -> ZmqResult<()> {
+        if self._accept_close_handle.is_some() {
+            return Err(ZmqError::Other(
+                "Socket server already started. Currently only one server is supported",
+            ));
+        }
         let stop_handle = util::start_accepting_connections(endpoint, self.backend.clone()).await?;
         self._accept_close_handle = Some(stop_handle);
         Ok(())
@@ -104,7 +138,7 @@ impl MultiPeer for ReqSocketBackend {
         &self,
         peer_id: &PeerIdentity,
     ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
-        let default_queue_size = 100;
+        let default_queue_size = 1;
         let (out_queue, out_queue_receiver) = mpsc::channel(default_queue_size);
         let (in_queue, in_queue_receiver) = mpsc::channel(default_queue_size);
         let (stop_handle, stop_callback) = oneshot::channel::<bool>();
@@ -119,6 +153,7 @@ impl MultiPeer for ReqSocketBackend {
                 _io_close_handle: stop_handle,
             },
         );
+        self.round_robin.push(peer_id.clone());
 
         (out_queue_receiver, stop_callback)
     }
@@ -131,6 +166,20 @@ impl MultiPeer for ReqSocketBackend {
 #[async_trait]
 impl SocketBackend for ReqSocketBackend {
     async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
+        // This is needed to ensure that we only store messages that we are expecting to get
+        // Other messages are silently discarded according to spec
+        let mut curr_req_lock = self.current_request_peer_id.lock().await;
+        match curr_req_lock.take() {
+            Some(id) => {
+                if &id != peer_id {
+                    curr_req_lock.replace(id);
+                    return;
+                }
+            }
+            None => return,
+        }
+        drop(curr_req_lock);
+        // We've got reply that we were waiting for
         self.peers
             .get_mut(peer_id)
             .expect("Not found peer by id")

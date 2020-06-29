@@ -40,28 +40,24 @@ async fn test_pub_sub_sockets() {
     });
 }
 
+async fn run_rep_server() -> Result<(), Box<dyn Error>> {
+    let mut rep_socket = crate::RepSocket::new();
+    rep_socket.bind("127.0.0.1:5557").await?;
+    println!("Started rep server on 127.0.0.1:5557");
+
+    for i in 0..10i32 {
+        let mess: String = rep_socket.recv().await?.try_into()?;
+        rep_socket
+            .send(format!("{} Rep - {}", mess, i).into())
+            .await?;
+    }
+    Ok(())
+}
+
 #[tokio::test]
 async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
     tokio::spawn(async move {
-        let mut rep_socket = crate::RepSocket::new();
-        rep_socket
-            .bind("127.0.0.1:5557")
-            .await
-            .expect("Failed to bind socket");
-        println!("Started rep server on 127.0.0.1:5557");
-
-        for i in 0..10i32 {
-            let mess: String = rep_socket
-                .recv()
-                .await
-                .expect("Failed to recv")
-                .try_into()
-                .expect("Failed to unpack");
-            rep_socket
-                .send(format!("{} Rep - {}", mess, i).into())
-                .await
-                .expect("Failed to send repl");
-        }
+        run_rep_server().await.unwrap();
     });
 
     // yield for a moment to ensure that server has some time to open socket
@@ -74,6 +70,38 @@ async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
         req_socket.send(format!("Req - {}", i).into()).await?;
         let repl: String = req_socket.recv().await?.try_into()?;
         assert_eq!(format!("Req - {} Rep - {}", i, i), repl)
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
+    for i in 0..100i32 {
+        tokio::spawn(async move {
+            // yield for a moment to ensure that server has some time to open socket
+            tokio::time::delay_for(Duration::from_millis(100)).await;
+            let mut req_socket = crate::ReqSocket::new();
+            req_socket.connect("127.0.0.1:5558").await.unwrap();
+            println!("Connected to server");
+
+            for i in 0..100i32 {
+                req_socket
+                    .send(format!("Req - {}", i).into())
+                    .await
+                    .unwrap();
+                let repl: String = req_socket.recv().await.unwrap().try_into().unwrap();
+                assert_eq!(format!("Req - {} Rep", i), repl)
+            }
+        });
+    }
+
+    let mut rep_socket = crate::RepSocket::new();
+    rep_socket.bind("127.0.0.1:5558").await?;
+    println!("Started rep server on 127.0.0.1:5558");
+
+    for i in 0..10000i32 {
+        let mess: String = rep_socket.recv().await?.try_into()?;
+        rep_socket.send(format!("{} Rep", mess).into()).await?;
     }
     Ok(())
 }
