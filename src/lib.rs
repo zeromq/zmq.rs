@@ -13,6 +13,7 @@ use tokio_util::codec::Framed;
 mod codec;
 mod dealer_router;
 mod error;
+mod fair_queue;
 mod message;
 mod pub_sub;
 mod req_rep;

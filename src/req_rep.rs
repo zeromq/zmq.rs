@@ -1,5 +1,6 @@
 use crate::codec::*;
 use crate::error::*;
+use crate::fair_queue::FairQueue;
 use crate::*;
 use crate::{SocketType, ZmqResult};
 use async_trait::async_trait;
@@ -199,25 +200,53 @@ impl SocketBackend for ReqSocketBackend {
     }
 }
 
+struct RepPeer {
+    pub(crate) identity: PeerIdentity,
+    pub(crate) send_queue: mpsc::Sender<Message>,
+    pub(crate) recv_queue_in: mpsc::Sender<Message>,
+    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
+}
+
+struct FairQueueProcessor {
+    pub(crate) fair_queue_stream: FairQueue<mpsc::Receiver<Message>, PeerIdentity>,
+    pub(crate) socket_incoming_queue: mpsc::Sender<(PeerIdentity, Message)>,
+    pub(crate) peer_queue_in:
+        mpsc::Receiver<(PeerIdentity, mpsc::Receiver<Message>)>,
+}
+
 struct RepSocketBackend {
-    pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
+    pub(crate) peers: Arc<DashMap<PeerIdentity, RepPeer>>,
+    pub(crate) processor: Mutex<FairQueueProcessor>,
+    pub(crate) peer_queue_in: mpsc::Sender<(PeerIdentity, mpsc::Receiver<Message>)>,
 }
 
 pub struct RepSocket {
     backend: Arc<RepSocketBackend>,
     _accept_close_handle: Option<oneshot::Sender<bool>>,
     current_request: Option<PeerIdentity>,
+    fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
 }
 
 #[async_trait]
 impl SocketFrontend for RepSocket {
     fn new() -> Self {
+        // TODO define buffer size
+        let default_queue_size = 100;
+        let (queue_sender, fair_queue) = mpsc::channel(default_queue_size);
+        let (peer_in, peer_out) = mpsc::channel(default_queue_size);
         Self {
             backend: Arc::new(RepSocketBackend {
                 peers: Arc::new(DashMap::new()),
+                processor: Mutex::new(FairQueueProcessor {
+                    fair_queue_stream: FairQueue::new(),
+                    socket_incoming_queue: queue_sender,
+                    peer_queue_in: peer_out,
+                }),
+                peer_queue_in: peer_in,
             }),
             _accept_close_handle: None,
             current_request: None,
+            fair_queue,
         }
     }
 
@@ -240,19 +269,21 @@ impl MultiPeer for RepSocketBackend {
     ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
         let default_queue_size = 100;
         let (out_queue, out_queue_receiver) = mpsc::channel(default_queue_size);
-        let (in_queue, in_queue_receiver) = mpsc::channel(default_queue_size);
+        let (in_queue, in_queue_receiver) = mpsc::channel::<Message>(default_queue_size);
         let (stop_handle, stop_callback) = oneshot::channel::<bool>();
 
         self.peers.insert(
             peer_id.clone(),
-            Peer {
+            RepPeer {
                 identity: peer_id.clone(),
                 send_queue: out_queue,
-                recv_queue: Arc::new(Mutex::new(in_queue_receiver)),
                 recv_queue_in: in_queue,
                 _io_close_handle: stop_handle,
             },
         );
+        self.peer_queue_in.clone().try_send(
+            (peer_id.clone(), in_queue_receiver)
+        ).unwrap();
 
         (out_queue_receiver, stop_callback)
     }
@@ -311,37 +342,16 @@ impl BlockingSend for RepSocket {
 #[async_trait]
 impl BlockingRecv for RepSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
-        let mut messages = FuturesUnordered::new();
         loop {
-            for peer in self.backend.peers.iter() {
-                let peer_id = peer.identity.clone();
-                let recv_queue = peer.recv_queue.clone();
-                messages.push(async move { (peer_id, recv_queue.lock().await.next().await) });
-            }
-
-            if messages.is_empty() {
-                // TODO this is super stupid way of waiting for new connections
-                // Needs to be refactored
-                tokio::time::delay_for(Duration::from_millis(100)).await;
-                continue;
-            } else {
-                break;
-            }
-        }
-        loop {
-            match messages.next().await {
-                Some((peer_id, Some(Message::MultipartMessage(mut messages)))) => {
+            match self.fair_queue.next().await {
+                Some((peer_id, Message::MultipartMessage(mut messages))) => {
                     assert!(messages.len() == 2);
                     assert!(messages[0].data.is_empty()); // Ensure that we have delimeter as first part
                     self.current_request = Some(peer_id);
                     return Ok(messages.pop().unwrap());
                 }
-                Some((peer_id, None)) => {
-                    println!("Peer disconnected {:?}", peer_id);
-                    self.backend.peers.remove(&peer_id);
-                }
                 Some((_peer_id, _)) => todo!(),
-                None => continue,
+                None => todo!(),
             };
         }
     }
