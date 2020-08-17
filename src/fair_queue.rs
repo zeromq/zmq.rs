@@ -1,19 +1,47 @@
 use futures::future::Pending;
-use futures::task::{Context, Poll, Waker};
+use futures::task::{ArcWake, Context, Poll, Waker};
 use futures::Stream;
 use futures_util::core_reexport::cmp::Ordering;
 use futures_util::core_reexport::panic::PanicInfo;
 use futures_util::core_reexport::sync::atomic::AtomicUsize;
 use futures_util::core_reexport::sync::atomic::Ordering::Relaxed;
 use std::collections::{BinaryHeap, HashMap};
+use std::fmt::Debug;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+struct QueueInner<S, K> {
+    ready_queue: BinaryHeap<PriorityStream<S, K>>,
+    streams: HashMap<usize, PriorityStream<S, K>>,
+    waker: Option<Waker>,
+}
 
 pub struct FairQueue<S, K> {
     counter: AtomicUsize,
-    ready_queue: BinaryHeap<PriorityStream<S, K>>,
-    streams: HashMap<usize, Pin<Box<S>>>,
-    waker: Option<Waker>,
+    inner: Arc<Mutex<QueueInner<S, K>>>,
+}
+
+struct StreamWaker<S, K> {
+    inner: Arc<Mutex<QueueInner<S, K>>>,
+    index: usize,
+}
+
+impl<S, K> ArcWake for StreamWaker<S, K>
+where
+    S: Send,
+    K: Send,
+{
+    fn wake_by_ref(arc_self: &Arc<Self>) {
+        let mut inner = arc_self.inner.lock().unwrap();
+        let s = inner
+            .streams
+            .remove(&arc_self.index)
+            .expect("Corrupted index given to waker");
+        inner.ready_queue.push(s);
+        if let Some(waker) = inner.waker.take() {
+            waker.wake_by_ref();
+        }
+    }
 }
 
 struct PriorityStream<S, K> {
@@ -42,31 +70,45 @@ impl<S, K> Ord for PriorityStream<S, K> {
 
 impl<S, T, K> Stream for FairQueue<S, K>
 where
-    S: Stream<Item = T>,
-    K: Unpin + Clone,
+    T: Send,
+    S: Stream<Item = T> + Send,
+    K: Unpin + Clone + Send,
 {
-    type Item = (K, Option<T>);
+    type Item = (K, T);
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let stream = self.get_mut();
         loop {
-            let mut s = match stream.ready_queue.pop() {
-                Some(s) => s,
-                None => {
-                    stream.waker = Some(cx.waker().clone());
-                    return Poll::Pending;
+            let mut s = {
+                let mut inner = stream.inner.lock().unwrap();
+                inner.waker = Some(cx.waker().clone());
+                match inner.ready_queue.pop() {
+                    Some(s) => s,
+                    None => {
+                        return Poll::Pending;
+                    }
                 }
             };
 
-            match s.stream.as_mut().poll_next(cx) {
+            let waker = Arc::new(StreamWaker {
+                inner: stream.inner.clone(),
+                index: s.priority,
+            });
+            let waker_ref = futures::task::waker_ref(&waker);
+            let mut cx = Context::from_waker(&waker_ref);
+            let p_res = s.stream.as_mut().poll_next(&mut cx);
+            match p_res {
                 Poll::Ready(Some(res)) => {
                     s.priority = stream.counter.fetch_add(1, Relaxed);
-                    let item = Some((s.key.clone(), Some(res)));
-                    stream.ready_queue.push(s);
+                    let item = Some((s.key.clone(), res));
+                    stream.inner.lock().unwrap().ready_queue.push(s);
                     return Poll::Ready(item);
                 }
                 Poll::Ready(None) => continue,
-                Poll::Pending => return Poll::Pending,
+                Poll::Pending => {
+                    stream.inner.lock().unwrap().streams.insert(s.priority, s);
+                    return Poll::Pending;
+                }
             }
         }
     }
@@ -76,19 +118,22 @@ impl<S, K> FairQueue<S, K> {
     pub fn new() -> Self {
         Self {
             counter: AtomicUsize::new(0),
-            ready_queue: BinaryHeap::new(),
-            streams: HashMap::new(),
-            waker: None,
+            inner: Arc::new(Mutex::new(QueueInner {
+                ready_queue: BinaryHeap::new(),
+                streams: HashMap::new(),
+                waker: None,
+            })),
         }
     }
 
     pub fn insert(&mut self, k: K, s: S) {
-        self.ready_queue.push(PriorityStream {
+        let mut inner = self.inner.lock().unwrap();
+        inner.ready_queue.push(PriorityStream {
             priority: self.counter.fetch_add(1, Relaxed),
             key: k,
             stream: Box::pin(s),
         });
-        match &self.waker {
+        match &inner.waker {
             Some(w) => {
                 println!("Wake up neo!");
                 w.wake_by_ref()

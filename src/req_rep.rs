@@ -210,19 +210,19 @@ struct RepPeer {
 struct FairQueueProcessor {
     pub(crate) fair_queue_stream: FairQueue<mpsc::Receiver<Message>, PeerIdentity>,
     pub(crate) socket_incoming_queue: mpsc::Sender<(PeerIdentity, Message)>,
-    pub(crate) peer_queue_in:
-        mpsc::Receiver<(PeerIdentity, mpsc::Receiver<Message>)>,
+    pub(crate) peer_queue_in: mpsc::Receiver<(PeerIdentity, mpsc::Receiver<Message>)>,
+    pub(crate) _io_close_handle: oneshot::Receiver<bool>,
 }
 
 struct RepSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, RepPeer>,
-    pub(crate) processor: Mutex<FairQueueProcessor>,
     pub(crate) peer_queue_in: mpsc::Sender<(PeerIdentity, mpsc::Receiver<Message>)>,
 }
 
 pub struct RepSocket {
     backend: Arc<RepSocketBackend>,
     _accept_close_handle: Option<oneshot::Sender<bool>>,
+    fair_queue_close_handle: oneshot::Sender<bool>,
     current_request: Option<PeerIdentity>,
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
 }
@@ -234,17 +234,20 @@ impl SocketFrontend for RepSocket {
         let default_queue_size = 100;
         let (queue_sender, fair_queue) = mpsc::channel(default_queue_size);
         let (peer_in, peer_out) = mpsc::channel(default_queue_size);
+        let (fair_queue_close_handle, fqueue_close_recevier) = oneshot::channel();
+        tokio::spawn(process_fair_queue_messages(FairQueueProcessor {
+            fair_queue_stream: FairQueue::new(),
+            socket_incoming_queue: queue_sender,
+            peer_queue_in: peer_out,
+            _io_close_handle: fqueue_close_recevier,
+        }));
         Self {
             backend: Arc::new(RepSocketBackend {
                 peers: DashMap::new(),
-                processor: Mutex::new(FairQueueProcessor {
-                    fair_queue_stream: FairQueue::new(),
-                    socket_incoming_queue: queue_sender,
-                    peer_queue_in: peer_out,
-                }),
                 peer_queue_in: peer_in,
             }),
             _accept_close_handle: None,
+            fair_queue_close_handle,
             current_request: None,
             fair_queue,
         }
@@ -258,6 +261,32 @@ impl SocketFrontend for RepSocket {
 
     async fn connect(&mut self, endpoint: &str) -> ZmqResult<()> {
         unimplemented!()
+    }
+}
+
+async fn process_fair_queue_messages(mut processor: FairQueueProcessor) {
+    use futures::future::FutureExt;
+    let mut stop_callback = processor._io_close_handle.fuse();
+    loop {
+        futures::select! {
+            _ = stop_callback => {
+                println!("Socket dropped. stop fair_queue");
+                break;
+            },
+            peer_in = processor.peer_queue_in.next().fuse() => {
+                println!("Insert new stream");
+                match peer_in {
+                    Some((peer_id, receiver)) => processor.fair_queue_stream.insert(peer_id, receiver),
+                    None => todo!(),
+                };
+            },
+            message = processor.fair_queue_stream.next().fuse() => {
+                match message {
+                    Some(m) => processor.socket_incoming_queue.send(m).await,
+                    None => todo!()
+                };
+            }
+        }
     }
 }
 
@@ -281,9 +310,10 @@ impl MultiPeer for RepSocketBackend {
                 _io_close_handle: stop_handle,
             },
         );
-        self.peer_queue_in.clone().try_send(
-            (peer_id.clone(), in_queue_receiver)
-        ).unwrap();
+        self.peer_queue_in
+            .clone()
+            .try_send((peer_id.clone(), in_queue_receiver))
+            .unwrap();
 
         (out_queue_receiver, stop_callback)
     }
