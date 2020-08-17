@@ -215,7 +215,7 @@ struct FairQueueProcessor {
 }
 
 struct RepSocketBackend {
-    pub(crate) peers: Arc<DashMap<PeerIdentity, RepPeer>>,
+    pub(crate) peers: DashMap<PeerIdentity, RepPeer>,
     pub(crate) processor: Mutex<FairQueueProcessor>,
     pub(crate) peer_queue_in: mpsc::Sender<(PeerIdentity, mpsc::Receiver<Message>)>,
 }
@@ -236,7 +236,7 @@ impl SocketFrontend for RepSocket {
         let (peer_in, peer_out) = mpsc::channel(default_queue_size);
         Self {
             backend: Arc::new(RepSocketBackend {
-                peers: Arc::new(DashMap::new()),
+                peers: DashMap::new(),
                 processor: Mutex::new(FairQueueProcessor {
                     fair_queue_stream: FairQueue::new(),
                     socket_incoming_queue: queue_sender,
