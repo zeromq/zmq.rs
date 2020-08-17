@@ -160,7 +160,7 @@ pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<d
         .expect("Failed to exchange ready messages");
     println!("Peer connected {:?}", peer_id);
 
-    let (outgoing_queue, stop_callback) = backend.peer_connected(&peer_id);
+    let (outgoing_queue, stop_callback) = backend.peer_connected(&peer_id).await;
 
     tokio::spawn(async move {
         let mut stop_callback = stop_callback.fuse();
@@ -189,7 +189,7 @@ pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<d
                             backend.message_received(&peer_id, message).await;
                         }
                         None => {
-                            backend.peer_disconnected(&peer_id);
+                            backend.peer_disconnected(&peer_id).await;
                             break;
                         }
                         _ => todo!(),

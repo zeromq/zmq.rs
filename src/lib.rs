@@ -88,12 +88,13 @@ impl Display for SocketType {
     }
 }
 
+#[async_trait]
 trait MultiPeer: SocketBackend {
-    fn peer_connected(
+    async fn peer_connected(
         &self,
         peer_id: &PeerIdentity,
     ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>);
-    fn peer_disconnected(&self, peer_id: &PeerIdentity);
+    async fn peer_disconnected(&self, peer_id: &PeerIdentity);
 }
 
 #[async_trait]
