@@ -20,8 +20,9 @@ struct RouterSocketBackend {
     pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
 }
 
+#[async_trait]
 impl MultiPeer for RouterSocketBackend {
-    fn peer_connected(
+    async fn peer_connected(
         &self,
         peer_id: &PeerIdentity,
     ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
@@ -44,7 +45,7 @@ impl MultiPeer for RouterSocketBackend {
         (out_queue_receiver, stop_callback)
     }
 
-    fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+    async fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         self.peers.remove(peer_id);
     }
 }

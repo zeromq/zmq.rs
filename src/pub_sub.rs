@@ -82,8 +82,9 @@ impl SocketBackend for PubSocketBackend {
     }
 }
 
+#[async_trait]
 impl MultiPeer for PubSocketBackend {
-    fn peer_connected(
+    async fn peer_connected(
         &self,
         peer_id: &PeerIdentity,
     ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
@@ -102,7 +103,7 @@ impl MultiPeer for PubSocketBackend {
         (out_queue_receiver, stop_callback)
     }
 
-    fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+    async fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         println!("Client disconnected {:?}", peer_id);
         self.subscribers.remove(peer_id);
     }
