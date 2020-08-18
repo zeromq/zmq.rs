@@ -85,7 +85,11 @@ where
                 match inner.ready_queue.pop() {
                     Some(s) => s,
                     None => {
-                        return Poll::Pending;
+                        return if inner.streams.len() > 0 {
+                            Poll::Pending
+                        } else {
+                            Poll::Ready(None)
+                        }
                     }
                 }
             };
@@ -154,10 +158,10 @@ mod test {
         let b = futures::stream::iter(vec!["b1", "b2", "b3"]);
         let c = futures::stream::iter(vec!["c1", "c2", "c3"]);
 
-        let mut f_queue = FairQueue::new();
-        f_queue.insert(a);
-        f_queue.insert(b);
-        f_queue.insert(c);
+        let mut f_queue: FairQueue<_, u64> = FairQueue::new();
+        f_queue.insert(1, a);
+        f_queue.insert(2, b);
+        f_queue.insert(3, c);
 
         let mut results = Vec::new();
         while let Some(i) = f_queue.next().await {
@@ -165,7 +169,17 @@ mod test {
         }
         assert_eq!(
             results,
-            vec!["a1", "b1", "c1", "a2", "b2", "c2", "a3", "b3", "c3"]
+            vec![
+                (1, "a1"),
+                (2, "b1"),
+                (3, "c1"),
+                (1, "a2"),
+                (2, "b2"),
+                (3, "c2"),
+                (1, "a3"),
+                (2, "b3"),
+                (3, "c3")
+            ]
         );
     }
 
@@ -175,15 +189,25 @@ mod test {
         let b = futures::stream::iter(vec!["b1"]);
         let c = futures::stream::iter(vec!["c1", "c2"]);
 
-        let mut f_queue = FairQueue::new();
-        f_queue.insert(a);
-        f_queue.insert(b);
-        f_queue.insert(c);
+        let mut f_queue: FairQueue<_, u64> = FairQueue::new();
+        f_queue.insert(1, a);
+        f_queue.insert(2, b);
+        f_queue.insert(3, c);
 
         let mut results = Vec::new();
         while let Some(i) = f_queue.next().await {
             results.push(i);
         }
-        assert_eq!(results, vec!["a1", "b1", "c1", "a2", "c2", "a3"]);
+        assert_eq!(
+            results,
+            vec![
+                (1, "a1"),
+                (2, "b1"),
+                (3, "c1"),
+                (1, "a2"),
+                (3, "c2"),
+                (1, "a3")
+            ]
+        );
     }
 }

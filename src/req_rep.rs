@@ -267,23 +267,45 @@ impl SocketFrontend for RepSocket {
 async fn process_fair_queue_messages(mut processor: FairQueueProcessor) {
     use futures::future::FutureExt;
     let mut stop_callback = processor._io_close_handle.fuse();
+    let mut waiting_for_clients = true;
+    let mut waiting_for_data = true;
     loop {
-        futures::select! {
-            _ = stop_callback => {
+        tokio::select! {
+            _ = &mut stop_callback => {
                 println!("Socket dropped. stop fair_queue");
                 break;
             },
-            peer_in = processor.peer_queue_in.next().fuse() => {
+            peer_in = processor.peer_queue_in.next().fuse(), if waiting_for_clients => {
                 println!("Insert new stream");
                 match peer_in {
-                    Some((peer_id, receiver)) => processor.fair_queue_stream.insert(peer_id, receiver),
-                    None => todo!(),
+                    Some((peer_id, receiver)) => {
+                        processor.fair_queue_stream.insert(peer_id, receiver);
+                        waiting_for_data = true;
+                    },
+                    None => {
+                        // Channel for newly connected clients was closed
+                        // so we no longer wait for the to arrive
+                        waiting_for_clients = false;
+                    },
                 };
             },
-            message = processor.fair_queue_stream.next().fuse() => {
+            message = processor.fair_queue_stream.next().fuse(), if waiting_for_data => {
                 match message {
-                    Some(m) => processor.socket_incoming_queue.send(m).await,
-                    None => todo!()
+                    Some(m) => {
+                        processor.socket_incoming_queue.send(m).await;
+                    },
+                    None => {
+                        // This is the case when there are no connected clients
+                        // We should sleep and wait for new clients to connect
+                        // This is handled by 2nd branch of select
+                        if waiting_for_clients {
+                            waiting_for_data = false;
+                        } else {
+                            // We're not waiting for client and have no data...
+                            // stop the loop and cleanup
+                            break;
+                        };
+                    }
                 };
             }
         }
