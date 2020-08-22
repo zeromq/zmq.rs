@@ -1,9 +1,9 @@
 use futures::task::{ArcWake, Context, Poll, Waker};
 use futures::Stream;
 use std::cmp::Ordering;
-use std::sync::atomic;
 use std::collections::{BinaryHeap, HashMap};
 use std::pin::Pin;
+use std::sync::atomic;
 use std::sync::{Arc, Mutex};
 
 struct QueueInner<S, K> {

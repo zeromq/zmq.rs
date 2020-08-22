@@ -1,16 +1,16 @@
 use crate::codec::*;
 use crate::error::*;
-use crate::{SocketType, ZmqResult};
+use crate::util::{self, Peer, PeerIdentity};
 use crate::*;
+use crate::{SocketType, ZmqResult};
 use async_trait::async_trait;
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
-use futures::lock::Mutex;
 use futures::channel::{mpsc, oneshot};
+use futures::lock::Mutex;
 use futures_util::sink::SinkExt;
 use std::sync::Arc;
 use tokio::stream::StreamExt;
-use crate::util::{self, PeerIdentity, Peer};
 
 struct ReqSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, Peer>,

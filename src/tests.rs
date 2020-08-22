@@ -76,7 +76,7 @@ async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
 
 #[tokio::test]
 async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
-    for i in 0..100i32 {
+    for _i in 0..100i32 {
         tokio::spawn(async move {
             // yield for a moment to ensure that server has some time to open socket
             tokio::time::delay_for(Duration::from_millis(100)).await;
@@ -99,7 +99,7 @@ async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
     rep_socket.bind("127.0.0.1:5558").await?;
     println!("Started rep server on 127.0.0.1:5558");
 
-    for i in 0..10000i32 {
+    for _i in 0..10000i32 {
         let mess: String = rep_socket.recv().await?.try_into()?;
         rep_socket.send(format!("{} Rep", mess).into()).await?;
     }

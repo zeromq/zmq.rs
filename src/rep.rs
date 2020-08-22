@@ -9,9 +9,8 @@ use futures_util::sink::SinkExt;
 use std::sync::Arc;
 use tokio::stream::StreamExt;
 
-
 struct RepPeer {
-    pub(crate) identity: PeerIdentity,
+    pub(crate) _identity: PeerIdentity,
     pub(crate) send_queue: mpsc::Sender<Message>,
     pub(crate) recv_queue_in: mpsc::Sender<Message>,
     pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
@@ -32,7 +31,7 @@ struct RepSocketBackend {
 pub struct RepSocket {
     backend: Arc<RepSocketBackend>,
     _accept_close_handle: Option<oneshot::Sender<bool>>,
-    fair_queue_close_handle: oneshot::Sender<bool>,
+    _fair_queue_close_handle: oneshot::Sender<bool>,
     current_request: Option<PeerIdentity>,
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
 }
@@ -57,7 +56,7 @@ impl SocketFrontend for RepSocket {
                 peer_queue_in: peer_in,
             }),
             _accept_close_handle: None,
-            fair_queue_close_handle,
+            _fair_queue_close_handle: fair_queue_close_handle,
             current_request: None,
             fair_queue,
         }
@@ -78,8 +77,7 @@ impl SocketFrontend for RepSocket {
 }
 
 async fn process_fair_queue_messages(mut processor: FairQueueProcessor) {
-    use futures::future::FutureExt;
-    let mut stop_callback = processor._io_close_handle.fuse();
+    let mut stop_callback = processor._io_close_handle;
     let mut waiting_for_clients = true;
     let mut waiting_for_data = true;
     loop {
@@ -88,7 +86,7 @@ async fn process_fair_queue_messages(mut processor: FairQueueProcessor) {
                 println!("Socket dropped. stop fair_queue");
                 break;
             },
-            peer_in = processor.peer_queue_in.next().fuse(), if waiting_for_clients => {
+            peer_in = processor.peer_queue_in.next(), if waiting_for_clients => {
                 println!("Insert new stream");
                 match peer_in {
                     Some((peer_id, receiver)) => {
@@ -102,10 +100,10 @@ async fn process_fair_queue_messages(mut processor: FairQueueProcessor) {
                     },
                 };
             },
-            message = processor.fair_queue_stream.next().fuse(), if waiting_for_data => {
+            message = processor.fair_queue_stream.next(), if waiting_for_data => {
                 match message {
                     Some(m) => {
-                        processor.socket_incoming_queue.send(m).await;
+                        processor.socket_incoming_queue.send(m).await.expect("Failed to deliver message");
                     },
                     None => {
                         // This is the case when there are no connected clients
@@ -139,7 +137,7 @@ impl MultiPeer for RepSocketBackend {
         self.peers.insert(
             peer_id.clone(),
             RepPeer {
-                identity: peer_id.clone(),
+                _identity: peer_id.clone(),
                 send_queue: out_queue,
                 recv_queue_in: in_queue,
                 _io_close_handle: stop_handle,
