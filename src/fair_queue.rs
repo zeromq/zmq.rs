@@ -1,12 +1,8 @@
-use futures::future::Pending;
 use futures::task::{ArcWake, Context, Poll, Waker};
 use futures::Stream;
-use futures_util::core_reexport::cmp::Ordering;
-use futures_util::core_reexport::panic::PanicInfo;
-use futures_util::core_reexport::sync::atomic::AtomicUsize;
-use futures_util::core_reexport::sync::atomic::Ordering::Relaxed;
+use std::cmp::Ordering;
+use std::sync::atomic;
 use std::collections::{BinaryHeap, HashMap};
-use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
@@ -17,7 +13,7 @@ struct QueueInner<S, K> {
 }
 
 pub struct FairQueue<S, K> {
-    counter: AtomicUsize,
+    counter: atomic::AtomicUsize,
     inner: Arc<Mutex<QueueInner<S, K>>>,
 }
 
@@ -103,7 +99,7 @@ where
             let p_res = s.stream.as_mut().poll_next(&mut cx);
             match p_res {
                 Poll::Ready(Some(res)) => {
-                    s.priority = stream.counter.fetch_add(1, Relaxed);
+                    s.priority = stream.counter.fetch_add(1, atomic::Ordering::Relaxed);
                     let item = Some((s.key.clone(), res));
                     stream.inner.lock().unwrap().ready_queue.push(s);
                     return Poll::Ready(item);
@@ -121,7 +117,7 @@ where
 impl<S, K> FairQueue<S, K> {
     pub fn new() -> Self {
         Self {
-            counter: AtomicUsize::new(0),
+            counter: atomic::AtomicUsize::new(0),
             inner: Arc::new(Mutex::new(QueueInner {
                 ready_queue: BinaryHeap::new(),
                 streams: HashMap::new(),
@@ -133,15 +129,12 @@ impl<S, K> FairQueue<S, K> {
     pub fn insert(&mut self, k: K, s: S) {
         let mut inner = self.inner.lock().unwrap();
         inner.ready_queue.push(PriorityStream {
-            priority: self.counter.fetch_add(1, Relaxed),
+            priority: self.counter.fetch_add(1, atomic::Ordering::Relaxed),
             key: k,
             stream: Box::pin(s),
         });
         match &inner.waker {
-            Some(w) => {
-                println!("Wake up neo!");
-                w.wake_by_ref()
-            }
+            Some(w) => w.wake_by_ref(),
             None => (),
         };
     }

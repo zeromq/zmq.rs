@@ -4,14 +4,11 @@ use crate::fair_queue::FairQueue;
 use crate::*;
 use crate::{SocketType, ZmqResult};
 use async_trait::async_trait;
-use crossbeam::atomic::AtomicCell;
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use futures::lock::Mutex;
-use futures::stream::FuturesUnordered;
 use futures_util::sink::SinkExt;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::stream::StreamExt;
 
 struct ReqSocketBackend {

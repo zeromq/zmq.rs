@@ -1,3 +1,4 @@
+#![deny(warnings)]
 #![recursion_limit = "1024"]
 #[macro_use]
 extern crate enum_primitive_derive;
