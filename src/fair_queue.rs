@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 struct QueueInner<S, K> {
     ready_queue: BinaryHeap<PriorityStream<S, K>>,
-    streams: HashMap<usize, PriorityStream<S, K>>,
+    pending_streams: HashMap<usize, PriorityStream<S, K>>,
     waker: Option<Waker>,
 }
 
@@ -30,7 +30,7 @@ where
     fn wake_by_ref(arc_self: &Arc<Self>) {
         let mut inner = arc_self.inner.lock().unwrap();
         let s = inner
-            .streams
+            .pending_streams
             .remove(&arc_self.index)
             .expect("Corrupted index given to waker");
         inner.ready_queue.push(s);
@@ -81,7 +81,7 @@ where
                 match inner.ready_queue.pop() {
                     Some(s) => s,
                     None => {
-                        return if inner.streams.len() > 0 {
+                        return if inner.pending_streams.len() > 0 {
                             Poll::Pending
                         } else {
                             Poll::Ready(None)
@@ -96,8 +96,7 @@ where
             });
             let waker_ref = futures::task::waker_ref(&waker);
             let mut cx = Context::from_waker(&waker_ref);
-            let p_res = s.stream.as_mut().poll_next(&mut cx);
-            match p_res {
+            match s.stream.as_mut().poll_next(&mut cx) {
                 Poll::Ready(Some(res)) => {
                     s.priority = stream.counter.fetch_add(1, atomic::Ordering::Relaxed);
                     let item = Some((s.key.clone(), res));
@@ -106,7 +105,7 @@ where
                 }
                 Poll::Ready(None) => continue,
                 Poll::Pending => {
-                    stream.inner.lock().unwrap().streams.insert(s.priority, s);
+                    stream.inner.lock().unwrap().pending_streams.insert(s.priority, s);
                     return Poll::Pending;
                 }
             }
@@ -120,7 +119,7 @@ impl<S, K> FairQueue<S, K> {
             counter: atomic::AtomicUsize::new(0),
             inner: Arc::new(Mutex::new(QueueInner {
                 ready_queue: BinaryHeap::new(),
-                streams: HashMap::new(),
+                pending_streams: HashMap::new(),
                 waker: None,
             })),
         }
