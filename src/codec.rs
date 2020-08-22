@@ -235,7 +235,6 @@ impl Decoder for ZmqCodec {
     type Error = ZmqError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        dbg!(&src);
         if src.len() < self.waiting_for {
             src.reserve(self.waiting_for - src.len());
             return Ok(None);
