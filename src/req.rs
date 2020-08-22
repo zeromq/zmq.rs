@@ -24,6 +24,12 @@ pub struct ReqSocket {
     current_request: Option<PeerIdentity>,
 }
 
+impl Drop for ReqSocket {
+    fn drop(&mut self) {
+        self.backend.peers.clear();
+    }
+}
+
 #[async_trait]
 impl BlockingSend for ReqSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {

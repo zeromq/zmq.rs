@@ -36,6 +36,12 @@ pub struct RepSocket {
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
 }
 
+impl Drop for RepSocket {
+    fn drop(&mut self) {
+        self.backend.peers.clear();
+    }
+}
+
 #[async_trait]
 impl SocketFrontend for RepSocket {
     fn new() -> Self {
@@ -83,11 +89,9 @@ async fn process_fair_queue_messages(mut processor: FairQueueProcessor) {
     loop {
         tokio::select! {
             _ = &mut stop_callback => {
-                println!("Socket dropped. stop fair_queue");
                 break;
             },
             peer_in = processor.peer_queue_in.next(), if waiting_for_clients => {
-                println!("Insert new stream");
                 match peer_in {
                     Some((peer_id, receiver)) => {
                         processor.fair_queue_stream.insert(peer_id, receiver);

@@ -158,17 +158,15 @@ pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<d
     let peer_id = ready_exchange(&mut raw_socket, backend.socket_type())
         .await
         .expect("Failed to exchange ready messages");
-    println!("Peer connected {:?}", peer_id);
 
     let (outgoing_queue, stop_callback) = backend.peer_connected(&peer_id).await;
 
     tokio::spawn(async move {
-        let mut stop_callback = stop_callback.fuse();
-        let mut outgoing_queue = outgoing_queue.fuse();
+        let mut stop_callback = stop_callback;
+        let mut outgoing_queue = outgoing_queue;
         loop {
             tokio::select! {
                 _ = &mut stop_callback => {
-                    println!("Stop callback received");
                     break;
                 },
                 outgoing = outgoing_queue.next() => {
@@ -181,7 +179,6 @@ pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<d
                             }
                         },
                         None => {
-                            println!("Outgoing queue closed. Stopping send coro");
                             break;
                         }
                     }
@@ -220,7 +217,6 @@ pub(crate) async fn start_accepting_connections(
                     tokio::spawn(peer_connected(socket, backend.clone()));
                 },
                 _ = stop_callback => {
-                    println!("Stop signal received");
                     break
                 }
             }

@@ -51,6 +51,8 @@ async fn run_rep_server() -> Result<(), Box<dyn Error>> {
             .send(format!("{} Rep - {}", mess, i).into())
             .await?;
     }
+    // yield for a moment to ensure that server has some time to flush socket
+    tokio::time::delay_for(Duration::from_millis(100)).await;
     Ok(())
 }
 
@@ -64,7 +66,6 @@ async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
     tokio::time::delay_for(Duration::from_millis(10)).await;
     let mut req_socket = crate::ReqSocket::new();
     req_socket.connect("127.0.0.1:5557").await?;
-    println!("Connected to server");
 
     for i in 0..10i32 {
         req_socket.send(format!("Req - {}", i).into()).await?;
@@ -76,14 +77,12 @@ async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
 
 #[tokio::test]
 async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
-    // TODO this seems to deadlock sometimes maybe need to investigate
     for i in 0..100i32 {
         tokio::spawn(async move {
             // yield for a moment to ensure that server has some time to open socket
             tokio::time::delay_for(Duration::from_millis(100)).await;
             let mut req_socket = crate::ReqSocket::new();
             req_socket.connect("127.0.0.1:5558").await.unwrap();
-            println!("Connected to server");
 
             for j in 0..100i32 {
                 req_socket
@@ -93,6 +92,7 @@ async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
                 let repl: String = req_socket.recv().await.unwrap().try_into().unwrap();
                 assert_eq!(format!("Socket {} Req - {} Rep", i, j), repl)
             }
+            drop(req_socket);
         });
     }
 
