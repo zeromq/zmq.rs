@@ -181,9 +181,8 @@ impl SocketBackend for RepSocketBackend {
     }
 }
 
-#[async_trait]
-impl BlockingSend for RepSocket {
-    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+impl NonBlockingSend for RepSocket {
+    fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         match self.current_request.take() {
             Some(peer_id) => {
                 if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
@@ -191,9 +190,7 @@ impl BlockingSend for RepSocket {
                         "".into(), // delimiter frame
                         message,
                     ];
-                    peer.send_queue
-                        .send(Message::MultipartMessage(frames))
-                        .await?;
+                    peer.send_queue.try_send(Message::MultipartMessage(frames))?;
                     Ok(())
                 } else {
                     Err(ZmqError::ReturnToSender {

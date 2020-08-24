@@ -176,11 +176,10 @@ impl SocketBackend for ReqSocketBackend {
     async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
         // This is needed to ensure that we only store messages that we are expecting to get
         // Other messages are silently discarded according to spec
-        let mut curr_req_lock = self.current_request_peer_id.lock().await;
-        match curr_req_lock.take() {
+        let curr_req_lock = self.current_request_peer_id.lock().await;
+        match curr_req_lock.as_ref() {
             Some(id) => {
-                if &id != peer_id {
-                    curr_req_lock.replace(id);
+                if id != peer_id {
                     return;
                 }
             }

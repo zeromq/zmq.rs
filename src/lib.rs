@@ -125,6 +125,14 @@ pub trait BlockingSend {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()>;
 }
 
+pub trait NonBlockingSend {
+    fn send(&mut self, message: ZmqMessage) -> ZmqResult<()>;
+}
+
+pub trait NonBlockingRecv {
+    fn recv(&mut self) -> ZmqResult<ZmqMessage>;
+}
+
 #[async_trait]
 pub trait SocketFrontend {
     fn new() -> Self;

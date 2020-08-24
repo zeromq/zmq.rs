@@ -11,6 +11,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut repl: String = socket.recv().await?.try_into()?;
         dbg!(&repl);
         repl.push_str(" Reply");
-        socket.send(repl.into()).await?;
+        socket.send(repl.into())?;
     }
 }

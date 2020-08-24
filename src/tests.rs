@@ -1,4 +1,4 @@
-use crate::{BlockingRecv, BlockingSend, Socket, SocketFrontend};
+use crate::{BlockingRecv, BlockingSend, NonBlockingSend, Socket, SocketFrontend};
 use std::convert::TryInto;
 use std::error::Error;
 use std::time::Duration;
@@ -47,9 +47,7 @@ async fn run_rep_server() -> Result<(), Box<dyn Error>> {
 
     for i in 0..10i32 {
         let mess: String = rep_socket.recv().await?.try_into()?;
-        rep_socket
-            .send(format!("{} Rep - {}", mess, i).into())
-            .await?;
+        rep_socket.send(format!("{} Rep - {}", mess, i).into())?;
     }
     // yield for a moment to ensure that server has some time to flush socket
     tokio::time::delay_for(Duration::from_millis(100)).await;
@@ -102,7 +100,7 @@ async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
 
     for _ in 0..10000i32 {
         let mess: String = rep_socket.recv().await?.try_into()?;
-        rep_socket.send(format!("{} Rep", mess).into()).await?;
+        rep_socket.send(format!("{} Rep", mess).into())?;
     }
     Ok(())
 }
