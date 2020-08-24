@@ -196,12 +196,16 @@ impl BlockingSend for RepSocket {
                         .await?;
                     Ok(())
                 } else {
-                    Err(ZmqError::Other("Client disconnected"))
+                    Err(ZmqError::ReturnToSender {
+                        reason: "Client disconnected",
+                        message,
+                    })
                 }
             }
-            None => Err(ZmqError::Other(
-                "Unable to send reply. No request in progress",
-            )),
+            None => Err(ZmqError::ReturnToSender {
+                reason: "Unable to send reply. No request in progress",
+                message,
+            }),
         }
     }
 }

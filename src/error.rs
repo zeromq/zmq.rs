@@ -1,4 +1,5 @@
 use crate::codec::Message;
+use crate::ZmqMessage;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -13,6 +14,11 @@ pub enum ZmqError {
     Socket(&'static str),
     #[error("{0}")]
     BufferFull(&'static str),
+    #[error("Failed to deliver message cause of {reason}")]
+    ReturnToSender {
+        reason: &'static str,
+        message: ZmqMessage,
+    },
     #[error("{0}")]
     Other(&'static str),
     #[error("No message received")]
