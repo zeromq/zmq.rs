@@ -34,9 +34,10 @@ impl Drop for ReqSocket {
 impl BlockingSend for ReqSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         if self.current_request.is_some() {
-            return Err(ZmqError::Socket(
-                "Unable to send message. Request already in progress",
-            ));
+            return Err(ZmqError::ReturnToSender {
+                reason: "Unable to send message. Request already in progress",
+                message,
+            });
         }
         // In normal scenario this will always be only 1 iteration
         // There can be special case when peer has disconnected and his id is still in RR queue
@@ -46,9 +47,10 @@ impl BlockingSend for ReqSocket {
             let next_peer_id = match self.backend.round_robin.pop() {
                 Ok(peer) => peer,
                 Err(_) => {
-                    return Err(ZmqError::Other(
-                        "Not connected to peers. Unable to send messages",
-                    ))
+                    return Err(ZmqError::ReturnToSender {
+                        reason: "Not connected to peers. Unable to send messages",
+                        message,
+                    })
                 }
             };
             match self.backend.peers.get_mut(&next_peer_id) {
