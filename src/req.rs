@@ -26,7 +26,7 @@ pub struct ReqSocket {
 
 impl Drop for ReqSocket {
     fn drop(&mut self) {
-        self.backend.peers.clear();
+        self.backend.shutdown();
     }
 }
 

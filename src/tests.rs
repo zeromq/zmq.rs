@@ -16,7 +16,6 @@ async fn test_pub_sub_sockets() {
             let message = format!("Message - {}", i);
             pub_socket
                 .send(message.into())
-                .await
                 .expect("Failed to send");
         }
     });

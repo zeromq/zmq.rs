@@ -16,9 +16,10 @@ mod dealer_router;
 mod error;
 mod fair_queue;
 mod message;
-mod pub_sub;
+mod r#pub;
 mod rep;
 mod req;
+mod sub;
 pub mod util;
 
 #[cfg(test)]
@@ -27,9 +28,10 @@ mod tests;
 use crate::codec::*;
 pub use crate::dealer_router::*;
 pub use crate::error::ZmqError;
-pub use crate::pub_sub::*;
+pub use crate::r#pub::*;
 pub use crate::rep::*;
 pub use crate::req::*;
+pub use crate::sub::*;
 use crate::util::*;
 pub use message::*;
 

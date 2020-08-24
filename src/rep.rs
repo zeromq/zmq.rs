@@ -38,7 +38,7 @@ pub struct RepSocket {
 
 impl Drop for RepSocket {
     fn drop(&mut self) {
-        self.backend.peers.clear();
+        self.backend.shutdown();
     }
 }
 
@@ -190,7 +190,8 @@ impl NonBlockingSend for RepSocket {
                         "".into(), // delimiter frame
                         message,
                     ];
-                    peer.send_queue.try_send(Message::MultipartMessage(frames))?;
+                    peer.send_queue
+                        .try_send(Message::MultipartMessage(frames))?;
                     Ok(())
                 } else {
                     Err(ZmqError::ReturnToSender {

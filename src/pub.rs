@@ -1,17 +1,13 @@
-use async_trait::async_trait;
-use futures::channel::{mpsc, oneshot};
-use futures::SinkExt;
-use futures::StreamExt;
-use tokio::net::TcpStream;
-use tokio_util::codec::Framed;
-
 use crate::codec::*;
-use crate::error::*;
 use crate::message::*;
 use crate::util::*;
-use crate::{util, MultiPeer, Socket, SocketBackend, SocketFrontend, SocketType, ZmqResult};
-use bytes::{BufMut, BytesMut};
+use crate::{
+    util, MultiPeer, NonBlockingSend, SocketBackend, SocketFrontend, SocketType, ZmqResult,
+};
+use async_trait::async_trait;
 use dashmap::DashMap;
+use futures::channel::{mpsc, oneshot};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 pub(crate) struct Subscriber {
@@ -21,7 +17,7 @@ pub(crate) struct Subscriber {
 }
 
 pub(crate) struct PubSocketBackend {
-    subscribers: Arc<DashMap<PeerIdentity, Subscriber>>,
+    subscribers: DashMap<PeerIdentity, Subscriber>,
 }
 
 #[async_trait]
@@ -29,11 +25,11 @@ impl SocketBackend for PubSocketBackend {
     async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
         let message = match message {
             Message::Message(m) => m,
-            _ => panic!("Unexpected message received"), // TODO handle errors properly
+            _ => return,
         };
         let data: Vec<u8> = message.into();
         if data.len() < 1 {
-            panic!("Unable to handle message")
+            return;
         }
         match data[0] {
             1 => {
@@ -69,7 +65,7 @@ impl SocketBackend for PubSocketBackend {
                         .remove(index);
                 }
             }
-            _ => panic!("Malformed message"),
+            _ => return,
         }
     }
 
@@ -120,9 +116,8 @@ impl Drop for PubSocket {
     }
 }
 
-#[async_trait]
-impl Socket for PubSocket {
-    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+impl NonBlockingSend for PubSocket {
+    fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         for mut subscriber in self.backend.subscribers.iter_mut() {
             for sub_filter in &subscriber.subscriptions {
                 if sub_filter.as_slice() == &message.data[0..sub_filter.len()] {
@@ -136,12 +131,6 @@ impl Socket for PubSocket {
         }
         Ok(())
     }
-
-    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
-        Err(ZmqError::Socket(
-            "This socket doesn't support receiving messages",
-        ))
-    }
 }
 
 #[async_trait]
@@ -149,7 +138,7 @@ impl SocketFrontend for PubSocket {
     fn new() -> Self {
         Self {
             backend: Arc::new(PubSocketBackend {
-                subscribers: Arc::new(DashMap::new()),
+                subscribers: DashMap::new(),
             }),
             _accept_close_handle: None,
         }
@@ -161,57 +150,10 @@ impl SocketFrontend for PubSocket {
         Ok(())
     }
 
-    async fn connect(&mut self, _endpoint: &str) -> ZmqResult<()> {
-        unimplemented!()
-    }
-}
-
-pub struct SubSocket {
-    pub(crate) _inner: Framed<TcpStream, ZmqCodec>,
-}
-
-#[async_trait]
-impl Socket for SubSocket {
-    async fn send(&mut self, _m: ZmqMessage) -> ZmqResult<()> {
-        Err(ZmqError::Socket(
-            "This socket doesn't support sending messages",
-        ))
-    }
-
-    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
-        let message: Option<ZmqResult<Message>> = self._inner.next().await;
-        match message {
-            Some(Ok(Message::Message(m))) => Ok(m),
-            Some(Ok(_)) => Err(ZmqError::Other("Wrong message type received")),
-            Some(Err(e)) => Err(e),
-            None => Err(ZmqError::NoMessage),
-        }
-    }
-}
-
-impl SubSocket {
-    pub async fn connect(endpoint: &str) -> ZmqResult<Self> {
-        let raw_socket = raw_connect(SocketType::SUB, endpoint).await?;
-        Ok(Self { _inner: raw_socket })
-    }
-
-    pub async fn subscribe(&mut self, subscription: &str) -> ZmqResult<()> {
-        let mut sub = BytesMut::with_capacity(subscription.len() + 1);
-        sub.put_u8(1);
-        sub.extend_from_slice(subscription.as_bytes());
-        self._inner
-            .send(Message::Message(ZmqMessage { data: sub.freeze() }))
-            .await?;
-        Ok(())
-    }
-
-    pub async fn unsubscribe(&mut self, subscription: &str) -> ZmqResult<()> {
-        let mut sub = BytesMut::with_capacity(subscription.len() + 1);
-        sub.put_u8(0);
-        sub.extend_from_slice(subscription.as_bytes());
-        self._inner
-            .send(Message::Message(ZmqMessage { data: sub.freeze() }))
-            .await?;
+    async fn connect(&mut self, endpoint: &str) -> ZmqResult<()> {
+        let addr = endpoint.parse::<SocketAddr>()?;
+        let raw_socket = tokio::net::TcpStream::connect(addr).await?;
+        util::peer_connected(raw_socket, self.backend.clone()).await;
         Ok(())
     }
 }
