@@ -105,7 +105,12 @@ where
                 }
                 Poll::Ready(None) => continue,
                 Poll::Pending => {
-                    stream.inner.lock().unwrap().pending_streams.insert(s.priority, s);
+                    stream
+                        .inner
+                        .lock()
+                        .unwrap()
+                        .pending_streams
+                        .insert(s.priority, s);
                     return Poll::Pending;
                 }
             }
