@@ -37,7 +37,7 @@ impl Drop for RepSocket {
 }
 
 #[async_trait]
-impl SocketFrontend for RepSocket {
+impl Socket for RepSocket {
     fn new() -> Self {
         // TODO define buffer size
         let default_queue_size = 100;

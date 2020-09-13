@@ -12,7 +12,7 @@ use crate::codec::*;
 use crate::error::*;
 use crate::message::*;
 use crate::util::*;
-use crate::{util, MultiPeer, SocketBackend, SocketFrontend};
+use crate::{util, MultiPeer, Socket, SocketBackend};
 use crate::{SocketType, ZmqResult};
 use futures::stream::{FuturesUnordered, StreamExt};
 
@@ -83,7 +83,7 @@ impl Drop for RouterSocket {
 }
 
 #[async_trait]
-impl SocketFrontend for RouterSocket {
+impl Socket for RouterSocket {
     fn new() -> Self {
         Self {
             backend: Arc::new(RouterSocketBackend {

@@ -2,7 +2,7 @@ use crate::codec::*;
 use crate::fair_queue::FairQueue;
 use crate::message::*;
 use crate::util::*;
-use crate::{util, BlockingRecv, MultiPeer, SocketBackend, SocketFrontend, SocketType, ZmqResult};
+use crate::{util, BlockingRecv, MultiPeer, Socket, SocketBackend, SocketType, ZmqResult};
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use dashmap::DashMap;
@@ -119,7 +119,7 @@ impl SubSocket {
 }
 
 #[async_trait]
-impl SocketFrontend for SubSocket {
+impl Socket for SubSocket {
     fn new() -> Self {
         // TODO define buffer size
         let default_queue_size = 100;

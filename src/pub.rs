@@ -1,9 +1,7 @@
 use crate::codec::*;
 use crate::message::*;
 use crate::util::*;
-use crate::{
-    util, MultiPeer, NonBlockingSend, SocketBackend, SocketFrontend, SocketType, ZmqResult,
-};
+use crate::{util, MultiPeer, NonBlockingSend, Socket, SocketBackend, SocketType, ZmqResult};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use futures::channel::{mpsc, oneshot};
@@ -134,7 +132,7 @@ impl NonBlockingSend for PubSocket {
 }
 
 #[async_trait]
-impl SocketFrontend for PubSocket {
+impl Socket for PubSocket {
     fn new() -> Self {
         Self {
             backend: Arc::new(PubSocketBackend {

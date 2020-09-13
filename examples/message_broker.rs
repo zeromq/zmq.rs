@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 use std::error::Error;
 use std::time::Duration;
-use zeromq::{SocketFrontend, ZmqError};
+use zeromq::{Socket, ZmqError};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

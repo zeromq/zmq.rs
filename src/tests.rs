@@ -1,4 +1,4 @@
-use crate::{BlockingRecv, BlockingSend, NonBlockingSend, SocketFrontend};
+use crate::{BlockingRecv, BlockingSend, NonBlockingSend, Socket};
 use chrono::Utc;
 use futures::channel::{mpsc, oneshot};
 use futures::{SinkExt, StreamExt};

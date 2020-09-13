@@ -130,7 +130,7 @@ pub trait NonBlockingRecv {
 }
 
 #[async_trait]
-pub trait SocketFrontend {
+pub trait Socket {
     fn new() -> Self;
 
     /// Opens port described by endpoint and starts a coroutine to accept new connections on it

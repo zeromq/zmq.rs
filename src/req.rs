@@ -108,7 +108,7 @@ impl BlockingRecv for ReqSocket {
 }
 
 #[async_trait]
-impl SocketFrontend for ReqSocket {
+impl Socket for ReqSocket {
     fn new() -> Self {
         Self {
             backend: Arc::new(ReqSocketBackend {

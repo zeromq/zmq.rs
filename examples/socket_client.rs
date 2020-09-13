@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 use std::error::Error;
-use zeromq::SocketFrontend;
+use zeromq::Socket;
 use zeromq::{BlockingRecv, BlockingSend};
 
 #[tokio::main]
