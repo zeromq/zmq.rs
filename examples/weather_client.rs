@@ -1,10 +1,12 @@
 use std::convert::TryInto;
 use std::error::Error;
-use zeromq::Socket;
+use zeromq::{BlockingRecv, SocketFrontend, SubSocket};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let mut socket = zeromq::SubSocket::connect("127.0.0.1:5556")
+    let mut socket = zeromq::SubSocket::new();
+    socket
+        .connect("127.0.0.1:5556")
         .await
         .expect("Failed to connect");
 

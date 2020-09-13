@@ -1,10 +1,10 @@
-use crate::{BlockingRecv, BlockingSend, NonBlockingSend, Socket, SocketFrontend};
+use crate::{BlockingRecv, BlockingSend, NonBlockingSend, SocketFrontend};
+use chrono::Utc;
 use futures::channel::{mpsc, oneshot};
+use futures::{SinkExt, StreamExt};
 use std::convert::TryInto;
 use std::error::Error;
 use std::time::Duration;
-use futures::{StreamExt, SinkExt};
-use chrono::Utc;
 
 #[tokio::test]
 async fn test_pub_sub_sockets() {
@@ -21,7 +21,9 @@ async fn test_pub_sub_sockets() {
             if let Ok(Some(_)) = server_stop.try_recv() {
                 break;
             }
-            pub_socket.send(Utc::now().to_rfc2822().into()).expect("Failed to send");
+            pub_socket
+                .send(Utc::now().to_rfc2822().into())
+                .expect("Failed to send");
             tokio::time::delay_for(Duration::from_millis(100)).await;
         }
     });
@@ -29,7 +31,9 @@ async fn test_pub_sub_sockets() {
     for _ in 0..10 {
         let mut client_sender = results_sender.clone();
         tokio::spawn(async move {
-            let mut sub_socket = crate::SubSocket::connect("127.0.0.1:5556")
+            let mut sub_socket = crate::SubSocket::new();
+            sub_socket
+                .connect("127.0.0.1:5556")
                 .await
                 .expect("Failed to connect");
 

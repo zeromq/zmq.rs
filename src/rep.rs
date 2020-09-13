@@ -1,8 +1,9 @@
 use crate::codec::*;
 use crate::error::*;
 use crate::fair_queue::FairQueue;
+use crate::util::FairQueueProcessor;
 use crate::*;
-use crate::{SocketType, ZmqResult};
+use crate::{util, SocketType, ZmqResult};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use futures_util::sink::SinkExt;
@@ -14,13 +15,6 @@ struct RepPeer {
     pub(crate) send_queue: mpsc::Sender<Message>,
     pub(crate) recv_queue_in: mpsc::Sender<Message>,
     pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
-}
-
-struct FairQueueProcessor {
-    pub(crate) fair_queue_stream: FairQueue<mpsc::Receiver<Message>, PeerIdentity>,
-    pub(crate) socket_incoming_queue: mpsc::Sender<(PeerIdentity, Message)>,
-    pub(crate) peer_queue_in: mpsc::Receiver<(PeerIdentity, mpsc::Receiver<Message>)>,
-    pub(crate) _io_close_handle: oneshot::Receiver<bool>,
 }
 
 struct RepSocketBackend {
@@ -50,7 +44,7 @@ impl SocketFrontend for RepSocket {
         let (queue_sender, fair_queue) = mpsc::channel(default_queue_size);
         let (peer_in, peer_out) = mpsc::channel(default_queue_size);
         let (fair_queue_close_handle, fqueue_close_recevier) = oneshot::channel();
-        tokio::spawn(process_fair_queue_messages(FairQueueProcessor {
+        tokio::spawn(util::process_fair_queue_messages(FairQueueProcessor {
             fair_queue_stream: FairQueue::new(),
             socket_incoming_queue: queue_sender,
             peer_queue_in: peer_out,
@@ -79,51 +73,6 @@ impl SocketFrontend for RepSocket {
         let raw_socket = tokio::net::TcpStream::connect(addr).await?;
         util::peer_connected(raw_socket, self.backend.clone()).await;
         Ok(())
-    }
-}
-
-async fn process_fair_queue_messages(mut processor: FairQueueProcessor) {
-    let mut stop_callback = processor._io_close_handle;
-    let mut waiting_for_clients = true;
-    let mut waiting_for_data = true;
-    loop {
-        tokio::select! {
-            _ = &mut stop_callback => {
-                break;
-            },
-            peer_in = processor.peer_queue_in.next(), if waiting_for_clients => {
-                match peer_in {
-                    Some((peer_id, receiver)) => {
-                        processor.fair_queue_stream.insert(peer_id, receiver);
-                        waiting_for_data = true;
-                    },
-                    None => {
-                        // Channel for newly connected clients was closed
-                        // so we no longer wait for the to arrive
-                        waiting_for_clients = false;
-                    },
-                };
-            },
-            message = processor.fair_queue_stream.next(), if waiting_for_data => {
-                match message {
-                    Some(m) => {
-                        processor.socket_incoming_queue.send(m).await.expect("Failed to deliver message");
-                    },
-                    None => {
-                        // This is the case when there are no connected clients
-                        // We should sleep and wait for new clients to connect
-                        // This is handled by 2nd branch of select
-                        if waiting_for_clients {
-                            waiting_for_data = false;
-                        } else {
-                            // We're not waiting for client and have no data...
-                            // stop the loop and cleanup
-                            break;
-                        };
-                    }
-                };
-            }
-        }
     }
 }
 
