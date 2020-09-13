@@ -112,12 +112,6 @@ trait SocketBackend: Send + Sync {
 }
 
 #[async_trait]
-pub trait Socket: Send {
-    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()>;
-    async fn recv(&mut self) -> ZmqResult<ZmqMessage>;
-}
-
-#[async_trait]
 pub trait BlockingRecv {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage>;
 }
@@ -142,8 +136,4 @@ pub trait SocketFrontend {
     /// Opens port described by endpoint and starts a coroutine to accept new connections on it
     async fn bind(&mut self, endpoint: &str) -> ZmqResult<()>;
     async fn connect(&mut self, endpoint: &str) -> ZmqResult<()>;
-}
-
-pub async fn proxy(_s1: Box<dyn Socket>, _s2: Box<dyn Socket>) -> ZmqResult<()> {
-    todo!()
 }

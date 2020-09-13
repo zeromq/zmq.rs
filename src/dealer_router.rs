@@ -13,7 +13,7 @@ use crate::error::*;
 use crate::message::*;
 use crate::util::*;
 use crate::{util, MultiPeer, SocketBackend, SocketFrontend};
-use crate::{Socket, SocketType, ZmqResult};
+use crate::{SocketType, ZmqResult};
 use futures::stream::{FuturesUnordered, StreamExt};
 
 struct RouterSocketBackend {
@@ -157,16 +157,5 @@ pub struct DealerSocket {
 impl DealerSocket {
     pub async fn bind(_endpoint: &str) -> ZmqResult<Self> {
         todo!()
-    }
-}
-
-#[async_trait]
-impl Socket for DealerSocket {
-    async fn send(&mut self, _m: ZmqMessage) -> ZmqResult<()> {
-        unimplemented!()
-    }
-
-    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
-        unimplemented!()
     }
 }
