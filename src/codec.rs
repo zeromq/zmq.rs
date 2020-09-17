@@ -17,11 +17,11 @@ pub(crate) enum ZmqMechanism {
 
 impl Display for ZmqMechanism {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        return match self {
+        match self {
             ZmqMechanism::NULL => write!(f, "NULL"),
             ZmqMechanism::PLAIN => write!(f, "PLAIN"),
             ZmqMechanism::CURVE => write!(f, "CURVE"),
-        };
+        }
     }
 }
 
@@ -266,7 +266,7 @@ impl Decoder for ZmqCodec {
                 };
                 self.state = DecoderState::FrameLen(frame);
                 self.waiting_for = if frame.long { 8 } else { 1 };
-                return self.decode(src);
+                self.decode(src)
             }
             DecoderState::FrameLen(frame) => {
                 self.state = DecoderState::Frame(frame);
@@ -275,7 +275,7 @@ impl Decoder for ZmqCodec {
                 } else {
                     src.get_u8() as usize
                 };
-                return self.decode(src);
+                self.decode(src)
             }
             DecoderState::Frame(frame) => {
                 let data = src.split_to(self.waiting_for);
@@ -289,7 +289,7 @@ impl Decoder for ZmqCodec {
                         Some(Message::Multipart(message)) => message.push(data.into()),
                         _ => panic!("Corrupted decoder state"),
                     }
-                    return self.decode(src);
+                    self.decode(src)
                 } else if let Some(Message::Multipart(mut message)) = self.buffered_message.take() {
                     message.push(data.into());
                     Ok(Some(Message::Multipart(message)))

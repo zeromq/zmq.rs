@@ -81,7 +81,7 @@ where
                 match inner.ready_queue.pop() {
                     Some(s) => s,
                     None => {
-                        return if inner.pending_streams.len() > 0 {
+                        return if !inner.pending_streams.is_empty() {
                             Poll::Pending
                         } else {
                             Poll::Ready(None)
