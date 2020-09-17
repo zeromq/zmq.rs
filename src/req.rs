@@ -60,9 +60,7 @@ impl BlockingSend for ReqSocket {
                         "".into(), // delimiter frame
                         message,
                     ];
-                    peer.send_queue
-                        .send(Message::MultipartMessage(frames))
-                        .await?;
+                    peer.send_queue.send(Message::Multipart(frames)).await?;
                     self.backend
                         .current_request_peer_id
                         .lock()
@@ -90,7 +88,7 @@ impl BlockingRecv for ReqSocket {
                 {
                     let message = recv_queue.lock().await.next().await;
                     match message {
-                        Some(Message::MultipartMessage(mut message)) => {
+                        Some(Message::Multipart(mut message)) => {
                             assert!(message.len() == 2);
                             assert!(message[0].data.is_empty()); // Ensure that we have delimeter as first part
                             Ok(message.pop().unwrap())

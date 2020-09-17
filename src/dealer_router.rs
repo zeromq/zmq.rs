@@ -119,7 +119,7 @@ impl RouterSocket {
                 return Err(ZmqError::NoMessage);
             }
             match messages.next().await {
-                Some((peer_id, Some(Message::MultipartMessage(messages)))) => {
+                Some((peer_id, Some(Message::Multipart(messages)))) => {
                     let mut envelope = vec![ZmqMessage {
                         data: peer_id.into(),
                     }];
@@ -142,7 +142,7 @@ impl RouterSocket {
         match self.backend.peers.get_mut(&peer_id) {
             Some(mut peer) => {
                 peer.send_queue
-                    .try_send(Message::MultipartMessage(messages[1..].to_vec()))?;
+                    .try_send(Message::Multipart(messages[1..].to_vec()))?;
                 Ok(())
             }
             None => return Err(ZmqError::Other("Destination client not found by identity")),
