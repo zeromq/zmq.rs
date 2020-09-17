@@ -56,7 +56,7 @@ jobs:
           command: fmt
           args: --all -- --check
 
-  clippy:
+  lint:
     name: Linting
     continue-on-error: true
     runs-on: ubuntu-latest
@@ -65,7 +65,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          toolchain: nightly
           override: true
           components: clippy
       - name: Cache cargo dependencies
@@ -73,7 +73,7 @@ jobs:
         with:
           path: ~/.cargo/
           key: cache-cargo-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
-      - uses: actions-rs/cargo@v1
+      - uses: actions-rs/clippy-check@v1
         with:
-          command: clippy
-          args: -- -D warnings
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features
