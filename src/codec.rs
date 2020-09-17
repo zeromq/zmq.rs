@@ -290,13 +290,11 @@ impl Decoder for ZmqCodec {
                         _ => panic!("Corrupted decoder state"),
                     }
                     return self.decode(src);
+                } else if let Some(Message::Multipart(mut message)) = self.buffered_message.take() {
+                    message.push(data.into());
+                    Ok(Some(Message::Multipart(message)))
                 } else {
-                    if let Some(Message::Multipart(mut message)) = self.buffered_message.take() {
-                        message.push(data.into());
-                        Ok(Some(Message::Multipart(message)))
-                    } else {
-                        Ok(Some(Message::Message(data.into())))
-                    }
+                    Ok(Some(Message::Message(data.into())))
                 }
             }
         }
