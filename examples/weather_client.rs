@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 use std::error::Error;
-use zeromq::{BlockingRecv, Socket, SubSocket};
+use zeromq::{BlockingRecv, Socket};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
