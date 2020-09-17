@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     //
     // zmq_rs::proxy(Box::new(frontend), Box::new(backend)).await?;
     loop {
-        let mut mess = frontend.recv_multipart().await;
+        let mess = frontend.recv_multipart().await;
         match mess {
             Ok(mut message) => {
                 dbg!(&message);
@@ -35,7 +35,4 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         tokio::time::delay_for(Duration::from_millis(500)).await;
     }
-    drop(frontend);
-    tokio::time::delay_for(Duration::from_millis(1000)).await;
-    Ok(())
 }

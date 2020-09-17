@@ -18,10 +18,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         socket.send(message.into())?;
         tokio::time::delay_for(Duration::from_millis(100)).await;
     }
-    drop(socket);
-
-    tokio::time::delay_for(Duration::from_secs(2)).await;
-
-    println!("Shutdown");
-    Ok(())
 }

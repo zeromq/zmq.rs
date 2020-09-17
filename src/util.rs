@@ -24,7 +24,7 @@ impl TryFrom<Vec<u8>> for PeerIdentity {
     type Error = ZmqError;
 
     fn try_from(data: Vec<u8>) -> Result<Self, ZmqError> {
-        if data.len() == 0 {
+        if data.is_empty() {
             Ok(PeerIdentity::new())
         } else if data.len() > 255 {
             Err(ZmqError::Other(
@@ -119,10 +119,12 @@ pub(crate) async fn ready_exchange(
                     .map(|x| SocketType::try_from(x.as_str()))
                     .unwrap_or(Err(ZmqError::Codec("Failed to parse other socket type")))?;
 
-                let peer_id = command.properties.get("Identity").map_or_else(
-                    || PeerIdentity::new(),
-                    |x| x.clone().into_bytes().try_into().unwrap(),
-                );
+                let peer_id = command
+                    .properties
+                    .get("Identity")
+                    .map_or_else(PeerIdentity::new, |x| {
+                        x.clone().into_bytes().try_into().unwrap()
+                    });
 
                 if sockets_compatible(socket_type, other_sock_type) {
                     Ok(peer_id)

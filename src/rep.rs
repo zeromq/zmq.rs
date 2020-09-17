@@ -139,8 +139,7 @@ impl NonBlockingSend for RepSocket {
                         "".into(), // delimiter frame
                         message,
                     ];
-                    peer.send_queue
-                        .try_send(Message::MultipartMessage(frames))?;
+                    peer.send_queue.try_send(Message::Multipart(frames))?;
                     Ok(())
                 } else {
                     Err(ZmqError::ReturnToSender {
@@ -162,7 +161,7 @@ impl BlockingRecv for RepSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {
-                Some((peer_id, Message::MultipartMessage(mut messages))) => {
+                Some((peer_id, Message::Multipart(mut messages))) => {
                     assert!(messages.len() == 2);
                     assert!(messages[0].data.is_empty()); // Ensure that we have delimeter as first part
                     self.current_request = Some(peer_id);

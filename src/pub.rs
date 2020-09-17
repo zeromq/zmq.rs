@@ -26,7 +26,7 @@ impl SocketBackend for PubSocketBackend {
             _ => return,
         };
         let data: Vec<u8> = message.into();
-        if data.len() < 1 {
+        if data.is_empty() {
             return;
         }
         match data[0] {
