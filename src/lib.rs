@@ -137,3 +137,9 @@ pub trait Socket {
     async fn bind(&mut self, endpoint: &str) -> ZmqResult<()>;
     async fn connect(&mut self, endpoint: &str) -> ZmqResult<()>;
 }
+
+pub mod prelude {
+    //! Re-exports important traits. Consider glob-importing.
+
+    pub use crate::{BlockingRecv, BlockingSend, NonBlockingRecv, NonBlockingSend, Socket};
+}
