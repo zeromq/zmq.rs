@@ -22,9 +22,6 @@ mod req;
 mod sub;
 pub mod util;
 
-#[cfg(test)]
-mod tests;
-
 use crate::codec::*;
 pub use crate::dealer_router::*;
 pub use crate::error::ZmqError;
