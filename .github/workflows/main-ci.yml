@@ -58,7 +58,7 @@ jobs:
 
   lint:
     name: Linting
-    continue-on-error: true
+    continue-on-error: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -76,4 +76,4 @@ jobs:
       - uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features
+          args: --all-features -- --deny warnings
