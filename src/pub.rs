@@ -1,11 +1,11 @@
 use crate::codec::*;
+use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::message::*;
 use crate::util::*;
 use crate::{util, MultiPeer, NonBlockingSend, Socket, SocketBackend, SocketType, ZmqResult};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use futures::channel::{mpsc, oneshot};
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 pub(crate) struct Subscriber {
@@ -142,15 +142,19 @@ impl Socket for PubSocket {
         }
     }
 
-    async fn bind(&mut self, endpoint: &str) -> ZmqResult<()> {
-        let stop_handle = util::start_accepting_connections(endpoint, self.backend.clone()).await?;
+    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
+        let endpoint = endpoint.try_into()?;
+        let stop_handle =
+            util::start_accepting_connections(&endpoint, self.backend.clone()).await?;
         self._accept_close_handle = Some(stop_handle);
         Ok(())
     }
 
-    async fn connect(&mut self, endpoint: &str) -> ZmqResult<()> {
-        let addr = endpoint.parse::<SocketAddr>()?;
-        let raw_socket = tokio::net::TcpStream::connect(addr).await?;
+    async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
+        let endpoint = endpoint.try_into()?;
+        let Endpoint::Tcp(host, port) = endpoint;
+
+        let raw_socket = tokio::net::TcpStream::connect(format!("{}:{}", host, port)).await?;
         util::peer_connected(raw_socket, self.backend.clone()).await;
         Ok(())
     }

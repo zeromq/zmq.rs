@@ -9,6 +9,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
 use crate::codec::*;
+use crate::endpoint::TryIntoEndpoint;
 use crate::error::*;
 use crate::message::*;
 use crate::util::*;
@@ -93,13 +94,15 @@ impl Socket for RouterSocket {
         }
     }
 
-    async fn bind(&mut self, endpoint: &str) -> ZmqResult<()> {
-        let stop_handle = util::start_accepting_connections(endpoint, self.backend.clone()).await?;
+    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
+        let endpoint = endpoint.try_into()?;
+        let stop_handle =
+            util::start_accepting_connections(&endpoint, self.backend.clone()).await?;
         self._accept_close_handle = Some(stop_handle);
         Ok(())
     }
 
-    async fn connect(&mut self, _endpoint: &str) -> ZmqResult<()> {
+    async fn connect(&mut self, _endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
         unimplemented!()
     }
 }

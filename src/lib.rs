@@ -7,11 +7,12 @@ use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
-use std::net::SocketAddr;
+
 use tokio_util::codec::Framed;
 
 mod codec;
 mod dealer_router;
+mod endpoint;
 mod error;
 mod fair_queue;
 mod message;
@@ -23,6 +24,7 @@ pub mod util;
 
 use crate::codec::*;
 pub use crate::dealer_router::*;
+pub use crate::endpoint::{Endpoint, Host, Transport, TryIntoEndpoint};
 pub use crate::error::ZmqError;
 pub use crate::r#pub::*;
 pub use crate::rep::*;
@@ -129,13 +131,16 @@ pub trait NonBlockingRecv {
 pub trait Socket {
     fn new() -> Self;
 
-    /// Opens port described by endpoint and starts a coroutine to accept new connections on it
-    async fn bind(&mut self, endpoint: &str) -> ZmqResult<()>;
-    async fn connect(&mut self, endpoint: &str) -> ZmqResult<()>;
+    /// Opens port described by endpoint and starts a coroutine to accept new
+    /// connections on it
+    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
+    async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
 }
 
 pub mod prelude {
     //! Re-exports important traits. Consider glob-importing.
 
-    pub use crate::{BlockingRecv, BlockingSend, NonBlockingRecv, NonBlockingSend, Socket};
+    pub use crate::{
+        BlockingRecv, BlockingSend, NonBlockingRecv, NonBlockingSend, Socket, TryIntoEndpoint,
+    };
 }

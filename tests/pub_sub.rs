@@ -13,10 +13,11 @@ async fn test_pub_sub_sockets() {
         let (server_stop_sender, mut server_stop) = oneshot::channel::<()>();
         tokio::spawn(async move {
             let mut pub_socket = zeromq::PubSocket::new();
+            println!("Binding to {}", bind_addr);
             pub_socket
                 .bind(bind_addr)
                 .await
-                .expect("Failed to bind socket");
+                .unwrap_or_else(|_| panic!("Failed to bind to {}", bind_addr));
 
             loop {
                 if let Ok(Some(_)) = server_stop.try_recv() {
@@ -36,10 +37,11 @@ async fn test_pub_sub_sockets() {
             let cloned_payload = payload.clone();
             tokio::spawn(async move {
                 let mut sub_socket = zeromq::SubSocket::new();
+                println!("Connecting to {}", bind_addr);
                 sub_socket
                     .connect(bind_addr)
                     .await
-                    .expect("Failed to connect");
+                    .unwrap_or_else(|_| panic!("Failed to connect to {}", bind_addr));
 
                 sub_socket.subscribe("").await.expect("Failed to subscribe");
 
@@ -61,6 +63,11 @@ async fn test_pub_sub_sockets() {
 
         server_stop_sender.send(()).unwrap();
     }
-    let addrs = vec!["127.0.0.1:5554", "[::1]:5555", "127.0.0.1:5556"];
+    let addrs = vec![
+        "tcp://127.0.0.1:5554",
+        "tcp://[::1]:5555",
+        "tcp://127.0.0.1:5556",
+        "tcp://localhost:5557",
+    ];
     futures::future::join_all(addrs.into_iter().map(helper)).await;
 }

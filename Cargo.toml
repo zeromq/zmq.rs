@@ -20,6 +20,9 @@ enum-primitive-derive = "^0.1"
 dashmap = "^3.11"
 crossbeam = "^0.7"
 uuid = { version = "^0.8", features = ["v4"] }
+regex = "1"
+lazy_static = "1"
+
 
 [dev-dependencies]
 chrono = "^0.4"

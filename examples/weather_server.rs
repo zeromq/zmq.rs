@@ -7,7 +7,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rng = rand::thread_rng();
     println!("Start server");
     let mut socket = zeromq::PubSocket::new();
-    socket.bind("127.0.0.1:5556").await?;
+    socket.bind("tcp://127.0.0.1:5556").await?;
 
     println!("Start sending loop");
     loop {

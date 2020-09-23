@@ -6,7 +6,7 @@ use zeromq::{BlockingRecv, Socket};
 async fn main() -> Result<(), Box<dyn Error>> {
     let mut socket = zeromq::SubSocket::new();
     socket
-        .connect("127.0.0.1:5556")
+        .connect("tcp://127.0.0.1:5556")
         .await
         .expect("Failed to connect");
 
