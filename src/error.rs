@@ -4,8 +4,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ZmqError {
-    #[error("Malformed socket address")]
-    Address(#[from] std::net::AddrParseError),
+    #[error(transparent)]
+    Endpoint(#[from] EndpointError),
     #[error("Network error")]
     Network(#[from] std::io::Error),
     #[error("{0}")]
@@ -35,4 +35,15 @@ impl From<futures::channel::mpsc::SendError> for ZmqError {
     fn from(_: futures::channel::mpsc::SendError) -> Self {
         ZmqError::BufferFull("Failed to send message. Send queue full/broken")
     }
+}
+
+/// Represents an error when parsing an [`Endpoint`]
+#[derive(Error, Debug)]
+pub enum EndpointError {
+    #[error("Failed to parse IP address or port")]
+    ParseIpAddr(#[from] std::net::AddrParseError),
+    #[error("Unknown transport type {0}")]
+    UnknownTransport(String),
+    #[error("Invalid Syntax: {0}")]
+    Syntax(&'static str),
 }

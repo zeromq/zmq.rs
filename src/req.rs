@@ -1,4 +1,5 @@
 use crate::codec::*;
+use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::error::*;
 use crate::util::{self, Peer, PeerIdentity};
 use crate::*;
@@ -40,9 +41,10 @@ impl BlockingSend for ReqSocket {
             });
         }
         // In normal scenario this will always be only 1 iteration
-        // There can be special case when peer has disconnected and his id is still in RR queue
-        // This happens because SegQueue don't have an api to delete items from queue.
-        // So in such case we'll just pop item and skip it if we don't have a matching peer in peers map
+        // There can be special case when peer has disconnected and his id is still in
+        // RR queue This happens because SegQueue don't have an api to delete
+        // items from queue. So in such case we'll just pop item and skip it if
+        // we don't have a matching peer in peers map
         loop {
             let next_peer_id = match self.backend.round_robin.pop() {
                 Ok(peer) => peer,
@@ -119,20 +121,25 @@ impl Socket for ReqSocket {
         }
     }
 
-    async fn bind(&mut self, endpoint: &str) -> ZmqResult<()> {
+    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
+        let endpoint = endpoint.try_into()?;
+
         if self._accept_close_handle.is_some() {
             return Err(ZmqError::Other(
                 "Socket server already started. Currently only one server is supported",
             ));
         }
-        let stop_handle = util::start_accepting_connections(endpoint, self.backend.clone()).await?;
+        let stop_handle =
+            util::start_accepting_connections(&endpoint, self.backend.clone()).await?;
         self._accept_close_handle = Some(stop_handle);
         Ok(())
     }
 
-    async fn connect(&mut self, endpoint: &str) -> ZmqResult<()> {
-        let addr = endpoint.parse::<SocketAddr>()?;
-        let raw_socket = tokio::net::TcpStream::connect(addr).await?;
+    async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
+        let endpoint = endpoint.try_into()?;
+        let Endpoint::Tcp(host, port) = endpoint;
+
+        let raw_socket = tokio::net::TcpStream::connect((host.to_string().as_str(), port)).await?;
         util::peer_connected(raw_socket, self.backend.clone()).await;
         Ok(())
     }
@@ -172,8 +179,8 @@ impl MultiPeer for ReqSocketBackend {
 #[async_trait]
 impl SocketBackend for ReqSocketBackend {
     async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
-        // This is needed to ensure that we only store messages that we are expecting to get
-        // Other messages are silently discarded according to spec
+        // This is needed to ensure that we only store messages that we are expecting to
+        // get Other messages are silently discarded according to spec
         let curr_req_lock = self.current_request_peer_id.lock().await;
         match curr_req_lock.as_ref() {
             Some(id) => {

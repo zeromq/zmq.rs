@@ -1,3 +1,4 @@
+use crate::endpoint::Endpoint;
 use crate::fair_queue::FairQueue;
 use crate::*;
 use bytes::Bytes;
@@ -73,8 +74,8 @@ const COMPATIBILITY_MATRIX: [u8; 121] = [
 
 /// Checks if two sokets are compatible with each other
 /// ```
-/// use zeromq::SocketType;
 /// use zeromq::util::sockets_compatible;
+/// use zeromq::SocketType;
 /// assert!(sockets_compatible(SocketType::PUB, SocketType::SUB));
 /// assert!(sockets_compatible(SocketType::REQ, SocketType::REP));
 /// assert!(sockets_compatible(SocketType::DEALER, SocketType::ROUTER));
@@ -192,13 +193,16 @@ pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<d
     });
 }
 
-/// Opens port described by endpoint and starts a coroutine to accept new connections on it
-/// Returns stop_handle channel that can be used to stop accepting new connections
+/// Opens port described by endpoint and starts a coroutine to accept new
+/// connections on it Returns stop_handle channel that can be used to stop
+/// accepting new connections
 pub(crate) async fn start_accepting_connections(
-    endpoint: &str,
+    endpoint: &Endpoint,
     backend: Arc<dyn MultiPeer>,
 ) -> ZmqResult<futures::channel::oneshot::Sender<bool>> {
-    let mut listener = tokio::net::TcpListener::bind(endpoint).await?;
+    let Endpoint::Tcp(host, port) = endpoint;
+
+    let mut listener = tokio::net::TcpListener::bind(format!("{}:{}", host, port)).await?;
     let (stop_handle, stop_callback) = futures::channel::oneshot::channel::<bool>();
     tokio::spawn(async move {
         let mut stop_callback = stop_callback.fuse();
