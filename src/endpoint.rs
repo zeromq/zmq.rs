@@ -1,4 +1,4 @@
-use crate::error::ZmqError;
+use crate::error::EndpointError;
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::convert::{TryFrom, TryInto};
@@ -33,12 +33,12 @@ impl fmt::Display for Host {
 }
 
 impl TryFrom<String> for Host {
-    type Error = ZmqError;
+    type Error = EndpointError;
 
     /// An Ipv6 address must be enclosed by `[` and `]`.
     fn try_from(s: String) -> Result<Self, Self::Error> {
         if s.is_empty() {
-            return Err(ZmqError::Other("Host string should not be empty"));
+            return Err(EndpointError::Syntax("Host string should not be empty"));
         }
         if let Ok(addr) = s.parse::<Ipv4Addr>() {
             return Ok(Host::Ipv4(addr));
@@ -53,7 +53,7 @@ impl TryFrom<String> for Host {
 }
 
 impl FromStr for Host {
-    type Err = ZmqError;
+    type Err = EndpointError;
 
     /// Equivalent to [`Self::try_from()`]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -71,18 +71,18 @@ pub enum Transport {
 }
 
 impl FromStr for Transport {
-    type Err = ZmqError;
+    type Err = EndpointError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let result = match s {
             "tcp" => Transport::Tcp,
-            _ => return Err(ZmqError::Other("Unknown transport type")),
+            _ => return Err(EndpointError::UnknownTransport(s.to_string())),
         };
         Ok(result)
     }
 }
 impl TryFrom<&str> for Transport {
-    type Error = ZmqError;
+    type Error = EndpointError;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         s.parse()
@@ -126,30 +126,30 @@ impl Endpoint {
 }
 
 impl FromStr for Endpoint {
-    type Err = ZmqError;
+    type Err = EndpointError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         lazy_static! {
-            static ref TRANSPORT_REGEX: Regex = Regex::new(r"^(.+)://(.+)$").unwrap();
+            static ref TRANSPORT_REGEX: Regex = Regex::new(r"^([[:lower:]]+)://(.+)$").unwrap();
             static ref HOST_PORT_REGEX: Regex = Regex::new(r"^(.+):(\d+)$").unwrap();
         }
 
         let caps = TRANSPORT_REGEX
             .captures(s)
-            .ok_or(ZmqError::Other("Invalid Syntax"))?;
+            .ok_or(EndpointError::Syntax("Could not parse transport"))?;
         let transport: &str = caps.get(1).unwrap().into();
         let transport: Transport = transport.parse()?;
         let address = caps.get(2).unwrap().as_str();
 
-        fn extract_host_port(address: &str) -> Result<(Host, Port), ZmqError> {
+        fn extract_host_port(address: &str) -> Result<(Host, Port), EndpointError> {
             let caps = HOST_PORT_REGEX
                 .captures(address)
-                .ok_or(ZmqError::Other("Invalid Syntax"))?;
+                .ok_or(EndpointError::Syntax("Could not parse host and port"))?;
             let host = caps.get(1).unwrap().as_str();
             let port = caps.get(2).unwrap().as_str();
             let port: Port = port
                 .parse()
-                .map_err(|_| ZmqError::Other("Port must be a u16 but was out of range"))?;
+                .map_err(|_| EndpointError::Syntax("Port must be a u16 but was out of range"))?;
 
             let host: Host = host.parse()?;
             Ok((host, port))
@@ -177,32 +177,32 @@ impl fmt::Display for Endpoint {
 // Trait aliases (https://github.com/rust-lang/rust/issues/41517) would make this unecessary
 /// Any type that can be converted into an [`Endpoint`] should implement this
 pub trait TryIntoEndpoint: Send {
-    fn try_into(self) -> Result<Endpoint, ZmqError>;
+    fn try_into(self) -> Result<Endpoint, EndpointError>;
 }
 
 impl<T> TryIntoEndpoint for T
 where
-    T: TryInto<Endpoint, Error = ZmqError> + Send,
+    T: TryInto<Endpoint, Error = EndpointError> + Send,
 {
-    fn try_into(self) -> Result<Endpoint, ZmqError> {
+    fn try_into(self) -> Result<Endpoint, EndpointError> {
         self.try_into()
     }
 }
 
 impl TryIntoEndpoint for &str {
-    fn try_into(self) -> Result<Endpoint, ZmqError> {
+    fn try_into(self) -> Result<Endpoint, EndpointError> {
         self.parse()
     }
 }
 
 impl TryIntoEndpoint for String {
-    fn try_into(self) -> Result<Endpoint, ZmqError> {
+    fn try_into(self) -> Result<Endpoint, EndpointError> {
         self.parse()
     }
 }
 
 impl TryIntoEndpoint for Endpoint {
-    fn try_into(self) -> Result<Endpoint, ZmqError> {
+    fn try_into(self) -> Result<Endpoint, EndpointError> {
         Ok(self)
     }
 }
@@ -230,6 +230,22 @@ mod tests {
                 Endpoint::Tcp(Host::Ipv6("::1".parse().unwrap()), 34567),
                 "tcp://[::1]:34567",
             ),
+            (
+                Endpoint::Tcp(Host::Domain("i❤.ws".to_string()), 80),
+                "tcp://i❤.ws:80"
+            ),
+            (
+                Endpoint::Tcp(Host::Domain("xn--i-7iq.ws".to_string()), 80),
+                "tcp://xn--i-7iq.ws:80"
+            ),
+            (
+                Endpoint::Tcp(Host::Ipv4("127.0.0.1".parse().unwrap()), 65535),
+                "tcp://127.0.0.1:65535"
+            ),
+            (
+                Endpoint::Tcp(Host::Ipv4("127.0.0.1".parse().unwrap()), 0),
+                "tcp://127.0.0.1:0"
+            )
         ];
     }
 
@@ -242,8 +258,38 @@ mod tests {
 
     #[test]
     fn test_endpoint_parse() {
+        use std::mem::discriminant as disc;
+
+        // Test example 1:1 pairs
         for (e, s) in PAIRS.iter() {
             assert_eq!(&s.parse::<Endpoint>().unwrap(), e);
+        }
+
+        let exact_counter_examples = vec![(
+            "abc://127.0.0.1:1234",
+            EndpointError::UnknownTransport("abc".to_string()),
+        )];
+
+        for (s, target_err) in exact_counter_examples {
+            let parse_err = s.parse::<Endpoint>().unwrap_err();
+            assert_eq!(parse_err.to_string(), target_err.to_string());
+            assert_eq!(disc(&parse_err), disc(&target_err));
+        }
+
+        // Examples where we only care about matching variants, rather than contents of
+        // those variants
+        let inexact_counter_examples = vec![
+            ("://127.0.0.1:1234", EndpointError::Syntax("")),
+            ("tcp://127.0.0.1:", EndpointError::Syntax("")),
+            ("tcp://:1234", EndpointError::Syntax("")),
+            ("tcp://127.0.0.1", EndpointError::Syntax("")),
+            ("tcp://127.0.0.1:65536", EndpointError::Syntax("")),
+            ("TCP://127.0.0.1:1234", EndpointError::Syntax("")),
+        ];
+
+        for (s, target_variant) in inexact_counter_examples {
+            let parse_err = s.parse::<Endpoint>().unwrap_err();
+            assert_eq!(disc(&parse_err), disc(&target_variant));
         }
     }
 }

@@ -13,7 +13,6 @@ async fn test_pub_sub_sockets() {
         let (server_stop_sender, mut server_stop) = oneshot::channel::<()>();
         tokio::spawn(async move {
             let mut pub_socket = zeromq::PubSocket::new();
-            println!("Binding to {}", bind_addr);
             pub_socket
                 .bind(bind_addr)
                 .await
@@ -37,7 +36,6 @@ async fn test_pub_sub_sockets() {
             let cloned_payload = payload.clone();
             tokio::spawn(async move {
                 let mut sub_socket = zeromq::SubSocket::new();
-                println!("Connecting to {}", bind_addr);
                 sub_socket
                     .connect(bind_addr)
                     .await
