@@ -9,7 +9,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
 use crate::codec::*;
-use crate::endpoint::TryIntoEndpoint;
+use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::error::*;
 use crate::message::*;
 use crate::util::*;
@@ -75,6 +75,7 @@ impl SocketBackend for RouterSocketBackend {
 pub struct RouterSocket {
     backend: Arc<RouterSocketBackend>,
     _accept_close_handle: Option<oneshot::Sender<bool>>,
+    binds: Vec<Endpoint>,
 }
 
 impl Drop for RouterSocket {
@@ -91,19 +92,25 @@ impl Socket for RouterSocket {
                 peers: Arc::new(DashMap::new()),
             }),
             _accept_close_handle: None,
+            binds: Vec::new(),
         }
     }
 
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
-        let endpoint = endpoint.try_into()?;
+        let mut endpoint = endpoint.try_into()?;
         let stop_handle =
-            util::start_accepting_connections(&endpoint, self.backend.clone()).await?;
+            util::start_accepting_connections(&mut endpoint, self.backend.clone()).await?;
         self._accept_close_handle = Some(stop_handle);
+        self.binds.push(endpoint);
         Ok(())
     }
 
     async fn connect(&mut self, _endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
         unimplemented!()
+    }
+
+    fn binds(&self) -> &[Endpoint] {
+        &self.binds
     }
 }
 

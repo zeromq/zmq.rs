@@ -135,6 +135,8 @@ pub trait Socket {
     /// connections on it
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
+    /// Retrieves the list of currently bound endpoints
+    fn binds(&self) -> &[Endpoint];
 }
 
 pub mod prelude {

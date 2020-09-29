@@ -1,9 +1,9 @@
-use crate::error::EndpointError;
+use crate::error::{EndpointError, ZmqError};
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
 
 // TODO: Figure out better error types for this module.
@@ -28,6 +28,27 @@ impl fmt::Display for Host {
             Host::Ipv4(addr) => write!(f, "{}", addr),
             Host::Ipv6(addr) => write!(f, "[{}]", addr),
             Host::Domain(name) => write!(f, "{}", name),
+        }
+    }
+}
+
+impl TryFrom<Host> for IpAddr {
+    type Error = ZmqError;
+
+    fn try_from(h: Host) -> Result<Self, Self::Error> {
+        match h {
+            Host::Ipv4(a) => Ok(IpAddr::V4(a)),
+            Host::Ipv6(a) => Ok(IpAddr::V6(a)),
+            Host::Domain(_) => Err(ZmqError::Other("Host was neither Ipv4 nor Ipv6")),
+        }
+    }
+}
+
+impl From<IpAddr> for Host {
+    fn from(a: IpAddr) -> Self {
+        match a {
+            IpAddr::V4(a) => Host::Ipv4(a),
+            IpAddr::V6(a) => Host::Ipv6(a),
         }
     }
 }

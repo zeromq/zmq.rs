@@ -194,15 +194,19 @@ pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<d
 }
 
 /// Opens port described by endpoint and starts a coroutine to accept new
-/// connections on it Returns stop_handle channel that can be used to stop
-/// accepting new connections
+/// connections on it.
+///
+/// Returns stop_handle channel that can be used to stop accepting new
+/// connections. Also mutates `endpoint` to reflect the resolved endpoint
+/// address.
 pub(crate) async fn start_accepting_connections(
-    endpoint: &Endpoint,
+    endpoint: &mut Endpoint,
     backend: Arc<dyn MultiPeer>,
 ) -> ZmqResult<futures::channel::oneshot::Sender<bool>> {
     let Endpoint::Tcp(host, port) = endpoint;
 
     let mut listener = tokio::net::TcpListener::bind(format!("{}:{}", host, port)).await?;
+    let resolved_addr = listener.local_addr()?;
     let (stop_handle, stop_callback) = futures::channel::oneshot::channel::<bool>();
     tokio::spawn(async move {
         let mut stop_callback = stop_callback.fuse();
@@ -218,6 +222,13 @@ pub(crate) async fn start_accepting_connections(
             }
         }
     });
+    *port = resolved_addr.port();
+    if let Host::Ipv4(ip) = host {
+        debug_assert!(!resolved_addr.ip().is_unspecified());
+        let resolved_host: Host = resolved_addr.ip().into();
+        debug_assert!(ip == &mut resolved_addr.ip() || ip.is_unspecified());
+        *host = resolved_host;
+    }
     Ok(stop_handle)
 }
 

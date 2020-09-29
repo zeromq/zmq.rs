@@ -105,6 +105,7 @@ impl MultiPeer for PubSocketBackend {
 
 pub struct PubSocket {
     pub(crate) backend: Arc<PubSocketBackend>,
+    binds: Vec<Endpoint>,
     _accept_close_handle: Option<oneshot::Sender<bool>>,
 }
 
@@ -138,15 +139,17 @@ impl Socket for PubSocket {
             backend: Arc::new(PubSocketBackend {
                 subscribers: DashMap::new(),
             }),
+            binds: Vec::new(),
             _accept_close_handle: None,
         }
     }
 
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
-        let endpoint = endpoint.try_into()?;
+        let mut endpoint = endpoint.try_into()?;
         let stop_handle =
-            util::start_accepting_connections(&endpoint, self.backend.clone()).await?;
+            util::start_accepting_connections(&mut endpoint, self.backend.clone()).await?;
         self._accept_close_handle = Some(stop_handle);
+        self.binds.push(endpoint);
         Ok(())
     }
 
@@ -156,6 +159,37 @@ impl Socket for PubSocket {
 
         let raw_socket = tokio::net::TcpStream::connect(format!("{}:{}", host, port)).await?;
         util::peer_connected(raw_socket, self.backend.clone()).await;
+        Ok(())
+    }
+
+    fn binds(&self) -> &[Endpoint] {
+        &self.binds
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Host, ZmqResult};
+    #[tokio::test]
+    async fn test_bind_to_any() -> ZmqResult<()> {
+        let mut s = PubSocket::new();
+        assert!(s.binds().is_empty());
+        for _ in 0..4 {
+            s.bind("tcp://localhost:0").await?;
+        }
+
+        let bound_to = s.binds();
+        assert_eq!(bound_to.len(), 4);
+        let mut port_set = std::collections::HashSet::new();
+        for b in bound_to {
+            let Endpoint::Tcp(host, port) = b;
+            assert_eq!(host, &Host::Domain("localhost".to_string()));
+            assert_ne!(*port, 0);
+            // Insert and check that it wasn't already present
+            assert!(port_set.insert(*port));
+        }
+
         Ok(())
     }
 }

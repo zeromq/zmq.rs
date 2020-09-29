@@ -29,6 +29,7 @@ pub struct RepSocket {
     _fair_queue_close_handle: oneshot::Sender<bool>,
     current_request: Option<PeerIdentity>,
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
+    binds: Vec<Endpoint>,
 }
 
 impl Drop for RepSocket {
@@ -60,14 +61,16 @@ impl Socket for RepSocket {
             _fair_queue_close_handle: fair_queue_close_handle,
             current_request: None,
             fair_queue,
+            binds: Vec::new(),
         }
     }
 
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
-        let endpoint = endpoint.try_into()?;
+        let mut endpoint = endpoint.try_into()?;
         let stop_handle =
-            util::start_accepting_connections(&endpoint, self.backend.clone()).await?;
+            util::start_accepting_connections(&mut endpoint, self.backend.clone()).await?;
         self._accept_close_handle = Some(stop_handle);
+        self.binds.push(endpoint);
         Ok(())
     }
 
@@ -78,6 +81,10 @@ impl Socket for RepSocket {
         let raw_socket = tokio::net::TcpStream::connect((host.to_string().as_str(), port)).await?;
         util::peer_connected(raw_socket, self.backend.clone()).await;
         Ok(())
+    }
+
+    fn binds(&self) -> &[Endpoint] {
+        &self.binds
     }
 }
 

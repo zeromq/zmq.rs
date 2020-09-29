@@ -30,6 +30,7 @@ pub struct SubSocket {
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
     _accept_close_handle: Option<oneshot::Sender<bool>>,
     _fair_queue_close_handle: oneshot::Sender<bool>,
+    binds: Vec<Endpoint>,
 }
 
 impl Drop for SubSocket {
@@ -141,14 +142,16 @@ impl Socket for SubSocket {
             fair_queue,
             _accept_close_handle: None,
             _fair_queue_close_handle: fair_queue_close_handle,
+            binds: Vec::new(),
         }
     }
 
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
-        let endpoint = endpoint.try_into()?;
+        let mut endpoint = endpoint.try_into()?;
         let stop_handle =
-            util::start_accepting_connections(&endpoint, self.backend.clone()).await?;
+            util::start_accepting_connections(&mut endpoint, self.backend.clone()).await?;
         self._accept_close_handle = Some(stop_handle);
+        self.binds.push(endpoint);
         Ok(())
     }
 
@@ -159,6 +162,10 @@ impl Socket for SubSocket {
         let raw_socket = tokio::net::TcpStream::connect(format!("{}:{}", host, port)).await?;
         util::peer_connected(raw_socket, self.backend.clone()).await;
         Ok(())
+    }
+
+    fn binds(&self) -> &[Endpoint] {
+        &self.binds
     }
 }
 
