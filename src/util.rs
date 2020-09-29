@@ -222,11 +222,14 @@ pub(crate) async fn start_accepting_connections(
             }
         }
     });
+    debug_assert_ne!(resolved_addr.port(), 0);
     *port = resolved_addr.port();
+    let resolved_host: Host = resolved_addr.ip().into();
     if let Host::Ipv4(ip) = host {
-        debug_assert!(!resolved_addr.ip().is_unspecified());
-        let resolved_host: Host = resolved_addr.ip().into();
-        debug_assert!(ip == &mut resolved_addr.ip() || ip.is_unspecified());
+        debug_assert!(ip == &mut resolved_addr.ip());
+        *host = resolved_host;
+    } else if let Host::Ipv6(ip) = host {
+        debug_assert!(ip == &mut resolved_addr.ip());
         *host = resolved_host;
     }
     Ok(stop_handle)
@@ -281,5 +284,57 @@ pub(crate) async fn process_fair_queue_messages(mut processor: FairQueueProcesso
                 };
             }
         }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use crate::{Endpoint, Host, Socket, ZmqResult};
+
+    pub async fn test_bind_to_unspecified_interface_helper(
+        any: std::net::IpAddr,
+        mut sock: impl Socket,
+        start_port: u16,
+    ) -> ZmqResult<()> {
+        assert!(sock.binds().is_empty());
+        assert!(any.is_unspecified());
+
+        for i in 0..4 {
+            sock.bind(Endpoint::Tcp(any.into(), start_port + i)).await?;
+        }
+
+        let bound_to = sock.binds();
+        assert_eq!(bound_to.len(), 4);
+
+        let mut port_set = std::collections::HashSet::new();
+        for b in bound_to {
+            let Endpoint::Tcp(host, port) = b;
+            assert_eq!(host, &any.into());
+            port_set.insert(*port);
+        }
+
+        (start_port..start_port + 4).for_each(|p| assert!(port_set.contains(&p)));
+
+        Ok(())
+    }
+
+    pub async fn test_bind_to_any_port_helper(mut sock: impl Socket) -> ZmqResult<()> {
+        assert!(sock.binds().is_empty());
+        for _ in 0..4 {
+            sock.bind("tcp://localhost:0").await?;
+        }
+
+        let bound_to = sock.binds();
+        assert_eq!(bound_to.len(), 4);
+        let mut port_set = std::collections::HashSet::new();
+        for b in bound_to {
+            let Endpoint::Tcp(host, port) = b;
+            assert_eq!(host, &Host::Domain("localhost".to_string()));
+            assert_ne!(*port, 0);
+            // Insert and check that it wasn't already present
+            assert!(port_set.insert(*port));
+        }
+
+        Ok(())
     }
 }

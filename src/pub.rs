@@ -170,26 +170,29 @@ impl Socket for PubSocket {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Host, ZmqResult};
+    use crate::util::tests::{
+        test_bind_to_any_port_helper, test_bind_to_unspecified_interface_helper,
+    };
+    use crate::ZmqResult;
+    use std::net::IpAddr;
+
     #[tokio::test]
-    async fn test_bind_to_any() -> ZmqResult<()> {
-        let mut s = PubSocket::new();
-        assert!(s.binds().is_empty());
-        for _ in 0..4 {
-            s.bind("tcp://localhost:0").await?;
-        }
+    async fn test_bind_to_any_port() -> ZmqResult<()> {
+        let s = PubSocket::new();
+        test_bind_to_any_port_helper(s).await
+    }
 
-        let bound_to = s.binds();
-        assert_eq!(bound_to.len(), 4);
-        let mut port_set = std::collections::HashSet::new();
-        for b in bound_to {
-            let Endpoint::Tcp(host, port) = b;
-            assert_eq!(host, &Host::Domain("localhost".to_string()));
-            assert_ne!(*port, 0);
-            // Insert and check that it wasn't already present
-            assert!(port_set.insert(*port));
-        }
+    #[tokio::test]
+    async fn test_bind_to_any_ipv4_interface() -> ZmqResult<()> {
+        let any_ipv4: IpAddr = "0.0.0.0".parse().unwrap();
+        let s = PubSocket::new();
+        test_bind_to_unspecified_interface_helper(any_ipv4, s, 4000).await
+    }
 
-        Ok(())
+    #[tokio::test]
+    async fn test_bind_to_any_ipv6_interface() -> ZmqResult<()> {
+        let any_ipv6: IpAddr = "::".parse().unwrap();
+        let s = PubSocket::new();
+        test_bind_to_unspecified_interface_helper(any_ipv6, s, 4010).await
     }
 }
