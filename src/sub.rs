@@ -1,5 +1,5 @@
 use crate::codec::*;
-use crate::endpoint::{Endpoint, TryIntoEndpoint};
+use crate::endpoint::{Endpoint, TryAsRefEndpoint, TryIntoEndpoint};
 use crate::fair_queue::FairQueue;
 use crate::message::*;
 use crate::util::*;
@@ -153,11 +153,14 @@ impl Socket for SubSocket {
         Ok(endpoint)
     }
 
-    async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
-        let endpoint = endpoint.try_into()?;
-        let Endpoint::Tcp(host, port) = endpoint;
+    async fn connect<E>(&mut self, endpoint: &E) -> ZmqResult<()>
+    where
+        E: TryAsRefEndpoint + ?Sized,
+    {
+        let endpoint = endpoint.try_ref()?;
+        let Endpoint::Tcp(host, port) = endpoint.as_ref();
 
-        let raw_socket = tokio::net::TcpStream::connect((host.to_string().as_str(), port)).await?;
+        let raw_socket = tokio::net::TcpStream::connect((host.to_string().as_str(), *port)).await?;
         util::peer_connected(raw_socket, self.backend.clone()).await;
         Ok(())
     }

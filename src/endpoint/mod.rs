@@ -6,6 +6,7 @@ pub use transport::Transport;
 
 use lazy_static::lazy_static;
 use regex::Regex;
+use std::borrow::Cow;
 use std::fmt;
 use std::str::FromStr;
 
@@ -115,6 +116,33 @@ impl TryIntoEndpoint for &str {
 impl TryIntoEndpoint for Endpoint {
     fn try_into(self) -> Result<Endpoint, EndpointError> {
         Ok(self)
+    }
+}
+
+/// Represents a type that can be converted into an [`Endpoint`] via a
+/// reference.
+///
+/// This trait is intentionally sealed to prevent implementation on third-party
+/// types.
+pub trait TryAsRefEndpoint: Sync + private::Sealed {
+    /// Convert into an `Endpoint` via a borrowed `Self`.
+    ///
+    /// Enables efficient `&Endpoint` -> `&Endpoint` conversion, while
+    /// permitting the creation of a new `Endpoint` when given types like
+    /// `&str`. Because we will create a new endpoint for such types, we return
+    /// a `Cow<Endpoint>` rather than a `&Endpoint` to extend the lifetime of
+    /// any newly created endpoints to the calling scope.
+    fn try_ref(&self) -> Result<Cow<Endpoint>, EndpointError>;
+}
+impl TryAsRefEndpoint for str {
+    fn try_ref(&self) -> Result<Cow<Endpoint>, EndpointError> {
+        let endpoint = self.parse()?;
+        Ok(Cow::Owned(endpoint))
+    }
+}
+impl TryAsRefEndpoint for Endpoint {
+    fn try_ref(&self) -> Result<Cow<Endpoint>, EndpointError> {
+        Ok(Cow::Borrowed(self))
     }
 }
 

@@ -24,7 +24,7 @@ pub mod util;
 
 use crate::codec::*;
 pub use crate::dealer_router::*;
-pub use crate::endpoint::{Endpoint, Host, Transport, TryIntoEndpoint};
+pub use crate::endpoint::{Endpoint, Host, Transport, TryAsRefEndpoint, TryIntoEndpoint};
 pub use crate::error::ZmqError;
 pub use crate::r#pub::*;
 pub use crate::rep::*;
@@ -138,9 +138,9 @@ pub trait Socket {
     /// Returns the bound-to endpoint, with the port resolved (if applicable).
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint>;
 
-    // TODO: Although it would reduce how convenient the function is, taking an
-    // `&Endpoint` would be better for performance here
-    async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
+    async fn connect<E>(&mut self, endpoint: &E) -> ZmqResult<()>
+    where
+        E: TryAsRefEndpoint + ?Sized;
 
     fn binds(&self) -> &HashMap<Endpoint, oneshot::Sender<bool>>;
 }
@@ -149,6 +149,7 @@ pub mod prelude {
     //! Re-exports important traits. Consider glob-importing.
 
     pub use crate::{
-        BlockingRecv, BlockingSend, NonBlockingRecv, NonBlockingSend, Socket, TryIntoEndpoint,
+        BlockingRecv, BlockingSend, NonBlockingRecv, NonBlockingSend, Socket, TryAsRefEndpoint,
+        TryIntoEndpoint,
     };
 }

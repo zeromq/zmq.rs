@@ -9,7 +9,7 @@ use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 
 use crate::codec::*;
-use crate::endpoint::{Endpoint, TryIntoEndpoint};
+use crate::endpoint::{Endpoint, TryAsRefEndpoint, TryIntoEndpoint};
 use crate::error::*;
 use crate::message::*;
 use crate::util::*;
@@ -103,7 +103,10 @@ impl Socket for RouterSocket {
         Ok(endpoint)
     }
 
-    async fn connect(&mut self, _endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
+    async fn connect<E>(&mut self, _endpoint: &E) -> ZmqResult<()>
+    where
+        E: TryAsRefEndpoint + ?Sized,
+    {
         unimplemented!()
     }
 
