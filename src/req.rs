@@ -123,20 +123,22 @@ impl Socket for ReqSocket {
         }
     }
 
-    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
+    async fn bind(
+        &mut self,
+        endpoint: impl TryIntoEndpoint + 'async_trait,
+    ) -> ZmqResult<&Endpoint> {
         if self._accept_close_handle.is_some() {
             return Err(ZmqError::Other(
                 "Socket server already started. Currently only one server is supported",
             ));
         }
 
-        let mut endpoint = endpoint.try_into()?;
-
-        let stop_handle =
-            util::start_accepting_connections(&mut endpoint, self.backend.clone()).await?;
+        let endpoint = endpoint.try_into()?;
+        let (endpoint, stop_handle) =
+            util::start_accepting_connections(endpoint, self.backend.clone()).await?;
         self._accept_close_handle = Some(stop_handle);
         self.binds.push(endpoint);
-        Ok(())
+        Ok(self.binds.last().unwrap())
     }
 
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {

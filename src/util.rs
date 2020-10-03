@@ -200,10 +200,10 @@ pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<d
 /// connections. Also mutates `endpoint` to reflect the resolved endpoint
 /// address.
 pub(crate) async fn start_accepting_connections(
-    endpoint: &mut Endpoint,
+    endpoint: Endpoint,
     backend: Arc<dyn MultiPeer>,
-) -> ZmqResult<futures::channel::oneshot::Sender<bool>> {
-    let Endpoint::Tcp(host, port) = endpoint;
+) -> ZmqResult<(Endpoint, futures::channel::oneshot::Sender<bool>)> {
+    let Endpoint::Tcp(mut host, port) = endpoint;
 
     let mut listener = tokio::net::TcpListener::bind(format!("{}:{}", host, port)).await?;
     let resolved_addr = listener.local_addr()?;
@@ -223,16 +223,16 @@ pub(crate) async fn start_accepting_connections(
         }
     });
     debug_assert_ne!(resolved_addr.port(), 0);
-    *port = resolved_addr.port();
+    let port = resolved_addr.port();
     let resolved_host: Host = resolved_addr.ip().into();
     if let Host::Ipv4(ip) = host {
-        debug_assert!(ip == &mut resolved_addr.ip());
-        *host = resolved_host;
+        debug_assert_eq!(ip, resolved_addr.ip());
+        host = resolved_host;
     } else if let Host::Ipv6(ip) = host {
-        debug_assert!(ip == &mut resolved_addr.ip());
-        *host = resolved_host;
+        debug_assert_eq!(ip, resolved_addr.ip());
+        host = resolved_host;
     }
-    Ok(stop_handle)
+    Ok((Endpoint::Tcp(host, port), stop_handle))
 }
 
 pub(crate) struct FairQueueProcessor {
