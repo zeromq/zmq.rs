@@ -160,7 +160,7 @@ impl Socket for PubSocket {
         let endpoint = endpoint.try_into()?;
         let Endpoint::Tcp(host, port) = endpoint;
 
-        let raw_socket = tokio::net::TcpStream::connect(format!("{}:{}", host, port)).await?;
+        let raw_socket = tokio::net::TcpStream::connect((host.to_string().as_str(), port)).await?;
         util::peer_connected(raw_socket, self.backend.clone()).await;
         Ok(())
     }

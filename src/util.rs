@@ -205,7 +205,7 @@ pub(crate) async fn start_accepting_connections(
 ) -> ZmqResult<(Endpoint, futures::channel::oneshot::Sender<bool>)> {
     let Endpoint::Tcp(mut host, port) = endpoint;
 
-    let mut listener = tokio::net::TcpListener::bind(format!("{}:{}", host, port)).await?;
+    let mut listener = tokio::net::TcpListener::bind((host.to_string().as_str(), port)).await?;
     let resolved_addr = listener.local_addr()?;
     let (stop_handle, stop_callback) = futures::channel::oneshot::channel::<bool>();
     tokio::spawn(async move {
