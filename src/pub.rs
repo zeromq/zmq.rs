@@ -6,6 +6,7 @@ use crate::{util, MultiPeer, NonBlockingSend, Socket, SocketBackend, SocketType,
 use async_trait::async_trait;
 use dashmap::DashMap;
 use futures::channel::{mpsc, oneshot};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub(crate) struct Subscriber {
@@ -63,7 +64,7 @@ impl SocketBackend for PubSocketBackend {
                         .remove(index);
                 }
             }
-            _ => return,
+            _ => (),
         }
     }
 
@@ -105,8 +106,7 @@ impl MultiPeer for PubSocketBackend {
 
 pub struct PubSocket {
     pub(crate) backend: Arc<PubSocketBackend>,
-    binds: Vec<Endpoint>,
-    _accept_close_handle: Option<oneshot::Sender<bool>>,
+    binds: HashMap<Endpoint, oneshot::Sender<bool>>,
 }
 
 impl Drop for PubSocket {
@@ -139,21 +139,16 @@ impl Socket for PubSocket {
             backend: Arc::new(PubSocketBackend {
                 subscribers: DashMap::new(),
             }),
-            binds: Vec::new(),
-            _accept_close_handle: None,
+            binds: HashMap::new(),
         }
     }
 
-    async fn bind(
-        &mut self,
-        endpoint: impl TryIntoEndpoint + 'async_trait,
-    ) -> ZmqResult<&Endpoint> {
+    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint> {
         let endpoint = endpoint.try_into()?;
         let (endpoint, stop_handle) =
             util::start_accepting_connections(endpoint, self.backend.clone()).await?;
-        self._accept_close_handle = Some(stop_handle);
-        self.binds.push(endpoint);
-        Ok(self.binds.last().unwrap())
+        self.binds.insert(endpoint.clone(), stop_handle);
+        Ok(endpoint)
     }
 
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
@@ -165,7 +160,7 @@ impl Socket for PubSocket {
         Ok(())
     }
 
-    fn binds(&self) -> &[Endpoint] {
+    fn binds(&self) -> &HashMap<Endpoint, oneshot::Sender<bool>> {
         &self.binds
     }
 }

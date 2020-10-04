@@ -10,6 +10,7 @@ use dashmap::DashMap;
 use futures::channel::{mpsc, oneshot};
 use futures::lock::Mutex;
 use futures_util::sink::SinkExt;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::stream::StreamExt;
 
@@ -21,9 +22,8 @@ struct ReqSocketBackend {
 
 pub struct ReqSocket {
     backend: Arc<ReqSocketBackend>,
-    _accept_close_handle: Option<oneshot::Sender<bool>>,
     current_request: Option<PeerIdentity>,
-    binds: Vec<Endpoint>,
+    binds: HashMap<Endpoint, oneshot::Sender<bool>>,
 }
 
 impl Drop for ReqSocket {
@@ -117,28 +117,17 @@ impl Socket for ReqSocket {
                 round_robin: SegQueue::new(),
                 current_request_peer_id: Mutex::new(None),
             }),
-            _accept_close_handle: None,
             current_request: None,
-            binds: Vec::new(),
+            binds: HashMap::new(),
         }
     }
 
-    async fn bind(
-        &mut self,
-        endpoint: impl TryIntoEndpoint + 'async_trait,
-    ) -> ZmqResult<&Endpoint> {
-        if self._accept_close_handle.is_some() {
-            return Err(ZmqError::Other(
-                "Socket server already started. Currently only one server is supported",
-            ));
-        }
-
+    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint> {
         let endpoint = endpoint.try_into()?;
         let (endpoint, stop_handle) =
             util::start_accepting_connections(endpoint, self.backend.clone()).await?;
-        self._accept_close_handle = Some(stop_handle);
-        self.binds.push(endpoint);
-        Ok(self.binds.last().unwrap())
+        self.binds.insert(endpoint.clone(), stop_handle);
+        Ok(endpoint)
     }
 
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
@@ -150,7 +139,7 @@ impl Socket for ReqSocket {
         Ok(())
     }
 
-    fn binds(&self) -> &[Endpoint] {
+    fn binds(&self) -> &HashMap<Endpoint, oneshot::Sender<bool>> {
         &self.binds
     }
 }

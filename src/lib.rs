@@ -32,6 +32,7 @@ pub use crate::req::*;
 pub use crate::sub::*;
 use crate::util::*;
 pub use message::*;
+use std::collections::HashMap;
 
 pub type ZmqResult<T> = Result<T, ZmqError>;
 
@@ -135,15 +136,13 @@ pub trait Socket {
     /// connections on it.
     ///
     /// Returns the bound-to endpoint, with the port resolved (if applicable).
-    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait)
-        -> ZmqResult<&Endpoint>;
+    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint>;
 
     // TODO: Although it would reduce how convenient the function is, taking an
     // `&Endpoint` would be better for performance here
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
 
-    /// Retrieves the list of currently bound endpoints
-    fn binds(&self) -> &[Endpoint];
+    fn binds(&self) -> &HashMap<Endpoint, oneshot::Sender<bool>>;
 }
 
 pub mod prelude {

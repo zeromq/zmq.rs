@@ -11,6 +11,7 @@ use futures::channel::{mpsc, oneshot};
 use futures::SinkExt;
 use futures::StreamExt;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub(crate) struct SubPeer {
@@ -28,9 +29,8 @@ pub(crate) struct SubSocketBackend {
 pub struct SubSocket {
     backend: Arc<SubSocketBackend>,
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
-    _accept_close_handle: Option<oneshot::Sender<bool>>,
     _fair_queue_close_handle: oneshot::Sender<bool>,
-    binds: Vec<Endpoint>,
+    binds: HashMap<Endpoint, oneshot::Sender<bool>>,
 }
 
 impl Drop for SubSocket {
@@ -140,22 +140,17 @@ impl Socket for SubSocket {
                 peer_queue_in: peer_in,
             }),
             fair_queue,
-            _accept_close_handle: None,
             _fair_queue_close_handle: fair_queue_close_handle,
-            binds: Vec::new(),
+            binds: HashMap::new(),
         }
     }
 
-    async fn bind(
-        &mut self,
-        endpoint: impl TryIntoEndpoint + 'async_trait,
-    ) -> ZmqResult<&Endpoint> {
+    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint> {
         let endpoint = endpoint.try_into()?;
         let (endpoint, stop_handle) =
             util::start_accepting_connections(endpoint, self.backend.clone()).await?;
-        self._accept_close_handle = Some(stop_handle);
-        self.binds.push(endpoint);
-        Ok(self.binds.last().unwrap())
+        self.binds.insert(endpoint.clone(), stop_handle);
+        Ok(endpoint)
     }
 
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
@@ -167,7 +162,7 @@ impl Socket for SubSocket {
         Ok(())
     }
 
-    fn binds(&self) -> &[Endpoint] {
+    fn binds(&self) -> &HashMap<Endpoint, oneshot::Sender<bool>> {
         &self.binds
     }
 }
