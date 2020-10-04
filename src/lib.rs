@@ -132,9 +132,18 @@ pub trait Socket {
     fn new() -> Self;
 
     /// Opens port described by endpoint and starts a coroutine to accept new
-    /// connections on it
-    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
+    /// connections on it.
+    ///
+    /// Returns the bound-to endpoint, with the port resolved (if applicable).
+    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait)
+        -> ZmqResult<&Endpoint>;
+
+    // TODO: Although it would reduce how convenient the function is, taking an
+    // `&Endpoint` would be better for performance here
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
+
+    /// Retrieves the list of currently bound endpoints
+    fn binds(&self) -> &[Endpoint];
 }
 
 pub mod prelude {

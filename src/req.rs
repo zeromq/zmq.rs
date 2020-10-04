@@ -23,6 +23,7 @@ pub struct ReqSocket {
     backend: Arc<ReqSocketBackend>,
     _accept_close_handle: Option<oneshot::Sender<bool>>,
     current_request: Option<PeerIdentity>,
+    binds: Vec<Endpoint>,
 }
 
 impl Drop for ReqSocket {
@@ -118,21 +119,26 @@ impl Socket for ReqSocket {
             }),
             _accept_close_handle: None,
             current_request: None,
+            binds: Vec::new(),
         }
     }
 
-    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
-        let endpoint = endpoint.try_into()?;
-
+    async fn bind(
+        &mut self,
+        endpoint: impl TryIntoEndpoint + 'async_trait,
+    ) -> ZmqResult<&Endpoint> {
         if self._accept_close_handle.is_some() {
             return Err(ZmqError::Other(
                 "Socket server already started. Currently only one server is supported",
             ));
         }
-        let stop_handle =
-            util::start_accepting_connections(&endpoint, self.backend.clone()).await?;
+
+        let endpoint = endpoint.try_into()?;
+        let (endpoint, stop_handle) =
+            util::start_accepting_connections(endpoint, self.backend.clone()).await?;
         self._accept_close_handle = Some(stop_handle);
-        Ok(())
+        self.binds.push(endpoint);
+        Ok(self.binds.last().unwrap())
     }
 
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
@@ -142,6 +148,10 @@ impl Socket for ReqSocket {
         let raw_socket = tokio::net::TcpStream::connect((host.to_string().as_str(), port)).await?;
         util::peer_connected(raw_socket, self.backend.clone()).await;
         Ok(())
+    }
+
+    fn binds(&self) -> &[Endpoint] {
+        &self.binds
     }
 }
 

@@ -62,10 +62,10 @@ async fn test_pub_sub_sockets() {
         server_stop_sender.send(()).unwrap();
     }
     let addrs = vec![
+        "tcp://localhost:5553",
         "tcp://127.0.0.1:5554",
         "tcp://[::1]:5555",
         "tcp://127.0.0.1:5556",
-        "tcp://localhost:5557",
     ];
     futures::future::join_all(addrs.into_iter().map(helper)).await;
 }

@@ -105,6 +105,7 @@ impl MultiPeer for PubSocketBackend {
 
 pub struct PubSocket {
     pub(crate) backend: Arc<PubSocketBackend>,
+    binds: Vec<Endpoint>,
     _accept_close_handle: Option<oneshot::Sender<bool>>,
 }
 
@@ -138,16 +139,21 @@ impl Socket for PubSocket {
             backend: Arc::new(PubSocketBackend {
                 subscribers: DashMap::new(),
             }),
+            binds: Vec::new(),
             _accept_close_handle: None,
         }
     }
 
-    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
+    async fn bind(
+        &mut self,
+        endpoint: impl TryIntoEndpoint + 'async_trait,
+    ) -> ZmqResult<&Endpoint> {
         let endpoint = endpoint.try_into()?;
-        let stop_handle =
-            util::start_accepting_connections(&endpoint, self.backend.clone()).await?;
+        let (endpoint, stop_handle) =
+            util::start_accepting_connections(endpoint, self.backend.clone()).await?;
         self._accept_close_handle = Some(stop_handle);
-        Ok(())
+        self.binds.push(endpoint);
+        Ok(self.binds.last().unwrap())
     }
 
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
@@ -157,5 +163,39 @@ impl Socket for PubSocket {
         let raw_socket = tokio::net::TcpStream::connect(format!("{}:{}", host, port)).await?;
         util::peer_connected(raw_socket, self.backend.clone()).await;
         Ok(())
+    }
+
+    fn binds(&self) -> &[Endpoint] {
+        &self.binds
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::tests::{
+        test_bind_to_any_port_helper, test_bind_to_unspecified_interface_helper,
+    };
+    use crate::ZmqResult;
+    use std::net::IpAddr;
+
+    #[tokio::test]
+    async fn test_bind_to_any_port() -> ZmqResult<()> {
+        let s = PubSocket::new();
+        test_bind_to_any_port_helper(s).await
+    }
+
+    #[tokio::test]
+    async fn test_bind_to_any_ipv4_interface() -> ZmqResult<()> {
+        let any_ipv4: IpAddr = "0.0.0.0".parse().unwrap();
+        let s = PubSocket::new();
+        test_bind_to_unspecified_interface_helper(any_ipv4, s, 4000).await
+    }
+
+    #[tokio::test]
+    async fn test_bind_to_any_ipv6_interface() -> ZmqResult<()> {
+        let any_ipv6: IpAddr = "::".parse().unwrap();
+        let s = PubSocket::new();
+        test_bind_to_unspecified_interface_helper(any_ipv6, s, 4010).await
     }
 }
