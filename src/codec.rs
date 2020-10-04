@@ -231,8 +231,8 @@ impl ZmqCodec {
 }
 
 impl Decoder for ZmqCodec {
-    type Item = Message;
     type Error = ZmqError;
+    type Item = Message;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         if src.len() < self.waiting_for {
@@ -325,8 +325,8 @@ impl ZmqCodec {
 }
 
 impl Encoder for ZmqCodec {
-    type Item = Message;
     type Error = ZmqError;
+    type Item = Message;
 
     fn encode(&mut self, message: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
         match message {
