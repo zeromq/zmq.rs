@@ -307,7 +307,7 @@ pub(crate) mod tests {
         assert_eq!(bound_to.len(), 4);
 
         let mut port_set = std::collections::HashSet::new();
-        for b in bound_to {
+        for (b, _) in bound_to {
             let Endpoint::Tcp(host, port) = b;
             assert_eq!(host, &any.into());
             port_set.insert(*port);
@@ -327,7 +327,7 @@ pub(crate) mod tests {
         let bound_to = sock.binds();
         assert_eq!(bound_to.len(), 4);
         let mut port_set = std::collections::HashSet::new();
-        for b in bound_to {
+        for (b, _) in bound_to {
             let Endpoint::Tcp(host, port) = b;
             assert_eq!(host, &Host::Domain("localhost".to_string()));
             assert_ne!(*port, 0);

@@ -8,6 +8,7 @@ use crate::{util, SocketType, ZmqResult};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use futures_util::sink::SinkExt;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::stream::StreamExt;
 
@@ -25,11 +26,10 @@ struct RepSocketBackend {
 
 pub struct RepSocket {
     backend: Arc<RepSocketBackend>,
-    _accept_close_handle: Option<oneshot::Sender<bool>>,
     _fair_queue_close_handle: oneshot::Sender<bool>,
     current_request: Option<PeerIdentity>,
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
-    binds: Vec<Endpoint>,
+    binds: HashMap<Endpoint, oneshot::Sender<bool>>,
 }
 
 impl Drop for RepSocket {
@@ -57,24 +57,19 @@ impl Socket for RepSocket {
                 peers: DashMap::new(),
                 peer_queue_in: peer_in,
             }),
-            _accept_close_handle: None,
             _fair_queue_close_handle: fair_queue_close_handle,
             current_request: None,
             fair_queue,
-            binds: Vec::new(),
+            binds: HashMap::new(),
         }
     }
 
-    async fn bind(
-        &mut self,
-        endpoint: impl TryIntoEndpoint + 'async_trait,
-    ) -> ZmqResult<&Endpoint> {
+    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint> {
         let endpoint = endpoint.try_into()?;
         let (endpoint, stop_handle) =
             util::start_accepting_connections(endpoint, self.backend.clone()).await?;
-        self._accept_close_handle = Some(stop_handle);
-        self.binds.push(endpoint);
-        Ok(self.binds.last().unwrap())
+        self.binds.insert(endpoint.clone(), stop_handle);
+        Ok(endpoint)
     }
 
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
@@ -86,7 +81,7 @@ impl Socket for RepSocket {
         Ok(())
     }
 
-    fn binds(&self) -> &[Endpoint] {
+    fn binds(&self) -> &HashMap<Endpoint, oneshot::Sender<bool>> {
         &self.binds
     }
 }
