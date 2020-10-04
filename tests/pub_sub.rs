@@ -61,6 +61,7 @@ async fn test_pub_sub_sockets() {
 
         server_stop_sender.send(()).unwrap();
     }
+
     let addrs = vec![
         "tcp://127.0.0.1:5554",
         "tcp://[::1]:5555",
