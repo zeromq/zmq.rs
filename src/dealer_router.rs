@@ -153,7 +153,7 @@ impl RouterSocket {
                     .try_send(Message::Multipart(messages[1..].to_vec()))?;
                 Ok(())
             }
-            None => return Err(ZmqError::Other("Destination client not found by identity")),
+            None => Err(ZmqError::Other("Destination client not found by identity")),
         }
     }
 }

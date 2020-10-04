@@ -64,7 +64,7 @@ impl SocketBackend for PubSocketBackend {
                         .remove(index);
                 }
             }
-            _ => return,
+            _ => (),
         }
     }
 
