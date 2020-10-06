@@ -11,12 +11,14 @@ async fn test_pub_sub_sockets() {
 
         let cloned_payload = payload.clone();
         let (server_stop_sender, mut server_stop) = oneshot::channel::<()>();
+        let (has_bound_sender, has_bound) = oneshot::channel::<()>();
         tokio::spawn(async move {
             let mut pub_socket = zeromq::PubSocket::new();
             pub_socket
                 .bind(bind_addr)
                 .await
                 .unwrap_or_else(|_| panic!("Failed to bind to {}", bind_addr));
+            has_bound_sender.send(()).expect("channel was dropped");
 
             loop {
                 if let Ok(Some(_)) = server_stop.try_recv() {
@@ -29,6 +31,10 @@ async fn test_pub_sub_sockets() {
                 tokio::time::delay_for(Duration::from_millis(1)).await;
             }
         });
+        // Block until the pub has finished binding
+        // TODO: ZMQ sockets should not care about this sort of ordering.
+        // See https://github.com/zeromq/zmq.rs/issues/73
+        has_bound.await.expect("channel was cancelled");
 
         let (sub_results_sender, sub_results) = mpsc::channel(100);
         for _ in 0..10 {
