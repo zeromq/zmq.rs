@@ -1,5 +1,5 @@
 use crate::codec::CodecResult;
-use crate::compat::FramedIo;
+use crate::codec::FramedIo;
 use crate::fair_queue::FairQueue;
 use crate::*;
 

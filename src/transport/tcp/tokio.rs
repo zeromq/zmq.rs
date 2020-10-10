@@ -1,6 +1,6 @@
 //! Tokio-specific utilities for the functionality in [`super::compat`]
 
-use crate::compat::FramedIo;
+use crate::codec::FramedIo;
 use crate::endpoint::{Endpoint, Host, Port};
 use crate::ZmqResult;
 

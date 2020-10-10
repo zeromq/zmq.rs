@@ -1,7 +1,6 @@
 #![recursion_limit = "1024"]
 
 mod codec;
-mod compat;
 mod dealer_router;
 mod endpoint;
 mod error;

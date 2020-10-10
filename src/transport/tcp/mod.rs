@@ -2,7 +2,7 @@
 mod tokio;
 
 use self::tokio as tk;
-use crate::compat::FramedIo;
+use crate::codec::FramedIo;
 use crate::endpoint::{Endpoint, Host, Port};
 use crate::ZmqResult;
 

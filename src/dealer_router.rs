@@ -8,14 +8,14 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::Arc;
 
+use crate::codec::FramedIo;
 use crate::codec::*;
-use crate::compat::FramedIo;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::error::*;
 use crate::message::*;
 use crate::transport;
-use crate::util::*;
-use crate::{util, MultiPeer, Socket, SocketBackend};
+use crate::util::{self, Peer, PeerIdentity};
+use crate::{MultiPeer, Socket, SocketBackend};
 use crate::{SocketType, ZmqResult};
 
 struct RouterSocketBackend {
