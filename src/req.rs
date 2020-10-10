@@ -1,18 +1,19 @@
 use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::error::*;
+use crate::transport;
 use crate::util::{self, Peer, PeerIdentity};
 use crate::*;
 use crate::{SocketType, ZmqResult};
+
 use async_trait::async_trait;
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use futures::channel::{mpsc, oneshot};
 use futures::lock::Mutex;
-use futures_util::sink::SinkExt;
+use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::stream::StreamExt;
 
 struct ReqSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, Peer>,
@@ -124,8 +125,12 @@ impl Socket for ReqSocket {
 
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint> {
         let endpoint = endpoint.try_into()?;
-        let (endpoint, stop_handle) =
-            util::start_accepting_connections(endpoint, self.backend.clone()).await?;
+        let Endpoint::Tcp(host, port) = endpoint;
+
+        let cloned_backend = self.backend.clone();
+        let cback = move |result| util::peer_connected(result, cloned_backend.clone());
+        let (endpoint, stop_handle) = transport::tcp::begin_accept(host, port, cback).await?;
+
         self.binds.insert(endpoint.clone(), stop_handle);
         Ok(endpoint)
     }
@@ -134,8 +139,8 @@ impl Socket for ReqSocket {
         let endpoint = endpoint.try_into()?;
         let Endpoint::Tcp(host, port) = endpoint;
 
-        let raw_socket = tokio::net::TcpStream::connect((host.to_string().as_str(), port)).await?;
-        util::peer_connected(raw_socket, self.backend.clone()).await;
+        let connect_result = transport::tcp::connect(host, port).await;
+        util::peer_connected(connect_result, self.backend.clone()).await;
         Ok(())
     }
 

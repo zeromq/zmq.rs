@@ -3,6 +3,8 @@ use crate::ZmqMessage;
 
 use thiserror::Error;
 
+pub type ZmqResult<T> = Result<T, ZmqError>;
+
 #[derive(Error, Debug)]
 pub enum ZmqError {
     #[error(transparent)]
