@@ -8,7 +8,7 @@ use futures::channel::{mpsc, oneshot};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 
-use tokio_util::codec::Framed;
+use futures_codec::Framed;
 
 mod codec;
 mod dealer_router;

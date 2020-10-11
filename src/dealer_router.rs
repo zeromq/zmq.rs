@@ -3,10 +3,10 @@ use dashmap::DashMap;
 use futures::channel::{mpsc, oneshot};
 use futures::lock::Mutex;
 use futures::SinkExt;
+use futures_codec::Framed;
 use std::convert::TryInto;
 use std::sync::Arc;
 use tokio::net::TcpStream;
-use tokio_util::codec::Framed;
 
 use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
