@@ -20,7 +20,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: check
-          args: --all --tests
+          args: --all --tests --benches
 
   test:
     name: Test
@@ -78,4 +78,4 @@ jobs:
       - uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all --tests --all-features -- --deny warnings
+          args: --all --tests --benches --all-features -- --deny warnings
