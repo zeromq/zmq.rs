@@ -22,7 +22,16 @@ crossbeam = "^0.7"
 uuid = { version = "^0.8", features = ["v4"] }
 regex = "1"
 lazy_static = "1"
-
+log = "0.4"
 
 [dev-dependencies]
 chrono = "^0.4"
+criterion = "0.3"
+
+# [[bench]]
+# name = "pub_sub"
+# harness = false
+
+[[bench]]
+name = "req_rep"
+harness = false

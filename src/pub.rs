@@ -99,7 +99,7 @@ impl MultiPeer for PubSocketBackend {
     }
 
     async fn peer_disconnected(&self, peer_id: &PeerIdentity) {
-        println!("Client disconnected {:?}", peer_id);
+        log::info!("Client disconnected {:?}", peer_id);
         self.subscribers.remove(peer_id);
     }
 }
