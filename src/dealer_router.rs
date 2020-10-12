@@ -135,7 +135,7 @@ impl RouterSocket {
                     return Ok(envelope);
                 }
                 Some((peer_id, None)) => {
-                    println!("Peer disconnected {:?}", peer_id);
+                    log::info!("Peer disconnected {:?}", peer_id);
                     self.backend.peers.remove(&peer_id);
                 }
                 Some((_peer_id, _)) => todo!(),
