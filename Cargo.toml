@@ -29,9 +29,13 @@ futures_codec = "0.4"
 chrono = "^0.4"
 criterion = "0.3"
 
-# [[bench]]
-# name = "pub_sub"
-# harness = false
+[lib]
+bench = false
+
+[[bench]]
+name = "pub_sub" 
+harness = false 
+bench = false # Don't actually benchmark this, until we fix it
 
 [[bench]]
 name = "req_rep"
