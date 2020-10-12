@@ -61,6 +61,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             for i in 0..(u32::from(MSGS_PER_PUB) * u32::from(M_PUBS)) {
                 for s in subs.iter_mut() {
                     println!("Attempting recv");
+                    // TODO: This hangs. Why?
                     let msg = s.recv().await.expect("Could not recv");
                     black_box(msg);
                 }
