@@ -9,6 +9,8 @@ use futures_util::future::FutureExt;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use tokio::net::TcpStream;
+use tokio_util::compat::Compat;
+use tokio_util::compat::Tokio02AsyncReadCompatExt;
 use uuid::Uuid;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Clone)]
@@ -87,7 +89,9 @@ pub fn sockets_compatible(one: SocketType, another: SocketType) -> bool {
     COMPATIBILITY_MATRIX[row_index * 11 + col_index] != 0
 }
 
-pub(crate) async fn greet_exchange(socket: &mut Framed<TcpStream, ZmqCodec>) -> ZmqResult<()> {
+pub(crate) async fn greet_exchange(
+    socket: &mut Framed<Compat<TcpStream>, ZmqCodec>,
+) -> ZmqResult<()> {
     socket
         .send(Message::Greeting(ZmqGreeting::default()))
         .await?;
@@ -104,7 +108,7 @@ pub(crate) async fn greet_exchange(socket: &mut Framed<TcpStream, ZmqCodec>) -> 
 }
 
 pub(crate) async fn ready_exchange(
-    socket: &mut Framed<TcpStream, ZmqCodec>,
+    socket: &mut Framed<Compat<TcpStream>, ZmqCodec>,
     socket_type: SocketType,
 ) -> ZmqResult<PeerIdentity> {
     let ready = ZmqCommand::ready(socket_type);
@@ -143,7 +147,7 @@ pub(crate) async fn ready_exchange(
 }
 
 pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<dyn MultiPeer>) {
-    let mut raw_socket = Framed::new(socket, ZmqCodec::new());
+    let mut raw_socket = Framed::new(socket.compat(), ZmqCodec::new());
 
     greet_exchange(&mut raw_socket)
         .await

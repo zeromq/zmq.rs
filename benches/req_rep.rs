@@ -79,8 +79,8 @@ criterion_group! {
     name = benches;
     config = Criterion::default()
         .sample_size(128)
-        .measurement_time(Duration::from_secs(32))
-        .warm_up_time(Duration::from_secs(5));
+        .measurement_time(Duration::from_secs(30))
+        .warm_up_time(Duration::from_secs(10));
     targets = criterion_benchmark
 }
 criterion_main!(benches);

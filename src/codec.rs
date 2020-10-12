@@ -1,9 +1,9 @@
 use crate::error::ZmqError;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use futures_codec::{Decoder, Encoder};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::Display;
-use tokio_util::codec::{Decoder, Encoder};
 
 use crate::message::*;
 use crate::SocketType;
