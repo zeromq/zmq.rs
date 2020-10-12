@@ -1,4 +1,4 @@
-use crate::error::ZmqError;
+use super::error::CodecError;
 use crate::SocketType;
 
 use bytes::{Buf, BufMut, BytesMut};
@@ -36,7 +36,7 @@ impl ZmqCommand {
 }
 
 impl TryFrom<BytesMut> for ZmqCommand {
-    type Error = ZmqError;
+    type Error = CodecError;
 
     fn try_from(mut buf: BytesMut) -> Result<Self, Self::Error> {
         let command_len = buf.get_u8() as usize;
@@ -45,7 +45,7 @@ impl TryFrom<BytesMut> for ZmqCommand {
             unsafe { String::from_utf8_unchecked(buf.split_to(command_len).to_vec()) };
         let command = match command_name.as_str() {
             "READY" => ZmqCommandName::READY,
-            _ => return Err(ZmqError::Codec("Uknown command received")),
+            _ => return Err(CodecError::Command("Uknown command received")),
         };
         let mut properties = HashMap::new();
 

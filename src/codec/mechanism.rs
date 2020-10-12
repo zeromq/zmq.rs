@@ -1,4 +1,4 @@
-use crate::ZmqError;
+use super::error::CodecError;
 
 use std::convert::TryFrom;
 use std::fmt::Display;
@@ -21,7 +21,7 @@ impl Display for ZmqMechanism {
 }
 
 impl TryFrom<Vec<u8>> for ZmqMechanism {
-    type Error = ZmqError;
+    type Error = CodecError;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
         let mech = value.split(|x| *x == 0x0).next().unwrap_or(b"");
@@ -33,7 +33,7 @@ impl TryFrom<Vec<u8>> for ZmqMechanism {
             "NULL" => Ok(ZmqMechanism::NULL),
             "PLAIN" => Ok(ZmqMechanism::PLAIN),
             "CURVE" => Ok(ZmqMechanism::CURVE),
-            _ => Err(ZmqError::Other("Failed to parse ZmqMechanism")),
+            _ => Err(CodecError::Mechanism("Failed to parse ZmqMechanism")),
         }
     }
 }

@@ -1,5 +1,5 @@
+use super::error::CodecError;
 use super::mechanism::ZmqMechanism;
-use crate::error::ZmqError;
 
 use bytes::{Bytes, BytesMut};
 use std::convert::TryFrom;
@@ -22,11 +22,11 @@ impl Default for ZmqGreeting {
 }
 
 impl TryFrom<Bytes> for ZmqGreeting {
-    type Error = ZmqError;
+    type Error = CodecError;
 
     fn try_from(value: Bytes) -> Result<Self, Self::Error> {
         if !(value[0] == 0xff && value[9] == 0x7f) {
-            return Err(ZmqError::Codec("Failed to parse greeting"));
+            return Err(CodecError::Greeting("Failed to parse greeting"));
         }
         Ok(ZmqGreeting {
             version: (value[10], value[11]),

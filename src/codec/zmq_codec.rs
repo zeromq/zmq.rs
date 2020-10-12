@@ -1,7 +1,7 @@
 use super::command::ZmqCommand;
+use super::error::CodecError;
 use super::greeting::ZmqGreeting;
 use super::Message;
-use crate::error::ZmqError;
 use crate::ZmqMessage;
 
 use bytes::{Buf, BufMut, BytesMut};
@@ -44,7 +44,7 @@ impl ZmqCodec {
 }
 
 impl Decoder for ZmqCodec {
-    type Error = ZmqError;
+    type Error = CodecError;
     type Item = Message;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -55,7 +55,7 @@ impl Decoder for ZmqCodec {
         match self.state {
             DecoderState::Greeting => {
                 if src[0] != 0xff {
-                    return Err(ZmqError::Codec("Bad first byte of greeting"));
+                    return Err(CodecError::Decode("Bad first byte of greeting"));
                 }
                 self.state = DecoderState::FrameHeader;
                 self.waiting_for = 1;
@@ -138,7 +138,7 @@ impl ZmqCodec {
 }
 
 impl Encoder for ZmqCodec {
-    type Error = ZmqError;
+    type Error = CodecError;
     type Item = Message;
 
     fn encode(&mut self, message: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {

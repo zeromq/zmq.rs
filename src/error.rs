@@ -1,5 +1,6 @@
-use crate::codec::Message;
+use crate::codec::{CodecError, Message};
 use crate::ZmqMessage;
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -8,8 +9,8 @@ pub enum ZmqError {
     Endpoint(#[from] EndpointError),
     #[error("Network error")]
     Network(#[from] std::io::Error),
-    #[error("{0}")]
-    Codec(&'static str),
+    #[error("Codec Error: {0}")]
+    Codec(#[from] CodecError),
     #[error("{0}")]
     Socket(&'static str),
     #[error("{0}")]
