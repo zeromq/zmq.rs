@@ -1,6 +1,8 @@
+use crate::codec::CodecResult;
 use crate::endpoint::Endpoint;
 use crate::fair_queue::FairQueue;
 use crate::*;
+
 use bytes::Bytes;
 use futures::lock::Mutex;
 use futures::stream::StreamExt;
@@ -96,14 +98,14 @@ pub(crate) async fn greet_exchange(
         .send(Message::Greeting(ZmqGreeting::default()))
         .await?;
 
-    let greeting: Option<Result<Message, ZmqError>> = socket.next().await;
+    let greeting: Option<CodecResult<Message>> = socket.next().await;
 
     match greeting {
         Some(Ok(Message::Greeting(greet))) => match greet.version {
             (3, 0) => Ok(()),
             _ => Err(ZmqError::Other("Unsupported protocol version")),
         },
-        _ => Err(ZmqError::Codec("Failed Greeting exchange")),
+        _ => Err(ZmqError::Other("Failed Greeting exchange")),
     }
 }
 
@@ -114,7 +116,7 @@ pub(crate) async fn ready_exchange(
     let ready = ZmqCommand::ready(socket_type);
     socket.send(Message::Command(ready)).await?;
 
-    let ready_repl: Option<ZmqResult<Message>> = socket.next().await;
+    let ready_repl: Option<CodecResult<Message>> = socket.next().await;
     match ready_repl {
         Some(Ok(Message::Command(command))) => match command.name {
             ZmqCommandName::READY => {
@@ -122,7 +124,7 @@ pub(crate) async fn ready_exchange(
                     .properties
                     .get("Socket-Type")
                     .map(|x| SocketType::try_from(x.as_str()))
-                    .unwrap_or(Err(ZmqError::Codec("Failed to parse other socket type")))?;
+                    .unwrap_or(Err(ZmqError::Other("Failed to parse other socket type")))?;
 
                 let peer_id = command
                     .properties
@@ -140,8 +142,8 @@ pub(crate) async fn ready_exchange(
                 }
             }
         },
-        Some(Ok(_)) => Err(ZmqError::Codec("Failed to confirm ready state")),
-        Some(Err(e)) => Err(e),
+        Some(Ok(_)) => Err(ZmqError::Other("Failed to confirm ready state")),
+        Some(Err(e)) => Err(e.into()),
         None => Err(ZmqError::Other("No reply from server")),
     }
 }

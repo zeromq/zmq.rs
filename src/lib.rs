@@ -69,7 +69,7 @@ impl TryFrom<&str> for SocketType {
             "XPUB" => SocketType::XPUB,
             "XSUB" => SocketType::XSUB,
             "STREAM" => SocketType::STREAM,
-            _ => return Err(ZmqError::Codec("Unknown socket type")),
+            _ => return Err(ZmqError::Other("Unknown socket type")),
         })
     }
 }
