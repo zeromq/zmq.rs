@@ -13,7 +13,7 @@ use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::error::*;
 use crate::message::*;
-use crate::transport;
+use crate::transport::{self, AcceptStopChannel};
 use crate::util::{self, Peer, PeerIdentity};
 use crate::{MultiPeer, Socket, SocketBackend};
 use crate::{SocketType, ZmqResult};
@@ -75,7 +75,7 @@ impl SocketBackend for RouterSocketBackend {
 
 pub struct RouterSocket {
     backend: Arc<RouterSocketBackend>,
-    binds: HashMap<Endpoint, oneshot::Sender<bool>>,
+    binds: HashMap<Endpoint, AcceptStopChannel>,
 }
 
 impl Drop for RouterSocket {
@@ -97,11 +97,10 @@ impl Socket for RouterSocket {
 
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint> {
         let endpoint = endpoint.try_into()?;
-        let Endpoint::Tcp(host, port) = endpoint;
 
         let cloned_backend = self.backend.clone();
         let cback = move |result| util::peer_connected(result, cloned_backend.clone());
-        let (endpoint, stop_handle) = transport::tcp::begin_accept(host, port, cback).await?;
+        let (endpoint, stop_handle) = transport::begin_accept(endpoint, cback).await?;
 
         self.binds.insert(endpoint.clone(), stop_handle);
         Ok(endpoint)
@@ -111,7 +110,7 @@ impl Socket for RouterSocket {
         unimplemented!()
     }
 
-    fn binds(&self) -> &HashMap<Endpoint, oneshot::Sender<bool>> {
+    fn binds(&self) -> &HashMap<Endpoint, AcceptStopChannel> {
         &self.binds
     }
 }

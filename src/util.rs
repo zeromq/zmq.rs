@@ -8,7 +8,6 @@ use futures::lock::Mutex;
 use futures::stream::StreamExt;
 use futures::SinkExt;
 use std::convert::{TryFrom, TryInto};
-use std::net::SocketAddr;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -144,10 +143,10 @@ pub(crate) async fn ready_exchange(
 }
 
 pub(crate) async fn peer_connected(
-    accept_result: ZmqResult<(FramedIo, SocketAddr)>,
+    accept_result: ZmqResult<(FramedIo, Endpoint)>,
     backend: Arc<dyn MultiPeer>,
 ) {
-    let (mut raw_socket, _remote_addr) = accept_result.expect("Failed to accept");
+    let (mut raw_socket, _remote_endpoint) = accept_result.expect("Failed to accept");
     greet_exchange(&mut raw_socket)
         .await
         .expect("Failed to exchange greetings");
