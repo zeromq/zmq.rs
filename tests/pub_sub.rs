@@ -42,6 +42,11 @@ async fn test_pub_sub_sockets() {
         // TODO: ZMQ sockets should not care about this sort of ordering.
         // See https://github.com/zeromq/zmq.rs/issues/73
         let bound_addr = has_bound.await.expect("channel was cancelled");
+        assert!(if let Endpoint::Tcp(_host, port) = bound_addr.clone() {
+            port != 0
+        } else {
+            unreachable!()
+        });
 
         let (sub_results_sender, sub_results) = mpsc::channel(100);
         for _ in 0..10 {
@@ -82,10 +87,10 @@ async fn test_pub_sub_sockets() {
     }
 
     let addrs = vec![
-        "tcp://localhost:5553",
-        "tcp://127.0.0.1:5554",
-        "tcp://[::1]:5555",
-        "tcp://127.0.0.1:5556",
+        "tcp://localhost:0",
+        "tcp://127.0.0.1:0",
+        "tcp://[::1]:0",
+        "tcp://127.0.0.1:0",
         "tcp://localhost:0",
         "tcp://127.0.0.1:0",
         "tcp://[::1]:0",
