@@ -7,6 +7,7 @@ pub use transport::Transport;
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::fmt;
+use std::net::SocketAddr;
 use std::str::FromStr;
 
 use crate::error::EndpointError;
@@ -37,6 +38,11 @@ impl Endpoint {
         match self {
             Self::Tcp(_, _) => Transport::Tcp,
         }
+    }
+
+    /// Creates an `Endpoint::Tcp` from a [`SocketAddr`]
+    pub fn from_tcp_sock_addr(addr: SocketAddr) -> Self {
+        Endpoint::Tcp(addr.ip().into(), addr.port())
     }
 }
 

@@ -2,7 +2,7 @@ use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::error::*;
 use crate::fair_queue::FairQueue;
-use crate::transport;
+use crate::transport::{self, AcceptStopChannel};
 use crate::util::FairQueueProcessor;
 use crate::*;
 use crate::{util, SocketType, ZmqResult};
@@ -31,7 +31,7 @@ pub struct RepSocket {
     _fair_queue_close_handle: oneshot::Sender<bool>,
     current_request: Option<PeerIdentity>,
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
-    binds: HashMap<Endpoint, oneshot::Sender<bool>>,
+    binds: HashMap<Endpoint, AcceptStopChannel>,
 }
 
 impl Drop for RepSocket {
@@ -68,11 +68,10 @@ impl Socket for RepSocket {
 
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint> {
         let endpoint = endpoint.try_into()?;
-        let Endpoint::Tcp(host, port) = endpoint;
 
         let cloned_backend = self.backend.clone();
         let cback = move |result| util::peer_connected(result, cloned_backend.clone());
-        let (endpoint, stop_handle) = transport::tcp::begin_accept(host, port, cback).await?;
+        let (endpoint, stop_handle) = transport::begin_accept(endpoint, cback).await?;
 
         self.binds.insert(endpoint.clone(), stop_handle);
         Ok(endpoint)
@@ -80,14 +79,13 @@ impl Socket for RepSocket {
 
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
         let endpoint = endpoint.try_into()?;
-        let Endpoint::Tcp(host, port) = endpoint;
 
-        let connect_result = transport::tcp::connect(host, port).await;
+        let connect_result = transport::connect(endpoint).await;
         util::peer_connected(connect_result, self.backend.clone()).await;
         Ok(())
     }
 
-    fn binds(&self) -> &HashMap<Endpoint, oneshot::Sender<bool>> {
+    fn binds(&self) -> &HashMap<Endpoint, AcceptStopChannel> {
         &self.binds
     }
 }
