@@ -1,13 +1,15 @@
+use zeromq::prelude::*;
+use zeromq::Endpoint;
+
 use futures::channel::{mpsc, oneshot};
 use futures::{SinkExt, StreamExt};
 use std::convert::TryInto;
 use std::time::Duration;
 
-use zeromq::prelude::*;
-use zeromq::Endpoint;
-
 #[tokio::test]
 async fn test_pub_sub_sockets() {
+    pretty_env_logger::try_init().ok();
+
     async fn helper(bind_addr: &'static str) {
         // We will join on these at the end to determine if any tasks we spawned
         // panicked

@@ -44,6 +44,7 @@ where
                     tokio::spawn(cback(maybe_accepted.into()));
                 },
                 _ = stop_callback => {
+                    log::debug!("Accept task received stop signal. {:?}", listener_addr);
                     break
                 }
             }
