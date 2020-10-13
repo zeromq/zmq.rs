@@ -8,6 +8,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use std::fmt;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::error::EndpointError;
@@ -31,18 +32,24 @@ pub type Port = u16;
 pub enum Endpoint {
     // TODO: Add endpoints for the other transport variants
     Tcp(Host, Port),
+    Ipc(Option<PathBuf>),
 }
 
 impl Endpoint {
     pub fn transport(&self) -> Transport {
         match self {
             Self::Tcp(_, _) => Transport::Tcp,
+            Self::Ipc(_) => Transport::Ipc,
         }
     }
 
     /// Creates an `Endpoint::Tcp` from a [`SocketAddr`]
-    pub fn from_tcp_sock_addr(addr: SocketAddr) -> Self {
+    pub fn from_tcp_addr(addr: SocketAddr) -> Self {
         Endpoint::Tcp(addr.ip().into(), addr.port())
+    }
+
+    pub fn from_tcp_domain(addr: String, port: u16) -> Self {
+        Endpoint::Tcp(Host::Domain(addr), port)
     }
 }
 
@@ -81,6 +88,10 @@ impl FromStr for Endpoint {
                 let (host, port) = extract_host_port(address)?;
                 Endpoint::Tcp(host, port)
             }
+            Transport::Ipc => {
+                let path: PathBuf = address.to_string().into();
+                Endpoint::Ipc(Some(path))
+            }
         };
 
         Ok(endpoint)
@@ -97,6 +108,8 @@ impl fmt::Display for Endpoint {
                     write!(f, "tcp://{}:{}", host, port)
                 }
             }
+            Endpoint::Ipc(Some(path)) => write!(f, "ipc://{}", path.display()),
+            Endpoint::Ipc(None) => write!(f, "ipc://????"),
         }
     }
 }
@@ -140,6 +153,18 @@ mod tests {
     lazy_static! {
         static ref PAIRS: Vec<(Endpoint, &'static str)> = vec![
             (
+                Endpoint::Ipc(Some(PathBuf::from("/tmp/asdf"))),
+                "ipc:///tmp/asdf"
+            ),
+            (
+                Endpoint::Ipc(Some(PathBuf::from("my/dir_1/dir-2"))),
+                "ipc://my/dir_1/dir-2"
+            ),
+            (
+                Endpoint::Ipc(Some(PathBuf::from("@abstract/namespace"))),
+                "ipc://@abstract/namespace"
+            ),
+            (
                 Endpoint::Tcp(Host::Domain("www.example.com".to_string()), 1234),
                 "tcp://www.example.com:1234",
             ),
@@ -179,6 +204,7 @@ mod tests {
         for (e, s) in PAIRS.iter() {
             assert_eq!(&format!("{}", e), s);
         }
+        assert_eq!(&format!("{}", Endpoint::Ipc(None)), "ipc://????");
     }
 
     #[test]

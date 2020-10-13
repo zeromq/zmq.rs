@@ -19,6 +19,8 @@ async fn run_rep_server(mut rep_socket: RepSocket) -> Result<(), Box<dyn Error>>
 
 #[tokio::test]
 async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
+    pretty_env_logger::try_init().ok();
+
     let mut rep_socket = zeromq::RepSocket::new();
     let endpoint = rep_socket.bind("tcp://localhost:0").await?;
     println!("Started rep server on {}", endpoint);
@@ -40,6 +42,8 @@ async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
 
 #[tokio::test]
 async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
+    pretty_env_logger::try_init().ok();
+
     let mut rep_socket = zeromq::RepSocket::new();
     let endpoint = rep_socket.bind("tcp://localhost:0").await?;
     println!("Started rep server on {}", endpoint);

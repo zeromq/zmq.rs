@@ -1,12 +1,16 @@
+mod ipc;
 mod tcp;
 
 use crate::codec::FramedIo;
 use crate::endpoint::Endpoint;
+use crate::error::ZmqError;
 use crate::ZmqResult;
 
 pub(crate) async fn connect(endpoint: Endpoint) -> ZmqResult<(FramedIo, Endpoint)> {
     match endpoint {
         Endpoint::Tcp(host, port) => tcp::connect(host, port).await,
+        Endpoint::Ipc(Some(path)) => ipc::connect(path).await,
+        Endpoint::Ipc(None) => Err(ZmqError::Socket("Cannot connect to an unnamed ipc socket")),
     }
 }
 
@@ -29,5 +33,9 @@ where
 {
     match endpoint {
         Endpoint::Tcp(host, port) => tcp::begin_accept(host, port, cback).await,
+        Endpoint::Ipc(Some(path)) => ipc::begin_accept(path, cback).await,
+        Endpoint::Ipc(None) => Err(ZmqError::Socket(
+            "Cannot begin accepting peers at an unnamed ipc socket",
+        )),
     }
 }

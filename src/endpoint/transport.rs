@@ -10,6 +10,7 @@ use super::EndpointError;
 pub enum Transport {
     /// TCP transport
     Tcp,
+    Ipc,
 }
 
 impl FromStr for Transport {
@@ -18,6 +19,7 @@ impl FromStr for Transport {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let result = match s {
             "tcp" => Transport::Tcp,
+            "ipc" => Transport::Ipc,
             _ => return Err(EndpointError::UnknownTransport(s.to_string())),
         };
         Ok(result)
@@ -35,6 +37,7 @@ impl fmt::Display for Transport {
     fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
         let s = match self {
             Transport::Tcp => "tcp",
+            Transport::Ipc => "ipc",
         };
         write!(f, "{}", s)
     }
