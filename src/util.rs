@@ -1,18 +1,15 @@
 use crate::codec::CodecResult;
-use crate::endpoint::Endpoint;
+use crate::codec::FramedIo;
 use crate::fair_queue::FairQueue;
 use crate::*;
 
 use bytes::Bytes;
 use futures::lock::Mutex;
 use futures::stream::StreamExt;
-use futures::{select, SinkExt};
-use futures_util::future::FutureExt;
+use futures::SinkExt;
 use std::convert::{TryFrom, TryInto};
+use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::net::TcpStream;
-use tokio_util::compat::Compat;
-use tokio_util::compat::Tokio02AsyncReadCompatExt;
 use uuid::Uuid;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Clone)]
@@ -91,14 +88,12 @@ pub fn sockets_compatible(one: SocketType, another: SocketType) -> bool {
     COMPATIBILITY_MATRIX[row_index * 11 + col_index] != 0
 }
 
-pub(crate) async fn greet_exchange(
-    socket: &mut Framed<Compat<TcpStream>, ZmqCodec>,
-) -> ZmqResult<()> {
-    socket
+pub(crate) async fn greet_exchange(raw_socket: &mut FramedIo) -> ZmqResult<()> {
+    raw_socket
         .send(Message::Greeting(ZmqGreeting::default()))
         .await?;
 
-    let greeting: Option<CodecResult<Message>> = socket.next().await;
+    let greeting: Option<CodecResult<Message>> = raw_socket.next().await;
 
     match greeting {
         Some(Ok(Message::Greeting(greet))) => match greet.version {
@@ -110,13 +105,13 @@ pub(crate) async fn greet_exchange(
 }
 
 pub(crate) async fn ready_exchange(
-    socket: &mut Framed<Compat<TcpStream>, ZmqCodec>,
+    raw_socket: &mut FramedIo,
     socket_type: SocketType,
 ) -> ZmqResult<PeerIdentity> {
     let ready = ZmqCommand::ready(socket_type);
-    socket.send(Message::Command(ready)).await?;
+    raw_socket.send(Message::Command(ready)).await?;
 
-    let ready_repl: Option<CodecResult<Message>> = socket.next().await;
+    let ready_repl: Option<CodecResult<Message>> = raw_socket.next().await;
     match ready_repl {
         Some(Ok(Message::Command(command))) => match command.name {
             ZmqCommandName::READY => {
@@ -148,9 +143,11 @@ pub(crate) async fn ready_exchange(
     }
 }
 
-pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<dyn MultiPeer>) {
-    let mut raw_socket = Framed::new(socket.compat(), ZmqCodec::new());
-
+pub(crate) async fn peer_connected(
+    accept_result: ZmqResult<(FramedIo, SocketAddr)>,
+    backend: Arc<dyn MultiPeer>,
+) {
+    let (mut raw_socket, _remote_addr) = accept_result.expect("Failed to accept");
     greet_exchange(&mut raw_socket)
         .await
         .expect("Failed to exchange greetings");
@@ -197,48 +194,6 @@ pub(crate) async fn peer_connected(socket: tokio::net::TcpStream, backend: Arc<d
             }
         }
     });
-}
-
-/// Opens port described by endpoint and starts a coroutine to accept new
-/// connections on it.
-///
-/// Returns stop_handle channel that can be used to stop accepting new
-/// connections. Also mutates `endpoint` to reflect the resolved endpoint
-/// address.
-pub(crate) async fn start_accepting_connections(
-    endpoint: Endpoint,
-    backend: Arc<dyn MultiPeer>,
-) -> ZmqResult<(Endpoint, futures::channel::oneshot::Sender<bool>)> {
-    let Endpoint::Tcp(mut host, port) = endpoint;
-
-    let mut listener = tokio::net::TcpListener::bind((host.to_string().as_str(), port)).await?;
-    let resolved_addr = listener.local_addr()?;
-    let (stop_handle, stop_callback) = futures::channel::oneshot::channel::<bool>();
-    tokio::spawn(async move {
-        let mut stop_callback = stop_callback.fuse();
-        loop {
-            select! {
-                incoming = listener.accept().fuse() => {
-                    let (socket, _) = incoming.expect("Failed to accept connection");
-                    tokio::spawn(peer_connected(socket, backend.clone()));
-                },
-                _ = stop_callback => {
-                    break
-                }
-            }
-        }
-    });
-    debug_assert_ne!(resolved_addr.port(), 0);
-    let port = resolved_addr.port();
-    let resolved_host: Host = resolved_addr.ip().into();
-    if let Host::Ipv4(ip) = host {
-        debug_assert_eq!(ip, resolved_addr.ip());
-        host = resolved_host;
-    } else if let Host::Ipv6(ip) = host {
-        debug_assert_eq!(ip, resolved_addr.ip());
-        host = resolved_host;
-    }
-    Ok((Endpoint::Tcp(host, port), stop_handle))
 }
 
 pub(crate) struct FairQueueProcessor {

@@ -1,14 +1,4 @@
 #![recursion_limit = "1024"]
-#[macro_use]
-extern crate enum_primitive_derive;
-use num_traits::ToPrimitive;
-
-use async_trait::async_trait;
-use futures::channel::{mpsc, oneshot};
-use std::convert::TryFrom;
-use std::fmt::{Debug, Display};
-
-use futures_codec::Framed;
 
 mod codec;
 mod dealer_router;
@@ -20,21 +10,30 @@ mod r#pub;
 mod rep;
 mod req;
 mod sub;
+mod transport;
 pub mod util;
 
-use crate::codec::*;
 pub use crate::dealer_router::*;
 pub use crate::endpoint::{Endpoint, Host, Transport, TryIntoEndpoint};
-pub use crate::error::ZmqError;
+pub use crate::error::{ZmqError, ZmqResult};
 pub use crate::r#pub::*;
 pub use crate::rep::*;
 pub use crate::req::*;
 pub use crate::sub::*;
-use crate::util::*;
 pub use message::*;
-use std::collections::HashMap;
 
-pub type ZmqResult<T> = Result<T, ZmqError>;
+use crate::codec::*;
+use crate::util::*;
+
+#[macro_use]
+extern crate enum_primitive_derive;
+
+use async_trait::async_trait;
+use futures::channel::{mpsc, oneshot};
+use num_traits::ToPrimitive;
+use std::collections::HashMap;
+use std::convert::TryFrom;
+use std::fmt::{Debug, Display};
 
 #[derive(Clone, Copy, Debug, PartialEq, Primitive)]
 pub enum SocketType {
