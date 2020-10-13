@@ -147,6 +147,15 @@ mod tests {
 
     lazy_static! {
         static ref PAIRS: Vec<(Endpoint, &'static str)> = vec![
+            (Endpoint::Ipc(PathBuf::from("/tmp/asdf")), "ipc:///tmp/asdf"),
+            (
+                Endpoint::Ipc(PathBuf::from("my/dir_1/dir-2")),
+                "ipc://my/dir_1/dir-2"
+            ),
+            (
+                Endpoint::Ipc(PathBuf::from("@abstract/namespace")),
+                "ipc://@abstract/namespace"
+            ),
             (
                 Endpoint::Tcp(Host::Domain("www.example.com".to_string()), 1234),
                 "tcp://www.example.com:1234",
