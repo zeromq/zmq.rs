@@ -22,7 +22,7 @@ async fn test_pub_sub_sockets() {
             let bound_to = pub_socket
                 .bind(bind_addr)
                 .await
-                .unwrap_or_else(|_| panic!("Failed to bind to {}", bind_addr));
+                .unwrap_or_else(|e| panic!("Failed to bind to {}: {}", bind_addr, e));
             has_bound_sender
                 .send(bound_to)
                 .expect("channel was dropped");
@@ -42,11 +42,9 @@ async fn test_pub_sub_sockets() {
         // TODO: ZMQ sockets should not care about this sort of ordering.
         // See https://github.com/zeromq/zmq.rs/issues/73
         let bound_addr = has_bound.await.expect("channel was cancelled");
-        assert!(if let Endpoint::Tcp(_host, port) = bound_addr.clone() {
-            port != 0
-        } else {
-            unreachable!()
-        });
+        if let Endpoint::Tcp(_host, port) = bound_addr.clone() {
+            assert_ne!(port, 0);
+        }
 
         let (sub_results_sender, sub_results) = mpsc::channel(100);
         for _ in 0..10 {
@@ -94,6 +92,7 @@ async fn test_pub_sub_sockets() {
         "tcp://localhost:0",
         "tcp://127.0.0.1:0",
         "tcp://[::1]:0",
+        "ipc://asdf.sock",
     ];
     futures::future::join_all(addrs.into_iter().map(helper)).await;
 }

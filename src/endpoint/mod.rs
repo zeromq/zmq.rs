@@ -32,7 +32,7 @@ pub type Port = u16;
 pub enum Endpoint {
     // TODO: Add endpoints for the other transport variants
     Tcp(Host, Port),
-    Ipc(PathBuf),
+    Ipc(Option<PathBuf>),
 }
 
 impl Endpoint {
@@ -44,8 +44,12 @@ impl Endpoint {
     }
 
     /// Creates an `Endpoint::Tcp` from a [`SocketAddr`]
-    pub fn from_tcp_sock_addr(addr: SocketAddr) -> Self {
+    pub fn from_tcp_addr(addr: SocketAddr) -> Self {
         Endpoint::Tcp(addr.ip().into(), addr.port())
+    }
+
+    pub fn from_tcp_domain(addr: String, port: u16) -> Self {
+        Endpoint::Tcp(Host::Domain(addr), port)
     }
 }
 
@@ -86,7 +90,7 @@ impl FromStr for Endpoint {
             }
             Transport::Ipc => {
                 let path: PathBuf = address.to_string().into();
-                Endpoint::Ipc(path)
+                Endpoint::Ipc(Some(path))
             }
         };
 
@@ -104,7 +108,8 @@ impl fmt::Display for Endpoint {
                     write!(f, "tcp://{}:{}", host, port)
                 }
             }
-            Endpoint::Ipc(path) => write!(f, "ipc://{}", path.display()),
+            Endpoint::Ipc(Some(path)) => write!(f, "ipc://{}", path.display()),
+            Endpoint::Ipc(None) => write!(f, "ipc://????"),
         }
     }
 }
@@ -147,13 +152,16 @@ mod tests {
 
     lazy_static! {
         static ref PAIRS: Vec<(Endpoint, &'static str)> = vec![
-            (Endpoint::Ipc(PathBuf::from("/tmp/asdf")), "ipc:///tmp/asdf"),
             (
-                Endpoint::Ipc(PathBuf::from("my/dir_1/dir-2")),
+                Endpoint::Ipc(Some(PathBuf::from("/tmp/asdf"))),
+                "ipc:///tmp/asdf"
+            ),
+            (
+                Endpoint::Ipc(Some(PathBuf::from("my/dir_1/dir-2"))),
                 "ipc://my/dir_1/dir-2"
             ),
             (
-                Endpoint::Ipc(PathBuf::from("@abstract/namespace")),
+                Endpoint::Ipc(Some(PathBuf::from("@abstract/namespace"))),
                 "ipc://@abstract/namespace"
             ),
             (
@@ -196,6 +204,7 @@ mod tests {
         for (e, s) in PAIRS.iter() {
             assert_eq!(&format!("{}", e), s);
         }
+        assert_eq!(&format!("{}", Endpoint::Ipc(None)), "ipc://????");
     }
 
     #[test]

@@ -10,11 +10,11 @@ use tokio_util::compat::Tokio02AsyncReadCompatExt;
 
 pub(crate) async fn connect(host: Host, port: Port) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = tokio::net::TcpStream::connect((host.to_string().as_str(), port)).await?;
-    let remote_addr = raw_socket.peer_addr()?;
+    let peer_addr = raw_socket.peer_addr()?;
     let boxed_sock = Box::new(raw_socket.compat());
     Ok((
         FramedIo::new(boxed_sock),
-        Endpoint::from_tcp_sock_addr(remote_addr),
+        Endpoint::from_tcp_addr(peer_addr),
     ))
 }
 
@@ -36,7 +36,7 @@ where
                 incoming = listener.accept().fuse() => {
                     let maybe_accepted: Result<_, _> = incoming.map(|(raw_sock, remote_addr)| {
                         let raw_sock = FramedIo::new(Box::new(raw_sock.compat()));
-                        (raw_sock, Endpoint::from_tcp_sock_addr(remote_addr))
+                        (raw_sock, Endpoint::from_tcp_addr(remote_addr))
                     }).map_err(|err| err.into());
                     tokio::spawn(cback(maybe_accepted.into()));
                 },

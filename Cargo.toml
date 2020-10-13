@@ -35,7 +35,7 @@ bench = false
 [[bench]]
 name = "pub_sub"
 harness = false
-bench = false # Don't actually benchmark this, until we fix it
+bench = false
 
 [[bench]]
 name = "req_rep"
