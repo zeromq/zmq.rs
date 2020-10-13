@@ -1,3 +1,4 @@
+mod ipc;
 mod tcp;
 
 use crate::codec::FramedIo;
@@ -7,6 +8,7 @@ use crate::ZmqResult;
 pub(crate) async fn connect(endpoint: Endpoint) -> ZmqResult<(FramedIo, Endpoint)> {
     match endpoint {
         Endpoint::Tcp(host, port) => tcp::connect(host, port).await,
+        Endpoint::Ipc(path) => ipc::connect(path).await,
     }
 }
 
@@ -29,5 +31,6 @@ where
 {
     match endpoint {
         Endpoint::Tcp(host, port) => tcp::begin_accept(host, port, cback).await,
+        Endpoint::Ipc(path) => ipc::begin_accept(path, cback).await,
     }
 }

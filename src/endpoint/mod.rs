@@ -8,6 +8,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use std::fmt;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::error::EndpointError;
@@ -31,12 +32,14 @@ pub type Port = u16;
 pub enum Endpoint {
     // TODO: Add endpoints for the other transport variants
     Tcp(Host, Port),
+    Ipc(PathBuf),
 }
 
 impl Endpoint {
     pub fn transport(&self) -> Transport {
         match self {
             Self::Tcp(_, _) => Transport::Tcp,
+            Self::Ipc(_) => Transport::Ipc,
         }
     }
 
@@ -81,6 +84,10 @@ impl FromStr for Endpoint {
                 let (host, port) = extract_host_port(address)?;
                 Endpoint::Tcp(host, port)
             }
+            Transport::Ipc => {
+                let path: PathBuf = address.to_string().into();
+                Endpoint::Ipc(path)
+            }
         };
 
         Ok(endpoint)
@@ -97,6 +104,7 @@ impl fmt::Display for Endpoint {
                     write!(f, "tcp://{}:{}", host, port)
                 }
             }
+            Endpoint::Ipc(path) => write!(f, "ipc://{}", path.display()),
         }
     }
 }
