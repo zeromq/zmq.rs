@@ -25,7 +25,7 @@ pub use message::*;
 
 use crate::codec::*;
 use crate::transport::AcceptStopHandle;
-use crate::util::*;
+use util::PeerIdentity;
 
 #[macro_use]
 extern crate enum_primitive_derive;
@@ -130,20 +130,69 @@ pub trait NonBlockingRecv {
 }
 
 #[async_trait]
-pub trait Socket {
+pub trait Socket: Sized + Send {
     fn new() -> Self;
 
-    /// Opens port described by endpoint and starts a coroutine to accept new
-    /// connections on it.
+    /// Binds to the endpoint and starts a coroutine to accept new connections
+    /// on it.
     ///
-    /// Returns the bound-to endpoint, with the port resolved (if applicable).
+    /// Returns the endpoint resolved to the exact bound location if applicable
+    /// (port # resolved, for example).
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint>;
 
-    // TODO: Although it would reduce how convenient the function is, taking an
-    // `&Endpoint` would be better for performance here
+    fn binds(&self) -> &HashMap<Endpoint, AcceptStopHandle>;
+
+    /// Unbinds the endpoint, blocking until the associated endpoint is no
+    /// longer in use
+    ///
+    /// # Errors
+    /// May give a `ZmqError::NoSuchBind` if `endpoint` isn't bound. May also
+    /// give any other zmq errors encountered when attempting to disconnect
+    async fn unbind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
+
+    /// Unbinds all bound endpoints, blocking until finished.
+    async fn unbind_all(&mut self) -> Vec<ZmqError> {
+        let mut errs = Vec::new();
+        let endpoints: Vec<_> = self
+            .binds()
+            .iter()
+            .map(|(endpoint, _)| endpoint.clone())
+            .collect();
+        for endpoint in endpoints {
+            if let Err(err) = self.unbind(endpoint).await {
+                errs.push(err);
+            }
+        }
+        errs
+    }
+
+    /// Connects to the given endpoint.
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
 
-    fn binds(&self) -> &HashMap<Endpoint, AcceptStopHandle>;
+    // TODO: async fn connections(&self) -> ?
+
+    /// Disconnects from the given endpoint, blocking until finished.
+    ///
+    /// # Errors
+    /// May give a `ZmqError::NoSuchConnection` if `endpoint` isn't connected.
+    /// May also give any other zmq errors encountered when attempting to
+    /// disconnect.
+    // TODO: async fn disconnect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) ->
+    // ZmqResult<()>;
+
+    /// Disconnects all connecttions, blocking until finished.
+    // TODO: async fn disconnect_all(&mut self) -> ZmqResult<()>;
+
+    /// Closes the socket, blocking until all associated binds are closed.
+    /// This is equivalent to `drop()`, but with the benefit of blocking until
+    /// resources are released, and getting any underlying errors.
+    ///
+    /// Returns any encountered errors.
+    // TODO: Call disconnect_all() when added
+    async fn close(mut self) -> Vec<ZmqError> {
+        // self.disconnect_all().await?;
+        self.unbind_all().await
+    }
 }
 
 pub mod prelude {

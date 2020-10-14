@@ -39,6 +39,11 @@ async fn test_pub_sub_sockets() {
                     .expect("Failed to send");
                 tokio::time::delay_for(Duration::from_millis(1)).await;
             }
+
+            let errs = pub_socket.close().await;
+            if !errs.is_empty() {
+                panic!("Could not unbind socket: {:?}", errs);
+            }
         }));
         // Block until the pub has finished binding
         // TODO: ZMQ sockets should not care about this sort of ordering.
@@ -95,6 +100,7 @@ async fn test_pub_sub_sockets() {
         "tcp://127.0.0.1:0",
         "tcp://[::1]:0",
         "ipc://asdf.sock",
+        "ipc://anothersocket-asdf",
     ];
     futures::future::join_all(addrs.into_iter().map(helper)).await;
 }

@@ -11,12 +11,12 @@ use std::sync::Arc;
 use crate::codec::FramedIo;
 use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
-use crate::error::*;
+use crate::error::{ZmqError, ZmqResult};
 use crate::message::*;
 use crate::transport::{self, AcceptStopHandle};
 use crate::util::{self, Peer, PeerIdentity};
+use crate::SocketType;
 use crate::{MultiPeer, Socket, SocketBackend};
-use crate::{SocketType, ZmqResult};
 
 struct RouterSocketBackend {
     pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
@@ -104,6 +104,14 @@ impl Socket for RouterSocket {
 
         self.binds.insert(endpoint.clone(), stop_handle);
         Ok(endpoint)
+    }
+
+    async fn unbind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
+        let endpoint = endpoint.try_into()?;
+
+        let stop_handle = self.binds.remove(&endpoint);
+        let stop_handle = stop_handle.ok_or(ZmqError::NoSuchBind(endpoint))?;
+        stop_handle.0.shutdown().await
     }
 
     async fn connect(&mut self, _endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
