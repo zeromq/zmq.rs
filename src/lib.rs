@@ -10,6 +10,7 @@ mod r#pub;
 mod rep;
 mod req;
 mod sub;
+mod task_handle;
 mod transport;
 pub mod util;
 
@@ -23,7 +24,7 @@ pub use crate::sub::*;
 pub use message::*;
 
 use crate::codec::*;
-use crate::transport::AcceptStopChannel;
+use crate::transport::AcceptStopHandle;
 use crate::util::*;
 
 #[macro_use]
@@ -142,7 +143,7 @@ pub trait Socket {
     // `&Endpoint` would be better for performance here
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
 
-    fn binds(&self) -> &HashMap<Endpoint, AcceptStopChannel>;
+    fn binds(&self) -> &HashMap<Endpoint, AcceptStopHandle>;
 }
 
 pub mod prelude {

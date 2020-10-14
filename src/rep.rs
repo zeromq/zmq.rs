@@ -2,7 +2,7 @@ use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::error::*;
 use crate::fair_queue::FairQueue;
-use crate::transport::{self, AcceptStopChannel};
+use crate::transport::{self, AcceptStopHandle};
 use crate::util::FairQueueProcessor;
 use crate::*;
 use crate::{util, SocketType, ZmqResult};
@@ -31,7 +31,7 @@ pub struct RepSocket {
     _fair_queue_close_handle: oneshot::Sender<bool>,
     current_request: Option<PeerIdentity>,
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
-    binds: HashMap<Endpoint, AcceptStopChannel>,
+    binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
 impl Drop for RepSocket {
@@ -85,7 +85,7 @@ impl Socket for RepSocket {
         Ok(())
     }
 
-    fn binds(&self) -> &HashMap<Endpoint, AcceptStopChannel> {
+    fn binds(&self) -> &HashMap<Endpoint, AcceptStopHandle> {
         &self.binds
     }
 }

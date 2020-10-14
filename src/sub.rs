@@ -2,7 +2,7 @@ use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::fair_queue::FairQueue;
 use crate::message::*;
-use crate::transport::{self, AcceptStopChannel};
+use crate::transport::{self, AcceptStopHandle};
 use crate::util::*;
 use crate::{util, BlockingRecv, MultiPeer, Socket, SocketBackend, SocketType, ZmqResult};
 
@@ -30,7 +30,7 @@ pub struct SubSocket {
     backend: Arc<SubSocketBackend>,
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
     _fair_queue_close_handle: oneshot::Sender<bool>,
-    binds: HashMap<Endpoint, AcceptStopChannel>,
+    binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
 impl Drop for SubSocket {
@@ -164,7 +164,7 @@ impl Socket for SubSocket {
         Ok(())
     }
 
-    fn binds(&self) -> &HashMap<Endpoint, AcceptStopChannel> {
+    fn binds(&self) -> &HashMap<Endpoint, AcceptStopHandle> {
         &self.binds
     }
 }

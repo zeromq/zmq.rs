@@ -1,3 +1,4 @@
+mod error;
 mod host;
 mod transport;
 
@@ -11,7 +12,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use crate::error::EndpointError;
+pub use error::EndpointError;
 
 pub type Port = u16;
 

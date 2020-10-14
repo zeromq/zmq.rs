@@ -1,7 +1,7 @@
 use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::error::*;
-use crate::transport;
+use crate::transport::{self, AcceptStopHandle};
 use crate::util::{self, Peer, PeerIdentity};
 use crate::*;
 use crate::{SocketType, ZmqResult};
@@ -24,7 +24,7 @@ struct ReqSocketBackend {
 pub struct ReqSocket {
     backend: Arc<ReqSocketBackend>,
     current_request: Option<PeerIdentity>,
-    binds: HashMap<Endpoint, AcceptStopChannel>,
+    binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
 impl Drop for ReqSocket {
@@ -142,7 +142,7 @@ impl Socket for ReqSocket {
         Ok(())
     }
 
-    fn binds(&self) -> &HashMap<Endpoint, AcceptStopChannel> {
+    fn binds(&self) -> &HashMap<Endpoint, AcceptStopHandle> {
         &self.binds
     }
 }

@@ -13,7 +13,7 @@ use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::error::*;
 use crate::message::*;
-use crate::transport::{self, AcceptStopChannel};
+use crate::transport::{self, AcceptStopHandle};
 use crate::util::{self, Peer, PeerIdentity};
 use crate::{MultiPeer, Socket, SocketBackend};
 use crate::{SocketType, ZmqResult};
@@ -75,7 +75,7 @@ impl SocketBackend for RouterSocketBackend {
 
 pub struct RouterSocket {
     backend: Arc<RouterSocketBackend>,
-    binds: HashMap<Endpoint, AcceptStopChannel>,
+    binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
 impl Drop for RouterSocket {
@@ -110,7 +110,7 @@ impl Socket for RouterSocket {
         unimplemented!()
     }
 
-    fn binds(&self) -> &HashMap<Endpoint, AcceptStopChannel> {
+    fn binds(&self) -> &HashMap<Endpoint, AcceptStopHandle> {
         &self.binds
     }
 }

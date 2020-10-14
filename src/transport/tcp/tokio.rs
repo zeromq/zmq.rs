@@ -1,8 +1,9 @@
 //! Tokio-specific implementations
 
+use super::AcceptStopHandle;
 use crate::codec::FramedIo;
 use crate::endpoint::{Endpoint, Host, Port};
-use crate::transport::AcceptStopChannel;
+use crate::task_handle::TaskHandle;
 use crate::ZmqResult;
 
 use futures::{select, FutureExt};
@@ -22,14 +23,14 @@ pub(crate) async fn begin_accept<T>(
     mut host: Host,
     port: Port,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
-) -> ZmqResult<(Endpoint, AcceptStopChannel)>
+) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
     T: std::future::Future<Output = ()> + Send + 'static,
 {
     let mut listener = tokio::net::TcpListener::bind((host.to_string().as_str(), port)).await?;
     let resolved_addr = listener.local_addr()?;
-    let (stop_handle, stop_callback) = futures::channel::oneshot::channel::<()>();
-    tokio::spawn(async move {
+    let (stop_channel, stop_callback) = futures::channel::oneshot::channel::<()>();
+    let task_handle = tokio::spawn(async move {
         let mut stop_callback = stop_callback.fuse();
         loop {
             select! {
@@ -45,6 +46,7 @@ where
                 }
             }
         }
+        Ok(())
     });
     debug_assert_ne!(resolved_addr.port(), 0);
     let port = resolved_addr.port();
@@ -56,5 +58,8 @@ where
         debug_assert_eq!(ip, resolved_addr.ip());
         host = resolved_host;
     }
-    Ok((Endpoint::Tcp(host, port), AcceptStopChannel(stop_handle)))
+    Ok((
+        Endpoint::Tcp(host, port),
+        AcceptStopHandle(TaskHandle::new(stop_channel, task_handle)),
+    ))
 }
