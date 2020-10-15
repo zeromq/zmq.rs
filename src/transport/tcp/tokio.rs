@@ -1,4 +1,4 @@
-//! Tokio-specific utilities for the functionality in [`super::compat`]
+//! Tokio-specific implementations
 
 use crate::codec::FramedIo;
 use crate::endpoint::{Endpoint, Host, Port};
