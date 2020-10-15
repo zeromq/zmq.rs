@@ -3,14 +3,20 @@ use tokio::runtime::Runtime;
 
 use zeromq::{prelude::*, PubSocket, SubSocket};
 
+type BenchGroup<'a> = criterion::BenchmarkGroup<'a, criterion::measurement::WallTime>;
+
 /// Binds n pubs and connects n subs to them
-async fn setup(m_pubs: u8, n_subs: u8) -> (Vec<zeromq::PubSocket>, Vec<zeromq::SubSocket>) {
+async fn setup(
+    m_pubs: u8,
+    n_subs: u8,
+    endpoint: &str,
+) -> (Vec<zeromq::PubSocket>, Vec<zeromq::SubSocket>) {
     let mut pubs = Vec::new();
     let mut subs: Vec<_> = (0..n_subs).map(|_| SubSocket::new()).collect();
 
     for _ in 0..m_pubs {
         let mut p = PubSocket::new();
-        let bind_endpoint = p.bind("tcp://localhost:0").await.unwrap();
+        let bind_endpoint = p.bind(endpoint).await.unwrap();
         println!("Bind endpoint: {}", bind_endpoint);
         for s in subs.iter_mut() {
             s.connect(bind_endpoint.clone()).await.unwrap();
@@ -30,19 +36,27 @@ async fn setup(m_pubs: u8, n_subs: u8) -> (Vec<zeromq::PubSocket>, Vec<zeromq::S
 fn criterion_benchmark(c: &mut Criterion) {
     let mut rt = Runtime::new().unwrap();
 
-    const M_PUBS: u8 = 1;
+    const M_PUBS: u8 = 2;
     const N_SUBS: u8 = 16;
-    let (pubs, subs) = rt.block_on(setup(M_PUBS, N_SUBS));
-    assert_eq!(pubs.len(), usize::from(M_PUBS));
-    assert_eq!(subs.len(), usize::from(N_SUBS));
-    // Wrap in option to allow `f` to temporarily assume ownership
-    let (mut pubs, mut subs) = (Some(pubs), Some(subs));
 
-    c.bench_function("m pubs and n subs messaging", |b| {
-        b.iter(|| rt.block_on(f(&mut pubs, &mut subs)))
-    });
+    let mut group = c.benchmark_group(format!("{}-{} Pub Sub", M_PUBS, N_SUBS));
 
-    async fn f(pubs: &mut Option<Vec<PubSocket>>, subs: &mut Option<Vec<SubSocket>>) {
+    bench(&mut group, "TCP", "tcp://localhost:0", &mut rt);
+    bench(&mut group, "IPC", "ipc://asdf.sock", &mut rt);
+
+    fn bench<'a>(group: &mut BenchGroup<'a>, bench_name: &str, endpoint: &str, rt: &mut Runtime) {
+        let (pubs, subs) = rt.block_on(setup(M_PUBS, N_SUBS, endpoint));
+        assert_eq!(pubs.len(), usize::from(M_PUBS));
+        assert_eq!(subs.len(), usize::from(N_SUBS));
+        // Wrap in option to allow `f` to temporarily assume ownership
+        let (mut pubs, mut subs) = (Some(pubs), Some(subs));
+
+        group.bench_function(bench_name, |b| {
+            b.iter(|| rt.block_on(iter_fn(&mut pubs, &mut subs)))
+        });
+    }
+
+    async fn iter_fn(pubs: &mut Option<Vec<PubSocket>>, subs: &mut Option<Vec<SubSocket>>) {
         let owned_pubs = pubs.take().unwrap();
         let owned_subs = subs.take().unwrap();
         const MSGS_PER_PUB: u16 = 100;
