@@ -1,3 +1,5 @@
+//! Tokio-specific implementations
+
 use crate::codec::FramedIo;
 use crate::endpoint::Endpoint;
 use crate::transport::AcceptStopChannel;

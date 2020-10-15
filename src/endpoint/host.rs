@@ -81,7 +81,7 @@ impl TryFrom<String> for Host {
 impl FromStr for Host {
     type Err = EndpointError;
 
-    /// Equivalent to [`Self::try_from()`]
+    /// Equivalent to [`TryFrom<String>`]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.to_string();
         Self::try_from(s)
