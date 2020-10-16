@@ -156,7 +156,9 @@ pub(crate) async fn peer_connected(
 
     let (outgoing_queue, stop_callback) = backend.peer_connected(&peer_id).await;
 
-    tokio::spawn(async move {
+    // TODO: can we hold this handle somewhere to detect failure and clean up
+    // properly?
+    let _io_task_handle = tokio::spawn(async move {
         let mut stop_callback = stop_callback;
         let mut outgoing_queue = outgoing_queue;
         loop {
@@ -167,11 +169,7 @@ pub(crate) async fn peer_connected(
                 outgoing = outgoing_queue.next() => {
                     match outgoing {
                         Some(message) => {
-                            let result = raw_socket.send(message).await;
-                            if let Err(e) = result {
-                                println!("{}", e);
-                                break;
-                            }
+                            raw_socket.send(message).await.expect("Codec Error in send task");
                         },
                         None => {
                             break;
