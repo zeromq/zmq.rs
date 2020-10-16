@@ -2,16 +2,19 @@ name: Main CI
 on: [push, pull_request]
 
 jobs:
-  check:
-    name: Check
+  lint:
+    name: Check and Lint
     runs-on: ubuntu-latest
     steps:
+      - name: Install libzmq
+        run: sudo apt-get install libzmq3-dev
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
+          components: clippy
       - name: Cache cargo dependencies
         uses: actions/cache@v2
         with:
@@ -19,13 +22,16 @@ jobs:
           key: cache-cargo-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
       - uses: actions-rs/cargo@v1
         with:
-          command: check
-          args: --all --tests --benches
+          command: clippy
+          args: --all --tests --benches --all-features -- --deny warnings
 
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
+      - name: Install libzmq
+        run: sudo apt-get install libzmq3-dev
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -57,25 +63,3 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
-
-  lint:
-    name: Linting
-    continue-on-error: false
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-          components: clippy
-      - name: Cache cargo dependencies
-        uses: actions/cache@v2
-        with:
-          path: ~/.cargo/
-          key: cache-cargo-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all --tests --benches --all-features -- --deny warnings
