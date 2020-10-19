@@ -4,6 +4,7 @@ mod tcp;
 use crate::codec::FramedIo;
 use crate::endpoint::Endpoint;
 use crate::error::ZmqError;
+use crate::task_handle::TaskHandle;
 use crate::ZmqResult;
 
 pub(crate) async fn connect(endpoint: Endpoint) -> ZmqResult<(FramedIo, Endpoint)> {
@@ -14,7 +15,7 @@ pub(crate) async fn connect(endpoint: Endpoint) -> ZmqResult<(FramedIo, Endpoint
     }
 }
 
-pub struct AcceptStopChannel(pub(crate) futures::channel::oneshot::Sender<()>);
+pub struct AcceptStopHandle(pub(crate) TaskHandle<()>);
 
 /// Spawns an async task that listens for connections at the provided endpoint.
 ///
@@ -27,7 +28,7 @@ pub struct AcceptStopChannel(pub(crate) futures::channel::oneshot::Sender<()>);
 pub(crate) async fn begin_accept<T>(
     endpoint: Endpoint,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
-) -> ZmqResult<(Endpoint, AcceptStopChannel)>
+) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
     T: std::future::Future<Output = ()> + Send + 'static,
 {

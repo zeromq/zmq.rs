@@ -2,9 +2,9 @@
 mod tokio;
 
 use self::tokio as tk;
+use super::AcceptStopHandle;
 use crate::codec::FramedIo;
 use crate::endpoint::{Endpoint, Host, Port};
-use crate::transport::AcceptStopChannel;
 use crate::ZmqResult;
 
 pub(crate) async fn connect(host: Host, port: Port) -> ZmqResult<(FramedIo, Endpoint)> {
@@ -15,7 +15,7 @@ pub(crate) async fn begin_accept<T>(
     host: Host,
     port: Port,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
-) -> ZmqResult<(Endpoint, AcceptStopChannel)>
+) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
     T: std::future::Future<Output = ()> + Send + 'static,
 {

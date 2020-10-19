@@ -1,7 +1,7 @@
 use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::message::*;
-use crate::transport::{self, AcceptStopChannel};
+use crate::transport::{self, AcceptStopHandle};
 use crate::util::*;
 use crate::{util, MultiPeer, NonBlockingSend, Socket, SocketBackend, SocketType, ZmqResult};
 
@@ -108,7 +108,7 @@ impl MultiPeer for PubSocketBackend {
 
 pub struct PubSocket {
     pub(crate) backend: Arc<PubSocketBackend>,
-    binds: HashMap<Endpoint, AcceptStopChannel>,
+    binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
 impl Drop for PubSocket {
@@ -164,7 +164,7 @@ impl Socket for PubSocket {
         Ok(())
     }
 
-    fn binds(&self) -> &HashMap<Endpoint, AcceptStopChannel> {
+    fn binds(&self) -> &HashMap<Endpoint, AcceptStopHandle> {
         &self.binds
     }
 }
