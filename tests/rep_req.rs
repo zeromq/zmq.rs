@@ -13,7 +13,10 @@ async fn run_rep_server(mut rep_socket: RepSocket) -> Result<(), Box<dyn Error>>
         rep_socket.send(format!("{} Rep - {}", mess, i).into())?;
     }
     // yield for a moment to ensure that server has some time to flush socket
-    tokio::time::delay_for(Duration::from_millis(100)).await;
+    let errs = rep_socket.close().await;
+    if !errs.is_empty() {
+        panic!("Could not unbind socket: {:?}", errs);
+    }
     Ok(())
 }
 

@@ -1,4 +1,5 @@
 use crate::codec::{CodecError, Message};
+use crate::endpoint::Endpoint;
 use crate::endpoint::EndpointError;
 use crate::task_handle::TaskError;
 use crate::ZmqMessage;
@@ -13,6 +14,8 @@ pub enum ZmqError {
     Endpoint(#[from] EndpointError),
     #[error("Network Error: {0}")]
     Network(#[from] std::io::Error),
+    #[error("Socket bind doesn't exist: {0}")]
+    NoSuchBind(Endpoint),
     #[error("Codec Error: {0}")]
     Codec(#[from] CodecError),
     #[error("Socket Error: {0}")]

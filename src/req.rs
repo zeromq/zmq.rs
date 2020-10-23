@@ -134,6 +134,14 @@ impl Socket for ReqSocket {
         Ok(endpoint)
     }
 
+    async fn unbind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
+        let endpoint = endpoint.try_into()?;
+
+        let stop_handle = self.binds.remove(&endpoint);
+        let stop_handle = stop_handle.ok_or(ZmqError::NoSuchBind(endpoint))?;
+        stop_handle.0.shutdown().await
+    }
+
     async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
         let endpoint = endpoint.try_into()?;
 
