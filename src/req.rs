@@ -216,6 +216,7 @@ impl SocketBackend for ReqSocketBackend {
     }
 
     fn shutdown(&self) {
+        println!("Shutting down req backend");
         self.peers.clear();
     }
 }
