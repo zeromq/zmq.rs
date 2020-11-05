@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use crate::codec::FramedIo;
 use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::error::{ZmqError, ZmqResult};
@@ -166,15 +165,5 @@ impl RouterSocket {
             }
             None => Err(ZmqError::Other("Destination client not found by identity")),
         }
-    }
-}
-
-pub struct DealerSocket {
-    pub(crate) _inner: FramedIo,
-}
-
-impl DealerSocket {
-    pub async fn bind(_endpoint: &str) -> ZmqResult<Self> {
-        todo!()
     }
 }

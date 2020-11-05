@@ -1,7 +1,7 @@
 #![recursion_limit = "1024"]
 
 mod codec;
-mod dealer_router;
+mod dealer;
 mod endpoint;
 mod error;
 mod fair_queue;
@@ -9,17 +9,19 @@ mod message;
 mod r#pub;
 mod rep;
 mod req;
+mod router;
 mod sub;
 mod task_handle;
 mod transport;
 pub mod util;
 
-pub use crate::dealer_router::*;
+pub use crate::dealer::*;
 pub use crate::endpoint::{Endpoint, Host, Transport, TryIntoEndpoint};
 pub use crate::error::{ZmqError, ZmqResult};
 pub use crate::r#pub::*;
 pub use crate::rep::*;
 pub use crate::req::*;
+pub use crate::router::*;
 pub use crate::sub::*;
 pub use message::*;
 
