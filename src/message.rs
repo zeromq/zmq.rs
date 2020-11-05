@@ -1,3 +1,4 @@
+use crate::util::PeerIdentity;
 use bytes::{Bytes, BytesMut};
 use std::convert::TryFrom;
 use std::string::FromUtf8Error;
@@ -28,6 +29,12 @@ impl From<Vec<u8>> for ZmqMessage {
 impl From<String> for ZmqMessage {
     fn from(data: String) -> Self {
         data.into_bytes().into()
+    }
+}
+
+impl From<PeerIdentity> for ZmqMessage {
+    fn from(data: PeerIdentity) -> Self {
+        Bytes::from(data).into()
     }
 }
 

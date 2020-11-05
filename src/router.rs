@@ -1,8 +1,7 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 use futures::channel::{mpsc, oneshot};
-use futures::lock::Mutex;
-use futures::stream::{FuturesUnordered, StreamExt};
+use futures::stream::StreamExt;
 use futures::SinkExt;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -11,14 +10,22 @@ use std::sync::Arc;
 use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::error::{ZmqError, ZmqResult};
+use crate::fair_queue::FairQueue;
 use crate::message::*;
 use crate::transport::{self, AcceptStopHandle};
-use crate::util::{self, Peer, PeerIdentity};
+use crate::util::{self, FairQueueProcessor, PeerIdentity};
 use crate::SocketType;
 use crate::{MultiPeer, Socket, SocketBackend};
 
+struct Peer {
+    pub(crate) send_queue: mpsc::Sender<Message>,
+    pub(crate) recv_queue_in: mpsc::Sender<Message>,
+    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
+}
+
 struct RouterSocketBackend {
-    pub(crate) peers: Arc<DashMap<PeerIdentity, Peer>>,
+    pub(crate) peers: DashMap<PeerIdentity, Peer>,
+    pub(crate) peer_queue_in: mpsc::Sender<(PeerIdentity, mpsc::Receiver<Message>)>,
 }
 
 #[async_trait]
@@ -35,13 +42,15 @@ impl MultiPeer for RouterSocketBackend {
         self.peers.insert(
             peer_id.clone(),
             Peer {
-                identity: peer_id.clone(),
                 send_queue: out_queue,
-                recv_queue: Arc::new(Mutex::new(in_queue_receiver)),
                 recv_queue_in: in_queue,
                 _io_close_handle: stop_handle,
             },
         );
+        self.peer_queue_in
+            .clone()
+            .try_send((peer_id.clone(), in_queue_receiver))
+            .unwrap();
 
         (out_queue_receiver, stop_callback)
     }
@@ -75,6 +84,8 @@ impl SocketBackend for RouterSocketBackend {
 pub struct RouterSocket {
     backend: Arc<RouterSocketBackend>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
+    fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
+    _fair_queue_close_handle: oneshot::Sender<bool>,
 }
 
 impl Drop for RouterSocket {
@@ -86,11 +97,25 @@ impl Drop for RouterSocket {
 #[async_trait]
 impl Socket for RouterSocket {
     fn new() -> Self {
+        // TODO define buffer size
+        let default_queue_size = 100;
+        let (queue_sender, fair_queue) = mpsc::channel(default_queue_size);
+        let (peer_in, peer_out) = mpsc::channel(default_queue_size);
+        let (fair_queue_close_handle, fqueue_close_recevier) = oneshot::channel();
+        tokio::spawn(util::process_fair_queue_messages(FairQueueProcessor {
+            fair_queue_stream: FairQueue::new(),
+            socket_incoming_queue: queue_sender,
+            peer_queue_in: peer_out,
+            _io_close_handle: fqueue_close_recevier,
+        }));
         Self {
             backend: Arc::new(RouterSocketBackend {
-                peers: Arc::new(DashMap::new()),
+                peers: DashMap::new(),
+                peer_queue_in: peer_in,
             }),
             binds: HashMap::new(),
+            _fair_queue_close_handle: fair_queue_close_handle,
+            fair_queue,
         }
     }
 
@@ -113,8 +138,12 @@ impl Socket for RouterSocket {
         stop_handle.0.shutdown().await
     }
 
-    async fn connect(&mut self, _endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
-        unimplemented!()
+    async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
+        let endpoint = endpoint.try_into()?;
+
+        let connect_result = transport::connect(endpoint).await;
+        util::peer_connected(connect_result, self.backend.clone()).await;
+        Ok(())
     }
 
     fn binds(&self) -> &HashMap<Endpoint, AcceptStopHandle> {
@@ -124,38 +153,19 @@ impl Socket for RouterSocket {
 
 impl RouterSocket {
     pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
-        println!("Try recv multipart");
-        let mut messages = FuturesUnordered::new();
-        for peer in self.backend.peers.iter() {
-            let peer_id = peer.identity.clone();
-            let recv_queue = peer.recv_queue.clone();
-            messages.push(async move { (peer_id, recv_queue.lock().await.next().await) });
-        }
         loop {
-            if messages.is_empty() {
-                // TODO block to wait for connections
-                return Err(ZmqError::NoMessage);
-            }
-            match messages.next().await {
-                Some((peer_id, Some(Message::Multipart(messages)))) => {
-                    let mut envelope = vec![ZmqMessage {
-                        data: peer_id.into(),
-                    }];
-                    envelope.extend(messages);
-                    return Ok(envelope);
-                }
-                Some((peer_id, None)) => {
-                    log::info!("Peer disconnected {:?}", peer_id);
-                    self.backend.peers.remove(&peer_id);
+            match self.fair_queue.next().await {
+                Some((peer_id, Message::Multipart(mut messages))) => {
+                    messages.insert(0, peer_id.into());
+                    return Ok(messages);
                 }
                 Some((_peer_id, _)) => todo!(),
-                None => continue,
+                None => todo!(),
             };
         }
     }
 
     pub async fn send_multipart(&mut self, messages: Vec<ZmqMessage>) -> ZmqResult<()> {
-        assert!(messages.len() > 2);
         let peer_id: PeerIdentity = messages[0].data.to_vec().try_into()?;
         match self.backend.peers.get_mut(&peer_id) {
             Some(mut peer) => {
