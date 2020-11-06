@@ -1,91 +1,24 @@
 use async_trait::async_trait;
-use dashmap::DashMap;
-use futures::channel::{mpsc, oneshot};
+use futures::channel::mpsc;
 use futures::stream::StreamExt;
-use futures::SinkExt;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::Arc;
 
+use crate::backend::GenericSocketBackend;
 use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::error::{ZmqError, ZmqResult};
-use crate::fair_queue::FairQueue;
 use crate::message::*;
 use crate::transport::{self, AcceptStopHandle};
-use crate::util::{self, FairQueueProcessor, PeerIdentity};
+use crate::util::{self, PeerIdentity};
 use crate::SocketType;
-use crate::{MultiPeer, Socket, SocketBackend};
-
-struct Peer {
-    pub(crate) send_queue: mpsc::Sender<Message>,
-    pub(crate) recv_queue_in: mpsc::Sender<Message>,
-    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
-}
-
-struct RouterSocketBackend {
-    pub(crate) peers: DashMap<PeerIdentity, Peer>,
-    pub(crate) peer_queue_in: mpsc::Sender<(PeerIdentity, mpsc::Receiver<Message>)>,
-}
-
-#[async_trait]
-impl MultiPeer for RouterSocketBackend {
-    async fn peer_connected(
-        &self,
-        peer_id: &PeerIdentity,
-    ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
-        let default_queue_size = 100;
-        let (out_queue, out_queue_receiver) = mpsc::channel(default_queue_size);
-        let (in_queue, in_queue_receiver) = mpsc::channel(default_queue_size);
-        let (stop_handle, stop_callback) = oneshot::channel::<bool>();
-
-        self.peers.insert(
-            peer_id.clone(),
-            Peer {
-                send_queue: out_queue,
-                recv_queue_in: in_queue,
-                _io_close_handle: stop_handle,
-            },
-        );
-        self.peer_queue_in
-            .clone()
-            .try_send((peer_id.clone(), in_queue_receiver))
-            .unwrap();
-
-        (out_queue_receiver, stop_callback)
-    }
-
-    async fn peer_disconnected(&self, peer_id: &PeerIdentity) {
-        self.peers.remove(peer_id);
-    }
-}
-
-#[async_trait]
-impl SocketBackend for RouterSocketBackend {
-    async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
-        self.peers
-            .get_mut(peer_id)
-            .expect("Not found peer by id")
-            .recv_queue_in
-            .send(message)
-            .await
-            .expect("Failed to send");
-    }
-
-    fn socket_type(&self) -> SocketType {
-        SocketType::ROUTER
-    }
-
-    fn shutdown(&self) {
-        self.peers.clear();
-    }
-}
+use crate::{Socket, SocketBackend};
 
 pub struct RouterSocket {
-    backend: Arc<RouterSocketBackend>,
+    backend: Arc<GenericSocketBackend>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
-    _fair_queue_close_handle: oneshot::Sender<bool>,
 }
 
 impl Drop for RouterSocket {
@@ -100,21 +33,9 @@ impl Socket for RouterSocket {
         // TODO define buffer size
         let default_queue_size = 100;
         let (queue_sender, fair_queue) = mpsc::channel(default_queue_size);
-        let (peer_in, peer_out) = mpsc::channel(default_queue_size);
-        let (fair_queue_close_handle, fqueue_close_recevier) = oneshot::channel();
-        tokio::spawn(util::process_fair_queue_messages(FairQueueProcessor {
-            fair_queue_stream: FairQueue::new(),
-            socket_incoming_queue: queue_sender,
-            peer_queue_in: peer_out,
-            _io_close_handle: fqueue_close_recevier,
-        }));
         Self {
-            backend: Arc::new(RouterSocketBackend {
-                peers: DashMap::new(),
-                peer_queue_in: peer_in,
-            }),
+            backend: Arc::new(GenericSocketBackend::new(queue_sender, SocketType::ROUTER)),
             binds: HashMap::new(),
-            _fair_queue_close_handle: fair_queue_close_handle,
             fair_queue,
         }
     }
