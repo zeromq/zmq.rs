@@ -23,8 +23,30 @@ struct DealerPeer {
 
 struct DealerSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, DealerPeer>,
-    pub(crate) peer_queue_in: mpsc::Sender<(PeerIdentity, mpsc::Receiver<Message>)>,
+    peer_queue_in: mpsc::Sender<(PeerIdentity, mpsc::Receiver<Message>)>,
+    _fair_queue_close_handle: oneshot::Sender<bool>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
+}
+
+impl DealerSocketBackend {
+    fn new(queue_sender: mpsc::Sender<(PeerIdentity, Message)>) -> Self {
+        // TODO define buffer size
+        let default_queue_size = 100;
+        let (peer_in, peer_out) = mpsc::channel(default_queue_size);
+        let (fair_queue_close_handle, fqueue_close_recevier) = oneshot::channel();
+        tokio::spawn(util::process_fair_queue_messages(FairQueueProcessor {
+            fair_queue_stream: FairQueue::new(),
+            socket_incoming_queue: queue_sender,
+            peer_queue_in: peer_out,
+            _io_close_handle: fqueue_close_recevier,
+        }));
+        Self {
+            peers: DashMap::new(),
+            peer_queue_in: peer_in,
+            round_robin: SegQueue::new(),
+            _fair_queue_close_handle: fair_queue_close_handle,
+        }
+    }
 }
 
 #[async_trait]
@@ -84,7 +106,6 @@ impl MultiPeer for DealerSocketBackend {
 pub struct DealerSocket {
     backend: Arc<DealerSocketBackend>,
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
-    _fair_queue_close_handle: oneshot::Sender<bool>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
@@ -100,21 +121,8 @@ impl Socket for DealerSocket {
         // TODO define buffer size
         let default_queue_size = 100;
         let (queue_sender, fair_queue) = mpsc::channel(default_queue_size);
-        let (peer_in, peer_out) = mpsc::channel(default_queue_size);
-        let (fair_queue_close_handle, fqueue_close_recevier) = oneshot::channel();
-        tokio::spawn(util::process_fair_queue_messages(FairQueueProcessor {
-            fair_queue_stream: FairQueue::new(),
-            socket_incoming_queue: queue_sender,
-            peer_queue_in: peer_out,
-            _io_close_handle: fqueue_close_recevier,
-        }));
         Self {
-            backend: Arc::new(DealerSocketBackend {
-                peers: DashMap::new(),
-                peer_queue_in: peer_in,
-                round_robin: SegQueue::new(),
-            }),
-            _fair_queue_close_handle: fair_queue_close_handle,
+            backend: Arc::new(DealerSocketBackend::new(queue_sender)),
             fair_queue,
             binds: HashMap::new(),
         }
