@@ -50,7 +50,7 @@ impl From<PeerIdentity> for Bytes {
 }
 
 pub(crate) struct Peer {
-    pub(crate) identity: PeerIdentity,
+    pub(crate) _identity: PeerIdentity,
     pub(crate) send_queue: mpsc::Sender<Message>,
     pub(crate) recv_queue: Arc<Mutex<mpsc::Receiver<Message>>>,
     pub(crate) recv_queue_in: mpsc::Sender<Message>,

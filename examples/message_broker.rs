@@ -1,7 +1,5 @@
-use std::convert::TryInto;
 use std::error::Error;
-use std::time::Duration;
-use zeromq::{Socket, ZmqError};
+use zeromq::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -11,28 +9,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
         .expect("Failed to bind");
 
-    // let mut backend = zmq_rs::DealerSocket::bind("tcp://127.0.0.1:5560")
-    //     .await
-    //     .expect("Failed to bind");
-    //
-    // zmq_rs::proxy(Box::new(frontend), Box::new(backend)).await?;
+    let mut backend = zeromq::DealerSocket::new();
+    backend
+        .bind("tcp://127.0.0.1:5560")
+        .await
+        .expect("Failed to bind");
     loop {
-        let mess = frontend.recv_multipart().await;
-        match mess {
-            Ok(mut message) => {
-                dbg!(&message);
-                let request: String = message.remove(2).try_into()?;
-
-                message.push(format!("{} Reply", request).into());
-                frontend.send_multipart(message).await?;
+        tokio::select! {
+            router_mess = frontend.recv_multipart() => {
+                dbg!(&router_mess);
+                match router_mess {
+                    Ok(message) => {
+                        backend.send_multipart(message).await?;
+                    }
+                    Err(_) => {
+                        todo!()
+                    }
+                }
+            },
+            dealer_mess = backend.recv_multipart() => {
+                dbg!(&dealer_mess);
+                match dealer_mess {
+                    Ok(message) => {
+                        frontend.send_multipart(message).await?;
+                    }
+                    Err(_) => {
+                        todo!()
+                    }
+                }
             }
-            Err(ZmqError::NoMessage) => {
-                println!("No messages");
-            }
-            Err(e) => {
-                dbg!(e);
-            }
-        }
-        tokio::time::delay_for(Duration::from_millis(500)).await;
+        };
     }
 }

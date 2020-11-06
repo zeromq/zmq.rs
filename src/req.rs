@@ -169,7 +169,7 @@ impl MultiPeer for ReqSocketBackend {
         self.peers.insert(
             peer_id.clone(),
             Peer {
-                identity: peer_id.clone(),
+                _identity: peer_id.clone(),
                 send_queue: out_queue,
                 recv_queue: Arc::new(Mutex::new(in_queue_receiver)),
                 recv_queue_in: in_queue,
