@@ -1,96 +1,28 @@
 use crate::codec::*;
 use crate::endpoint::{Endpoint, TryIntoEndpoint};
 use crate::error::{ZmqError, ZmqResult};
-use crate::fair_queue::FairQueue;
 use crate::message::*;
 use crate::transport::{self, AcceptStopHandle};
-use crate::util::{self, FairQueueProcessor, PeerIdentity};
-use crate::{BlockingRecv, MultiPeer, Socket, SocketBackend, SocketType};
+use crate::util::{self, PeerIdentity};
+use crate::{BlockingRecv, Socket, SocketBackend, SocketType};
 
+use crate::backend::GenericSocketBackend;
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
-use dashmap::DashMap;
-use futures::channel::{mpsc, oneshot};
+use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub(crate) struct SubPeer {
-    pub(crate) _identity: PeerIdentity,
-    pub(crate) send_queue: mpsc::Sender<Message>,
-    pub(crate) recv_queue_in: mpsc::Sender<Message>,
-    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
-}
-
-pub(crate) struct SubSocketBackend {
-    pub(crate) peers: DashMap<PeerIdentity, SubPeer>,
-    pub(crate) peer_queue_in: mpsc::Sender<(PeerIdentity, mpsc::Receiver<Message>)>,
-}
-
 pub struct SubSocket {
-    backend: Arc<SubSocketBackend>,
+    backend: Arc<GenericSocketBackend>,
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
-    _fair_queue_close_handle: oneshot::Sender<bool>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
 impl Drop for SubSocket {
     fn drop(&mut self) {
         self.backend.shutdown()
-    }
-}
-
-#[async_trait]
-impl SocketBackend for SubSocketBackend {
-    async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
-        self.peers
-            .get_mut(peer_id)
-            .expect("Not found peer by id")
-            .recv_queue_in
-            .send(message)
-            .await
-            .expect("Failed to send");
-    }
-
-    fn socket_type(&self) -> SocketType {
-        SocketType::SUB
-    }
-
-    fn shutdown(&self) {
-        self.peers.clear();
-    }
-}
-
-#[async_trait]
-impl MultiPeer for SubSocketBackend {
-    async fn peer_connected(
-        &self,
-        peer_id: &PeerIdentity,
-    ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
-        let default_queue_size = 100;
-        let (out_queue, out_queue_receiver) = mpsc::channel(1);
-        let (in_queue, in_queue_receiver) = mpsc::channel::<Message>(default_queue_size);
-        let (stop_handle, stop_callback) = oneshot::channel::<bool>();
-
-        self.peers.insert(
-            peer_id.clone(),
-            SubPeer {
-                _identity: peer_id.clone(),
-                send_queue: out_queue,
-                recv_queue_in: in_queue,
-                _io_close_handle: stop_handle,
-            },
-        );
-        self.peer_queue_in
-            .clone()
-            .try_send((peer_id.clone(), in_queue_receiver))
-            .unwrap();
-
-        (out_queue_receiver, stop_callback)
-    }
-
-    async fn peer_disconnected(&self, peer_id: &PeerIdentity) {
-        self.peers.remove(peer_id);
     }
 }
 
@@ -127,21 +59,9 @@ impl Socket for SubSocket {
         // TODO define buffer size
         let default_queue_size = 100;
         let (queue_sender, fair_queue) = mpsc::channel(default_queue_size);
-        let (peer_in, peer_out) = mpsc::channel(default_queue_size);
-        let (fair_queue_close_handle, fqueue_close_recevier) = oneshot::channel();
-        tokio::spawn(util::process_fair_queue_messages(FairQueueProcessor {
-            fair_queue_stream: FairQueue::new(),
-            socket_incoming_queue: queue_sender,
-            peer_queue_in: peer_out,
-            _io_close_handle: fqueue_close_recevier,
-        }));
         Self {
-            backend: Arc::new(SubSocketBackend {
-                peers: Default::default(),
-                peer_queue_in: peer_in,
-            }),
+            backend: Arc::new(GenericSocketBackend::new(queue_sender, SocketType::SUB)),
             fair_queue,
-            _fair_queue_close_handle: fair_queue_close_handle,
             binds: HashMap::new(),
         }
     }

@@ -50,13 +50,12 @@ impl GenericSocketBackend {
 #[async_trait]
 impl SocketBackend for GenericSocketBackend {
     async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
-        self.peers
-            .get_mut(peer_id)
-            .expect("Not found peer by id")
-            .recv_queue_in
-            .send(message)
-            .await
-            .expect("Failed to send");
+        if let Some(mut peer) = self.peers.get_mut(peer_id) {
+            peer.recv_queue_in
+                .send(message)
+                .await
+                .expect("Failed to send");
+        }
     }
 
     fn socket_type(&self) -> SocketType {
