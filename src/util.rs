@@ -225,7 +225,15 @@ pub(crate) async fn process_fair_queue_messages(mut processor: FairQueueProcesso
             message = processor.fair_queue_stream.next(), if waiting_for_data => {
                 match message {
                     Some(m) => {
-                        processor.socket_incoming_queue.send(m).await.expect("Failed to deliver message");
+                        let result = processor.socket_incoming_queue.send(m).await;
+                        match result {
+                            Ok(()) => (),
+                            Err(e) => {
+                                if e.is_disconnected() {
+                                    break;
+                                }
+                            }
+                        }
                     },
                     None => {
                         // This is the case when there are no connected clients
