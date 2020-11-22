@@ -151,9 +151,18 @@ pub trait Socket: Sized + Send {
     ///
     /// Returns the endpoint resolved to the exact bound location if applicable
     /// (port # resolved, for example).
-    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint>;
+    async fn bind(&mut self, endpoint: &str) -> ZmqResult<Endpoint> {
+        let endpoint = endpoint.try_into()?;
 
-    fn binds(&self) -> &HashMap<Endpoint, AcceptStopHandle>;
+        let cloned_backend = self.backend();
+        let cback = move |result| util::peer_connected(result, cloned_backend.clone());
+        let (endpoint, stop_handle) = transport::begin_accept(endpoint, cback).await?;
+
+        self.binds().insert(endpoint.clone(), stop_handle);
+        Ok(endpoint)
+    }
+
+    fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle>;
 
     /// Unbinds the endpoint, blocking until the associated endpoint is no
     /// longer in use

@@ -3,8 +3,8 @@ use crate::codec::Message;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
-    transport, util, BlockingRecv, Endpoint, MultiPeerBackend, Socket, SocketType, TryIntoEndpoint,
-    ZmqError, ZmqMessage, ZmqResult,
+    BlockingRecv, Endpoint, MultiPeerBackend, Socket, SocketType, TryIntoEndpoint, ZmqError,
+    ZmqMessage, ZmqResult,
 };
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -36,19 +36,8 @@ impl Socket for PullSocket {
         self.backend.clone()
     }
 
-    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint> {
-        let endpoint = endpoint.try_into()?;
-
-        let cloned_backend = self.backend.clone();
-        let cback = move |result| util::peer_connected(result, cloned_backend.clone());
-        let (endpoint, stop_handle) = transport::begin_accept(endpoint, cback).await?;
-
-        self.binds.insert(endpoint.clone(), stop_handle);
-        Ok(endpoint)
-    }
-
-    fn binds(&self) -> &HashMap<Endpoint, AcceptStopHandle, RandomState> {
-        &self.binds
+    fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle, RandomState> {
+        &mut self.binds
     }
 
     async fn unbind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {

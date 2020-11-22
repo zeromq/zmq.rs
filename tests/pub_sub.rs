@@ -57,11 +57,11 @@ async fn test_pub_sub_sockets() {
         for _ in 0..10 {
             let mut cloned_sub_sender = sub_results_sender.clone();
             let cloned_payload = payload.clone();
-            let cloned_bound_addr = bound_addr.clone();
+            let cloned_bound_addr = bound_addr.to_string();
             task_handles.push(tokio::spawn(async move {
                 let mut sub_socket = zeromq::SubSocket::new();
                 sub_socket
-                    .connect(cloned_bound_addr)
+                    .connect(&cloned_bound_addr)
                     .await
                     .unwrap_or_else(|_| panic!("Failed to connect to {}", bind_addr));
 

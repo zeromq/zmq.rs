@@ -266,7 +266,12 @@ pub(crate) mod tests {
         assert!(any.is_unspecified());
 
         for i in 0..4 {
-            sock.bind(Endpoint::Tcp(any.into(), start_port + i)).await?;
+            sock.bind(
+                Endpoint::Tcp(any.into(), start_port + i)
+                    .to_string()
+                    .as_str(),
+            )
+            .await?;
         }
 
         let bound_to = sock.binds();
