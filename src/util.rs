@@ -21,6 +21,12 @@ impl PeerIdentity {
     }
 }
 
+impl Default for PeerIdentity {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TryFrom<Vec<u8>> for PeerIdentity {
     type Error = ZmqError;
 
