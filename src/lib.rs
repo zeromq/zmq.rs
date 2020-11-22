@@ -170,7 +170,11 @@ pub trait Socket: Sized + Send {
     /// # Errors
     /// May give a `ZmqError::NoSuchBind` if `endpoint` isn't bound. May also
     /// give any other zmq errors encountered when attempting to disconnect
-    async fn unbind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
+    async fn unbind(&mut self, endpoint: Endpoint) -> ZmqResult<()> {
+        let stop_handle = self.binds().remove(&endpoint);
+        let stop_handle = stop_handle.ok_or(ZmqError::NoSuchBind(endpoint))?;
+        stop_handle.0.shutdown().await
+    }
 
     /// Unbinds all bound endpoints, blocking until finished.
     async fn unbind_all(&mut self) -> Vec<ZmqError> {

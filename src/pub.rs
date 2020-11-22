@@ -1,6 +1,6 @@
 use crate::codec::*;
-use crate::endpoint::{Endpoint, TryIntoEndpoint};
-use crate::error::{ZmqError, ZmqResult};
+use crate::endpoint::Endpoint;
+use crate::error::ZmqResult;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
@@ -148,14 +148,6 @@ impl Socket for PubSocket {
 
     fn backend(&self) -> Arc<dyn MultiPeerBackend> {
         self.backend.clone()
-    }
-
-    async fn unbind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
-        let endpoint = endpoint.try_into()?;
-
-        let stop_handle = self.binds.remove(&endpoint);
-        let stop_handle = stop_handle.ok_or(ZmqError::NoSuchBind(endpoint))?;
-        stop_handle.0.shutdown().await
     }
 
     fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle> {

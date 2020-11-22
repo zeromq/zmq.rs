@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::backend::GenericSocketBackend;
 use crate::codec::*;
-use crate::endpoint::{Endpoint, TryIntoEndpoint};
+use crate::endpoint::Endpoint;
 use crate::error::{ZmqError, ZmqResult};
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
@@ -42,14 +42,6 @@ impl Socket for RouterSocket {
 
     fn backend(&self) -> Arc<dyn MultiPeerBackend> {
         self.backend.clone()
-    }
-
-    async fn unbind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
-        let endpoint = endpoint.try_into()?;
-
-        let stop_handle = self.binds.remove(&endpoint);
-        let stop_handle = stop_handle.ok_or(ZmqError::NoSuchBind(endpoint))?;
-        stop_handle.0.shutdown().await
     }
 
     fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle> {

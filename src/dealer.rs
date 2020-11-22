@@ -2,10 +2,7 @@ use crate::backend::GenericSocketBackend;
 use crate::codec::Message;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{
-    Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketType, TryIntoEndpoint, ZmqError,
-    ZmqMessage, ZmqResult,
-};
+use crate::{Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketType, ZmqMessage, ZmqResult};
 use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::StreamExt;
@@ -43,14 +40,6 @@ impl Socket for DealerSocket {
 
     fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle, RandomState> {
         &mut self.binds
-    }
-
-    async fn unbind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
-        let endpoint = endpoint.try_into()?;
-
-        let stop_handle = self.binds.remove(&endpoint);
-        let stop_handle = stop_handle.ok_or(ZmqError::NoSuchBind(endpoint))?;
-        stop_handle.0.shutdown().await
     }
 }
 
