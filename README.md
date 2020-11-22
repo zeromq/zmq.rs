@@ -14,8 +14,9 @@ We plan to support most of the basic ZMQ sockets. The current list is as follows
 
 ### Supported socket patterns:
 We plan to support most of the basic ZMQ messaging patterns. The current list is as follows:
-* Request/Response
-* Publish/Subscribe
+* Request/Response (REQ, REP, DEALER, ROUTER)
+* Publish/Subscribe (PUB, SUB)
+* Pipeline (PUSH, PULL)
 
 ## Contributing
 Contributions are welcome! See our issue tracker for a list of the things we need help with.
