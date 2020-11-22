@@ -44,7 +44,7 @@ where
                         let peer_addr = peer_addr.as_pathname().map(|a| a.to_owned());
                         (raw_sock, Endpoint::Ipc(peer_addr))
                     }).map_err(|err| err.into());
-                    tokio::spawn(cback(maybe_accepted.into()));
+                    tokio::spawn(cback(maybe_accepted));
                 },
                 _ = stop_callback => {
                     log::debug!("Accept task received stop signal. {:?}", listener_addr);
