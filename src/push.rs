@@ -2,8 +2,8 @@ use crate::backend::GenericSocketBackend;
 use crate::codec::Message;
 use crate::transport::AcceptStopHandle;
 use crate::{
-    transport, util, BlockingSend, Endpoint, Socket, SocketBackend, SocketType, TryIntoEndpoint,
-    ZmqError, ZmqMessage, ZmqResult,
+    transport, util, BlockingSend, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketType,
+    TryIntoEndpoint, ZmqError, ZmqMessage, ZmqResult,
 };
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -32,6 +32,9 @@ impl Socket for PushSocket {
             backend: Arc::new(GenericSocketBackend::new(queue_sender, SocketType::PUSH)),
             binds: HashMap::new(),
         }
+    }
+    fn backend(&self) -> Arc<dyn MultiPeerBackend> {
+        self.backend.clone()
     }
 
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint> {

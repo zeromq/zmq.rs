@@ -123,6 +123,10 @@ impl Socket for ReqSocket {
         }
     }
 
+    fn backend(&self) -> Arc<dyn MultiPeerBackend> {
+        self.backend.clone()
+    }
+
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint> {
         let endpoint = endpoint.try_into()?;
 
@@ -156,7 +160,7 @@ impl Socket for ReqSocket {
 }
 
 #[async_trait]
-impl MultiPeer for ReqSocketBackend {
+impl MultiPeerBackend for ReqSocketBackend {
     async fn peer_connected(
         &self,
         peer_id: &PeerIdentity,

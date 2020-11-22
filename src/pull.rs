@@ -3,8 +3,8 @@ use crate::codec::Message;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
-    transport, util, BlockingRecv, Endpoint, Socket, SocketType, TryIntoEndpoint, ZmqError,
-    ZmqMessage, ZmqResult,
+    transport, util, BlockingRecv, Endpoint, MultiPeerBackend, Socket, SocketType, TryIntoEndpoint,
+    ZmqError, ZmqMessage, ZmqResult,
 };
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -30,6 +30,10 @@ impl Socket for PullSocket {
             fair_queue,
             binds: HashMap::new(),
         }
+    }
+
+    fn backend(&self) -> Arc<dyn MultiPeerBackend> {
+        self.backend.clone()
     }
 
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint> {

@@ -4,7 +4,7 @@ use crate::error::{ZmqError, ZmqResult};
 use crate::message::*;
 use crate::transport::{self, AcceptStopHandle};
 use crate::util::{self, PeerIdentity};
-use crate::{BlockingRecv, Socket, SocketBackend, SocketType};
+use crate::{BlockingRecv, MultiPeerBackend, Socket, SocketBackend, SocketType};
 
 use crate::backend::GenericSocketBackend;
 use async_trait::async_trait;
@@ -64,6 +64,10 @@ impl Socket for SubSocket {
             fair_queue,
             binds: HashMap::new(),
         }
+    }
+
+    fn backend(&self) -> Arc<dyn MultiPeerBackend> {
+        self.backend.clone()
     }
 
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint> {

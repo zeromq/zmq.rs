@@ -1,7 +1,7 @@
 use crate::codec::Message;
 use crate::fair_queue::FairQueue;
 use crate::util::{FairQueueProcessor, PeerIdentity};
-use crate::{util, MultiPeer, SocketBackend, SocketType, ZmqError, ZmqResult};
+use crate::{util, MultiPeerBackend, SocketBackend, SocketType, ZmqError, ZmqResult};
 use async_trait::async_trait;
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
@@ -117,7 +117,7 @@ impl SocketBackend for GenericSocketBackend {
 }
 
 #[async_trait]
-impl MultiPeer for GenericSocketBackend {
+impl MultiPeerBackend for GenericSocketBackend {
     async fn peer_connected(
         &self,
         peer_id: &PeerIdentity,

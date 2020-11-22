@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 use std::fmt::Display;
 
 #[derive(Debug, Copy, Clone)]
-pub(crate) enum ZmqMechanism {
+pub enum ZmqMechanism {
     NULL,
     PLAIN,
     CURVE,

@@ -12,7 +12,7 @@ use crate::error::{ZmqError, ZmqResult};
 use crate::message::*;
 use crate::transport::{self, AcceptStopHandle};
 use crate::util::{self, PeerIdentity};
-use crate::SocketType;
+use crate::{MultiPeerBackend, SocketType};
 use crate::{Socket, SocketBackend};
 
 pub struct RouterSocket {
@@ -38,6 +38,10 @@ impl Socket for RouterSocket {
             binds: HashMap::new(),
             fair_queue,
         }
+    }
+
+    fn backend(&self) -> Arc<dyn MultiPeerBackend> {
+        self.backend.clone()
     }
 
     async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint> {

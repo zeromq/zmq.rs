@@ -12,7 +12,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Clone)]
-pub(crate) struct PeerIdentity(Vec<u8>);
+pub struct PeerIdentity(Vec<u8>);
 
 impl PeerIdentity {
     pub fn new() -> Self {
@@ -144,7 +144,7 @@ pub(crate) async fn ready_exchange(
 
 pub(crate) async fn peer_connected(
     accept_result: ZmqResult<(FramedIo, Endpoint)>,
-    backend: Arc<dyn MultiPeer>,
+    backend: Arc<dyn MultiPeerBackend>,
 ) {
     let (mut raw_socket, _remote_endpoint) = accept_result.expect("Failed to accept");
     greet_exchange(&mut raw_socket)

@@ -43,6 +43,7 @@ use num_traits::ToPrimitive;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Primitive)]
 pub enum SocketType {
@@ -102,7 +103,10 @@ impl Display for SocketType {
 }
 
 #[async_trait]
-trait MultiPeer: SocketBackend {
+pub trait MultiPeerBackend: SocketBackend {
+    /// This should not be public..
+    /// Find a better way of doing this
+
     async fn peer_connected(
         &self,
         peer_id: &PeerIdentity,
@@ -111,7 +115,7 @@ trait MultiPeer: SocketBackend {
 }
 
 #[async_trait]
-trait SocketBackend: Send + Sync {
+pub trait SocketBackend: Send + Sync {
     async fn message_received(&self, peer_id: &PeerIdentity, message: Message);
 
     fn socket_type(&self) -> SocketType;
@@ -139,6 +143,8 @@ pub trait NonBlockingRecv {
 #[async_trait]
 pub trait Socket: Sized + Send {
     fn new() -> Self;
+
+    fn backend(&self) -> Arc<dyn MultiPeerBackend>;
 
     /// Binds to the endpoint and starts a coroutine to accept new connections
     /// on it.
