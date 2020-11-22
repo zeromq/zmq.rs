@@ -14,7 +14,7 @@ async fn setup(endpoint: &str) -> (ReqSocket, RepSocket) {
 
     let mut req_socket = ReqSocket::new();
     req_socket
-        .connect(bind_endpoint)
+        .connect(bind_endpoint.to_string().as_str())
         .await
         .expect("Failed to connect req");
 

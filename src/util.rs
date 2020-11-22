@@ -12,12 +12,18 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Clone)]
-pub(crate) struct PeerIdentity(Vec<u8>);
+pub struct PeerIdentity(Vec<u8>);
 
 impl PeerIdentity {
     pub fn new() -> Self {
         let id = Uuid::new_v4();
         Self(id.as_bytes().to_vec())
+    }
+}
+
+impl Default for PeerIdentity {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -144,7 +150,7 @@ pub(crate) async fn ready_exchange(
 
 pub(crate) async fn peer_connected(
     accept_result: ZmqResult<(FramedIo, Endpoint)>,
-    backend: Arc<dyn MultiPeer>,
+    backend: Arc<dyn MultiPeerBackend>,
 ) {
     let (mut raw_socket, _remote_endpoint) = accept_result.expect("Failed to accept");
     greet_exchange(&mut raw_socket)
@@ -266,7 +272,12 @@ pub(crate) mod tests {
         assert!(any.is_unspecified());
 
         for i in 0..4 {
-            sock.bind(Endpoint::Tcp(any.into(), start_port + i)).await?;
+            sock.bind(
+                Endpoint::Tcp(any.into(), start_port + i)
+                    .to_string()
+                    .as_str(),
+            )
+            .await?;
         }
 
         let bound_to = sock.binds();

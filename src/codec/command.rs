@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 
 #[derive(Debug, Copy, Clone)]
-pub(crate) enum ZmqCommandName {
+pub enum ZmqCommandName {
     READY,
 }
 
@@ -19,7 +19,7 @@ impl From<ZmqCommandName> for String {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ZmqCommand {
+pub struct ZmqCommand {
     pub name: ZmqCommandName,
     pub properties: HashMap<String, String>,
 }

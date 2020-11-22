@@ -14,7 +14,7 @@ pub(crate) use zmq_codec::ZmqCodec;
 use crate::message::ZmqMessage;
 
 #[derive(Debug, Clone)]
-pub(crate) enum Message {
+pub enum Message {
     Greeting(ZmqGreeting),
     Command(ZmqCommand),
     Message(ZmqMessage),

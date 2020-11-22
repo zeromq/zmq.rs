@@ -33,7 +33,7 @@ async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
     });
 
     let mut req_socket = zeromq::ReqSocket::new();
-    req_socket.connect(endpoint).await?;
+    req_socket.connect(endpoint.to_string().as_str()).await?;
 
     for i in 0..10i32 {
         req_socket.send(format!("Req - {}", i).into()).await?;
@@ -52,12 +52,12 @@ async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
     println!("Started rep server on {}", endpoint);
 
     for i in 0..100i32 {
-        let cloned_endpoint = endpoint.clone();
+        let cloned_endpoint = endpoint.to_string();
         tokio::spawn(async move {
             // yield for a moment to ensure that server has some time to open socket
             tokio::time::delay_for(Duration::from_millis(100)).await;
             let mut req_socket = zeromq::ReqSocket::new();
-            req_socket.connect(cloned_endpoint).await.unwrap();
+            req_socket.connect(&cloned_endpoint).await.unwrap();
 
             for j in 0..100i32 {
                 req_socket

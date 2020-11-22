@@ -43,6 +43,7 @@ use num_traits::ToPrimitive;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Primitive)]
 pub enum SocketType {
@@ -102,7 +103,10 @@ impl Display for SocketType {
 }
 
 #[async_trait]
-trait MultiPeer: SocketBackend {
+pub trait MultiPeerBackend: SocketBackend {
+    /// This should not be public..
+    /// Find a better way of doing this
+
     async fn peer_connected(
         &self,
         peer_id: &PeerIdentity,
@@ -111,7 +115,7 @@ trait MultiPeer: SocketBackend {
 }
 
 #[async_trait]
-trait SocketBackend: Send + Sync {
+pub trait SocketBackend: Send + Sync {
     async fn message_received(&self, peer_id: &PeerIdentity, message: Message);
 
     fn socket_type(&self) -> SocketType;
@@ -140,14 +144,25 @@ pub trait NonBlockingRecv {
 pub trait Socket: Sized + Send {
     fn new() -> Self;
 
+    fn backend(&self) -> Arc<dyn MultiPeerBackend>;
+
     /// Binds to the endpoint and starts a coroutine to accept new connections
     /// on it.
     ///
     /// Returns the endpoint resolved to the exact bound location if applicable
     /// (port # resolved, for example).
-    async fn bind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<Endpoint>;
+    async fn bind(&mut self, endpoint: &str) -> ZmqResult<Endpoint> {
+        let endpoint = endpoint.try_into()?;
 
-    fn binds(&self) -> &HashMap<Endpoint, AcceptStopHandle>;
+        let cloned_backend = self.backend();
+        let cback = move |result| util::peer_connected(result, cloned_backend.clone());
+        let (endpoint, stop_handle) = transport::begin_accept(endpoint, cback).await?;
+
+        self.binds().insert(endpoint.clone(), stop_handle);
+        Ok(endpoint)
+    }
+
+    fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle>;
 
     /// Unbinds the endpoint, blocking until the associated endpoint is no
     /// longer in use
@@ -155,7 +170,11 @@ pub trait Socket: Sized + Send {
     /// # Errors
     /// May give a `ZmqError::NoSuchBind` if `endpoint` isn't bound. May also
     /// give any other zmq errors encountered when attempting to disconnect
-    async fn unbind(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
+    async fn unbind(&mut self, endpoint: Endpoint) -> ZmqResult<()> {
+        let stop_handle = self.binds().remove(&endpoint);
+        let stop_handle = stop_handle.ok_or(ZmqError::NoSuchBind(endpoint))?;
+        stop_handle.0.shutdown().await
+    }
 
     /// Unbinds all bound endpoints, blocking until finished.
     async fn unbind_all(&mut self) -> Vec<ZmqError> {
@@ -174,7 +193,14 @@ pub trait Socket: Sized + Send {
     }
 
     /// Connects to the given endpoint.
-    async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
+    async fn connect(&mut self, endpoint: &str) -> ZmqResult<()> {
+        let backend = self.backend();
+        let endpoint = endpoint.try_into()?;
+
+        let connect_result = transport::connect(endpoint).await;
+        util::peer_connected(connect_result, backend).await;
+        Ok(())
+    }
 
     // TODO: async fn connections(&self) -> ?
 

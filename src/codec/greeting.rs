@@ -5,7 +5,7 @@ use bytes::{Bytes, BytesMut};
 use std::convert::TryFrom;
 
 #[derive(Debug, Copy, Clone)]
-pub(crate) struct ZmqGreeting {
+pub struct ZmqGreeting {
     pub version: (u8, u8),
     pub mechanism: ZmqMechanism,
     pub as_server: bool,
