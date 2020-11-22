@@ -3,7 +3,7 @@ use crate::codec::Message;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
-    transport, util, Endpoint, Socket, SocketBackend, SocketType, TryIntoEndpoint, ZmqError,
+    transport, util, BlockingRecv, Endpoint, Socket, SocketType, TryIntoEndpoint, ZmqError,
     ZmqMessage, ZmqResult,
 };
 use async_trait::async_trait;
@@ -13,26 +13,20 @@ use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub struct DealerSocket {
+pub struct PullSocket {
     backend: Arc<GenericSocketBackend>,
     fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
-impl Drop for DealerSocket {
-    fn drop(&mut self) {
-        self.backend.shutdown();
-    }
-}
-
 #[async_trait]
-impl Socket for DealerSocket {
+impl Socket for PullSocket {
     fn new() -> Self {
         // TODO define buffer size
         let default_queue_size = 100;
         let (queue_sender, fair_queue) = mpsc::channel(default_queue_size);
         Self {
-            backend: Arc::new(GenericSocketBackend::new(queue_sender, SocketType::DEALER)),
+            backend: Arc::new(GenericSocketBackend::new(queue_sender, SocketType::PULL)),
             fair_queue,
             binds: HashMap::new(),
         }
@@ -70,23 +64,17 @@ impl Socket for DealerSocket {
     }
 }
 
-impl DealerSocket {
-    pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
+#[async_trait]
+impl BlockingRecv for PullSocket {
+    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {
-                Some((_peer_id, Message::Multipart(messages))) => {
-                    return Ok(messages);
+                Some((_peer_id, Message::Message(message))) => {
+                    return Ok(message);
                 }
                 Some((_peer_id, _)) => todo!(),
                 None => todo!(),
             };
         }
-    }
-
-    pub async fn send_multipart(&mut self, messages: Vec<ZmqMessage>) -> ZmqResult<()> {
-        self.backend
-            .send_round_robin(Message::Multipart(messages))
-            .await?;
-        Ok(())
     }
 }

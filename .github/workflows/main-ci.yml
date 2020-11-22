@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install libzmq
-        run: sudo apt-get install libzmq3-dev
+        run: sudo apt update && sudo apt install libzmq3-dev
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Install libzmq
-        run: sudo apt-get install libzmq3-dev
+        run: sudo apt update && sudo apt install libzmq3-dev
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:

@@ -39,7 +39,7 @@ where
                         let raw_sock = FramedIo::new(Box::new(raw_sock.compat()));
                         (raw_sock, Endpoint::from_tcp_addr(remote_addr))
                     }).map_err(|err| err.into());
-                    tokio::spawn(cback(maybe_accepted.into()));
+                    tokio::spawn(cback(maybe_accepted));
                 },
                 _ = stop_callback => {
                     break
