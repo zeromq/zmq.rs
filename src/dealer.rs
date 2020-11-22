@@ -84,46 +84,9 @@ impl DealerSocket {
     }
 
     pub async fn send_multipart(&mut self, messages: Vec<ZmqMessage>) -> ZmqResult<()> {
-        // In normal scenario this will always be only 1 iteration
-        // There can be special case when peer has disconnected and his id is still in
-        // RR queue This happens because SegQueue don't have an api to delete
-        // items from queue. So in such case we'll just pop item and skip it if
-        // we don't have a matching peer in peers map
-        let mut messages = Message::Multipart(messages);
-        loop {
-            let next_peer_id = match self.backend.round_robin.pop() {
-                Ok(peer) => peer,
-                Err(_) => {
-                    if let Message::Multipart(messages) = messages {
-                        return Err(ZmqError::ReturnToSenderMultipart {
-                            reason: "Not connected to peers. Unable to send messages",
-                            messages,
-                        });
-                    } else {
-                        panic!("Not supposed to happen");
-                    }
-                }
-            };
-            match self.backend.peers.get_mut(&next_peer_id) {
-                Some(mut peer) => {
-                    let send_result = peer.send_queue.try_send(messages);
-                    match send_result {
-                        Ok(()) => {
-                            self.backend.round_robin.push(next_peer_id.clone());
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            if e.is_full() {
-                                // Try again later
-                                self.backend.round_robin.push(next_peer_id.clone());
-                            }
-                            messages = e.into_inner();
-                            continue;
-                        }
-                    };
-                }
-                None => continue,
-            }
-        }
+        self.backend
+            .send_round_robin(Message::Multipart(messages))
+            .await?;
+        Ok(())
     }
 }

@@ -2,8 +2,8 @@ use crate::backend::GenericSocketBackend;
 use crate::codec::Message;
 use crate::transport::AcceptStopHandle;
 use crate::{
-    transport, util, BlockingSend, Endpoint, Socket, SocketType, TryIntoEndpoint, ZmqError,
-    ZmqMessage, ZmqResult,
+    transport, util, BlockingSend, Endpoint, Socket, SocketBackend, SocketType, TryIntoEndpoint,
+    ZmqError, ZmqMessage, ZmqResult,
 };
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -14,6 +14,12 @@ use std::sync::Arc;
 pub struct PushSocket {
     backend: Arc<GenericSocketBackend>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
+}
+
+impl Drop for PushSocket {
+    fn drop(&mut self) {
+        self.backend.shutdown();
+    }
 }
 
 #[async_trait]
@@ -63,46 +69,9 @@ impl Socket for PushSocket {
 #[async_trait]
 impl BlockingSend for PushSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
-        // In normal scenario this will always be only 1 iteration
-        // There can be special case when peer has disconnected and his id is still in
-        // RR queue This happens because SegQueue don't have an api to delete
-        // items from queue. So in such case we'll just pop item and skip it if
-        // we don't have a matching peer in peers map
-        let mut message = Message::Message(message);
-        loop {
-            let next_peer_id = match self.backend.round_robin.pop() {
-                Ok(peer) => peer,
-                Err(_) => {
-                    if let Message::Message(message) = message {
-                        return Err(ZmqError::ReturnToSender {
-                            reason: "Not connected to peers. Unable to send messages",
-                            message,
-                        });
-                    } else {
-                        panic!("Not supposed to happen");
-                    }
-                }
-            };
-            match self.backend.peers.get_mut(&next_peer_id) {
-                Some(mut peer) => {
-                    let send_result = peer.send_queue.try_send(message);
-                    match send_result {
-                        Ok(()) => {
-                            self.backend.round_robin.push(next_peer_id.clone());
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            if e.is_full() {
-                                // Try again later
-                                self.backend.round_robin.push(next_peer_id.clone());
-                            }
-                            message = e.into_inner();
-                            continue;
-                        }
-                    };
-                }
-                None => continue,
-            }
-        }
+        self.backend
+            .send_round_robin(Message::Message(message))
+            .await?;
+        Ok(())
     }
 }

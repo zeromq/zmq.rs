@@ -1,7 +1,7 @@
 use crate::codec::Message;
 use crate::fair_queue::FairQueue;
 use crate::util::{FairQueueProcessor, PeerIdentity};
-use crate::{util, MultiPeer, SocketBackend, SocketType};
+use crate::{util, MultiPeer, SocketBackend, SocketType, ZmqError, ZmqResult};
 use async_trait::async_trait;
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
@@ -43,6 +43,55 @@ impl GenericSocketBackend {
             round_robin: SegQueue::new(),
             _fair_queue_close_handle: fair_queue_close_handle,
             socket_type,
+        }
+    }
+
+    pub(crate) async fn send_round_robin(&self, mut message: Message) -> ZmqResult<PeerIdentity> {
+        // In normal scenario this will always be only 1 iteration
+        // There can be special case when peer has disconnected and his id is still in
+        // RR queue This happens because SegQueue don't have an api to delete
+        // items from queue. So in such case we'll just pop item and skip it if
+        // we don't have a matching peer in peers map
+        loop {
+            let next_peer_id = match self.round_robin.pop() {
+                Ok(peer) => peer,
+                Err(_) => match message {
+                    Message::Greeting(_) => panic!("Sending greeting is not supported"),
+                    Message::Command(_) => panic!("Sending commands is not supported"),
+                    Message::Message(m) => {
+                        return Err(ZmqError::ReturnToSender {
+                            reason: "Not connected to peers. Unable to send messages",
+                            message: m,
+                        })
+                    }
+                    Message::Multipart(m) => {
+                        return Err(ZmqError::ReturnToSenderMultipart {
+                            reason: "Not connected to peers. Unable to send messages",
+                            messages: m,
+                        })
+                    }
+                },
+            };
+            match self.peers.get_mut(&next_peer_id) {
+                Some(mut peer) => {
+                    let send_result = peer.send_queue.try_send(message);
+                    match send_result {
+                        Ok(()) => {
+                            self.round_robin.push(next_peer_id.clone());
+                            return Ok(next_peer_id.clone());
+                        }
+                        Err(e) => {
+                            if e.is_full() {
+                                // Try again later
+                                self.round_robin.push(next_peer_id.clone());
+                            }
+                            message = e.into_inner();
+                            continue;
+                        }
+                    };
+                }
+                None => continue,
+            }
         }
     }
 }
