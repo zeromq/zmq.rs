@@ -180,7 +180,14 @@ pub trait Socket: Sized + Send {
     }
 
     /// Connects to the given endpoint.
-    async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()>;
+    async fn connect(&mut self, endpoint: &str) -> ZmqResult<()> {
+        let backend = self.backend();
+        let endpoint = endpoint.try_into()?;
+
+        let connect_result = transport::connect(endpoint).await;
+        util::peer_connected(connect_result, backend).await;
+        Ok(())
+    }
 
     // TODO: async fn connections(&self) -> ?
 

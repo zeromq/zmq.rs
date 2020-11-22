@@ -63,14 +63,6 @@ impl Socket for RouterSocket {
         stop_handle.0.shutdown().await
     }
 
-    async fn connect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) -> ZmqResult<()> {
-        let endpoint = endpoint.try_into()?;
-
-        let connect_result = transport::connect(endpoint).await;
-        util::peer_connected(connect_result, self.backend.clone()).await;
-        Ok(())
-    }
-
     fn binds(&self) -> &HashMap<Endpoint, AcceptStopHandle> {
         &self.binds
     }
