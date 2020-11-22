@@ -95,10 +95,11 @@ pub fn sockets_compatible(one: SocketType, another: SocketType) -> bool {
 
 pub(crate) async fn greet_exchange(raw_socket: &mut FramedIo) -> ZmqResult<()> {
     raw_socket
+        .write_half
         .send(Message::Greeting(ZmqGreeting::default()))
         .await?;
 
-    let greeting: Option<CodecResult<Message>> = raw_socket.next().await;
+    let greeting: Option<CodecResult<Message>> = raw_socket.read_half.next().await;
 
     match greeting {
         Some(Ok(Message::Greeting(greet))) => match greet.version {
@@ -114,9 +115,9 @@ pub(crate) async fn ready_exchange(
     socket_type: SocketType,
 ) -> ZmqResult<PeerIdentity> {
     let ready = ZmqCommand::ready(socket_type);
-    raw_socket.send(Message::Command(ready)).await?;
+    raw_socket.write_half.send(Message::Command(ready)).await?;
 
-    let ready_repl: Option<CodecResult<Message>> = raw_socket.next().await;
+    let ready_repl: Option<CodecResult<Message>> = raw_socket.read_half.next().await;
     match ready_repl {
         Some(Ok(Message::Command(command))) => match command.name {
             ZmqCommandName::READY => {
@@ -175,14 +176,14 @@ pub(crate) async fn peer_connected(
                 outgoing = outgoing_queue.next() => {
                     match outgoing {
                         Some(message) => {
-                            raw_socket.send(message).await.expect("Codec Error in send task");
+                            raw_socket.write_half.send(message).await.expect("Codec Error in send task");
                         },
                         None => {
                             break;
                         }
                     }
                 },
-                incoming = raw_socket.next() => {
+                incoming = raw_socket.read_half.next() => {
                     match incoming {
                         Some(Ok(message)) => {
                             backend.message_received(&peer_id, message).await;
