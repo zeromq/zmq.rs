@@ -149,7 +149,7 @@ impl BlockingRecv for RepSocket {
                     return Ok(messages.pop().unwrap());
                 }
                 Some((_peer_id, _)) => todo!(),
-                None => todo!(),
+                None => return Err(ZmqError::NoMessage),
             };
         }
     }

@@ -36,6 +36,7 @@ async fn test_pub_sub_sockets() {
 
                 pub_socket
                     .send(cloned_payload.clone().into())
+                    .await
                     .expect("Failed to send");
                 tokio::time::delay_for(Duration::from_millis(1)).await;
             }
