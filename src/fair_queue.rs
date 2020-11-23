@@ -7,7 +7,8 @@ use std::pin::Pin;
 use std::sync::atomic;
 use std::sync::Arc;
 
-struct QueueInner<S, K> {
+pub(crate) struct QueueInner<S, K> {
+    counter: atomic::AtomicUsize,
     ready_queue: BinaryHeap<PriorityStream<S, K>>,
     pending_streams: HashMap<usize, PriorityStream<S, K>>,
     // See wake_by_ref for details
@@ -15,8 +16,22 @@ struct QueueInner<S, K> {
     waker: Option<Waker>,
 }
 
+impl<S, K> QueueInner<S, K> {
+    pub fn insert(&mut self, k: K, s: S) {
+        self.ready_queue.push(PriorityStream {
+            priority: self.counter.fetch_add(1, atomic::Ordering::Relaxed),
+            key: k,
+            stream: Box::pin(s),
+        });
+        match &self.waker {
+            Some(w) => w.wake_by_ref(),
+            None => (),
+        };
+    }
+}
+
 pub struct FairQueue<S, K> {
-    counter: atomic::AtomicUsize,
+    block_on_no_clients: bool,
     inner: Arc<Mutex<QueueInner<S, K>>>,
 }
 
@@ -93,7 +108,7 @@ where
                 match inner.ready_queue.pop() {
                     Some(s) => s,
                     None => {
-                        return if !inner.pending_streams.is_empty() {
+                        return if !inner.pending_streams.is_empty() || stream.block_on_no_clients {
                             Poll::Pending
                         } else {
                             Poll::Ready(None)
@@ -110,9 +125,9 @@ where
             let mut cx = Context::from_waker(&waker_ref);
             match s.stream.as_mut().poll_next(&mut cx) {
                 Poll::Ready(Some(res)) => {
-                    s.priority = stream.counter.fetch_add(1, atomic::Ordering::Relaxed);
                     let item = Some((s.key.clone(), res));
                     let mut inner = stream.inner.lock();
+                    s.priority = inner.counter.fetch_add(1, atomic::Ordering::Relaxed);
                     inner.ready_queue.push(s);
                     inner.weak_up_processing = None;
                     return Poll::Ready(item);
@@ -137,10 +152,11 @@ where
 }
 
 impl<S, K> FairQueue<S, K> {
-    pub fn new() -> Self {
+    pub fn new(block_on_no_clients: bool) -> Self {
         Self {
-            counter: atomic::AtomicUsize::new(0),
+            block_on_no_clients,
             inner: Arc::new(Mutex::new(QueueInner {
+                counter: atomic::AtomicUsize::new(0),
                 ready_queue: BinaryHeap::new(),
                 pending_streams: HashMap::new(),
                 weak_up_processing: None,
@@ -150,16 +166,11 @@ impl<S, K> FairQueue<S, K> {
     }
 
     pub fn insert(&mut self, k: K, s: S) {
-        let mut inner = self.inner.lock();
-        inner.ready_queue.push(PriorityStream {
-            priority: self.counter.fetch_add(1, atomic::Ordering::Relaxed),
-            key: k,
-            stream: Box::pin(s),
-        });
-        match &inner.waker {
-            Some(w) => w.wake_by_ref(),
-            None => (),
-        };
+        self.inner.lock().insert(k, s);
+    }
+
+    pub(crate) fn inner(&self) -> Arc<Mutex<QueueInner<S, K>>> {
+        self.inner.clone()
     }
 }
 
@@ -174,7 +185,7 @@ mod test {
         let b = futures::stream::iter(vec!["b1", "b2", "b3"]);
         let c = futures::stream::iter(vec!["c1", "c2", "c3"]);
 
-        let mut f_queue: FairQueue<_, u64> = FairQueue::new();
+        let mut f_queue: FairQueue<_, u64> = FairQueue::new(false);
         f_queue.insert(1, a);
         f_queue.insert(2, b);
         f_queue.insert(3, c);
@@ -205,7 +216,7 @@ mod test {
         let b = futures::stream::iter(vec!["b1"]);
         let c = futures::stream::iter(vec!["c1", "c2"]);
 
-        let mut f_queue: FairQueue<_, u64> = FairQueue::new();
+        let mut f_queue: FairQueue<_, u64> = FairQueue::new(false);
         f_queue.insert(1, a);
         f_queue.insert(2, b);
         f_queue.insert(3, c);

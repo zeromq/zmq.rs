@@ -1,7 +1,7 @@
 use crate::codec::*;
 use crate::endpoint::Endpoint;
 use crate::error::*;
-use crate::fair_queue::FairQueue;
+use crate::fair_queue::{FairQueue, QueueInner};
 use crate::transport::AcceptStopHandle;
 use crate::util::FairQueueProcessor;
 use crate::*;
@@ -12,6 +12,7 @@ use dashmap::DashMap;
 use futures::SinkExt;
 use futures::StreamExt;
 use futures_codec::FramedRead;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -22,15 +23,14 @@ struct RepPeer {
 
 struct RepSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, RepPeer>,
-    pub(crate) peer_queue_in:
-        mpsc::Sender<(PeerIdentity, FramedRead<Box<dyn FrameableRead>, ZmqCodec>)>,
+    fair_queue_inner:
+        Arc<Mutex<QueueInner<FramedRead<Box<dyn FrameableRead>, ZmqCodec>, PeerIdentity>>>,
 }
 
 pub struct RepSocket {
     backend: Arc<RepSocketBackend>,
-    _fair_queue_close_handle: oneshot::Sender<bool>,
     current_request: Option<PeerIdentity>,
-    fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
+    fair_queue: FairQueue<FramedRead<Box<dyn FrameableRead>, ZmqCodec>, PeerIdentity>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
@@ -43,23 +43,12 @@ impl Drop for RepSocket {
 #[async_trait]
 impl Socket for RepSocket {
     fn new() -> Self {
-        // TODO define buffer size
-        let default_queue_size = 100;
-        let (queue_sender, fair_queue) = mpsc::channel(default_queue_size);
-        let (peer_in, peer_out) = mpsc::channel(default_queue_size);
-        let (fair_queue_close_handle, fqueue_close_recevier) = oneshot::channel();
-        tokio::spawn(util::process_fair_queue_messages(FairQueueProcessor {
-            fair_queue_stream: FairQueue::new(),
-            socket_incoming_queue: queue_sender,
-            peer_queue_in: peer_out,
-            _io_close_handle: fqueue_close_recevier,
-        }));
+        let fair_queue = FairQueue::new(true);
         Self {
             backend: Arc::new(RepSocketBackend {
                 peers: DashMap::new(),
-                peer_queue_in: peer_in,
+                fair_queue_inner: fair_queue.inner(),
             }),
-            _fair_queue_close_handle: fair_queue_close_handle,
             current_request: None,
             fair_queue,
             binds: HashMap::new(),
@@ -86,10 +75,9 @@ impl MultiPeerBackend for RepSocketBackend {
                 send_queue,
             },
         );
-        self.peer_queue_in
-            .clone()
-            .try_send((peer_id.clone(), recv_queue))
-            .unwrap();
+        self.fair_queue_inner
+            .lock()
+            .insert(peer_id.clone(), recv_queue);
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
@@ -142,7 +130,7 @@ impl BlockingRecv for RepSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {
-                Some((peer_id, Message::Multipart(mut messages))) => {
+                Some((peer_id, Ok(Message::Multipart(mut messages)))) => {
                     assert!(messages.len() == 2);
                     assert!(messages[0].data.is_empty()); // Ensure that we have delimeter as first part
                     self.current_request = Some(peer_id);

@@ -31,7 +31,7 @@ impl GenericSocketBackend {
         let (peer_in, peer_out) = mpsc::channel(default_queue_size);
         let (fair_queue_close_handle, fqueue_close_recevier) = oneshot::channel();
         tokio::spawn(util::process_fair_queue_messages(FairQueueProcessor {
-            fair_queue_stream: FairQueue::new(),
+            fair_queue_stream: FairQueue::new(false),
             socket_incoming_queue: queue_sender,
             peer_queue_in: peer_out,
             _io_close_handle: fqueue_close_recevier,
