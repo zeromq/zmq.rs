@@ -1,10 +1,11 @@
 use futures::task::{ArcWake, Context, Poll, Waker};
 use futures::Stream;
+use parking_lot::Mutex;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 use std::pin::Pin;
 use std::sync::atomic;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 struct QueueInner<S, K> {
     ready_queue: BinaryHeap<PriorityStream<S, K>>,
@@ -30,7 +31,7 @@ where
     K: Send,
 {
     fn wake_by_ref(arc_self: &Arc<Self>) {
-        let mut inner = arc_self.inner.lock().unwrap();
+        let mut inner = arc_self.inner.lock();
         match inner.pending_streams.remove(&arc_self.index) {
             None => {
                 // This is a tricky part..
@@ -87,7 +88,7 @@ where
         let stream = self.get_mut();
         loop {
             let mut s = {
-                let mut inner = stream.inner.lock().unwrap();
+                let mut inner = stream.inner.lock();
                 inner.waker = Some(cx.waker().clone());
                 match inner.ready_queue.pop() {
                     Some(s) => s,
@@ -111,14 +112,14 @@ where
                 Poll::Ready(Some(res)) => {
                     s.priority = stream.counter.fetch_add(1, atomic::Ordering::Relaxed);
                     let item = Some((s.key.clone(), res));
-                    let mut inner = stream.inner.lock().unwrap();
+                    let mut inner = stream.inner.lock();
                     inner.ready_queue.push(s);
                     inner.weak_up_processing = None;
                     return Poll::Ready(item);
                 }
                 Poll::Ready(None) => continue,
                 Poll::Pending => {
-                    let mut inner = stream.inner.lock().unwrap();
+                    let mut inner = stream.inner.lock();
                     match inner.weak_up_processing.take() {
                         None => {
                             inner.pending_streams.insert(s.priority, s);
@@ -149,7 +150,7 @@ impl<S, K> FairQueue<S, K> {
     }
 
     pub fn insert(&mut self, k: K, s: S) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         inner.ready_queue.push(PriorityStream {
             priority: self.counter.fetch_add(1, atomic::Ordering::Relaxed),
             key: k,
