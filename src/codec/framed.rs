@@ -9,11 +9,14 @@ impl<T> FrameableRead for T where T: futures::AsyncRead + Unpin + Send + Sync {}
 pub trait FrameableWrite: futures::AsyncWrite + Unpin + Send + Sync {}
 impl<T> FrameableWrite for T where T: futures::AsyncWrite + Unpin + Send + Sync {}
 
+pub(crate) type ZmqFramedRead = futures_codec::FramedRead<Box<dyn FrameableRead>, ZmqCodec>;
+pub(crate) type ZmqFramedWrite = futures_codec::FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>;
+
 /// Equivalent to [`futures_codec::Framed<T, ZmqCodec>`] or
 /// [`tokio_util::codec::Framed`]
 pub struct FramedIo {
-    pub read_half: futures_codec::FramedRead<Box<dyn FrameableRead>, ZmqCodec>,
-    pub write_half: futures_codec::FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
+    pub read_half: ZmqFramedRead,
+    pub write_half: ZmqFramedWrite,
 }
 
 impl FramedIo {

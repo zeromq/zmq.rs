@@ -25,11 +25,8 @@ impl Drop for PushSocket {
 #[async_trait]
 impl Socket for PushSocket {
     fn new() -> Self {
-        // TODO define buffer size
-        let default_queue_size = 100;
-        let (queue_sender, _fair_queue) = mpsc::channel(default_queue_size);
         Self {
-            backend: Arc::new(GenericSocketBackend::new(queue_sender, SocketType::PUSH)),
+            backend: Arc::new(GenericSocketBackend::new(None, SocketType::PUSH)),
             binds: HashMap::new(),
         }
     }

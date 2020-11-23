@@ -1,5 +1,7 @@
-use crate::codec::{FrameableRead, FrameableWrite, FramedIo, Message, ZmqCodec};
-use crate::fair_queue::FairQueue;
+use crate::codec::{
+    FrameableRead, FrameableWrite, FramedIo, Message, ZmqCodec, ZmqFramedRead, ZmqFramedWrite,
+};
+use crate::fair_queue::{FairQueue, QueueInner};
 use crate::util::{FairQueueProcessor, PeerIdentity};
 use crate::{util, MultiPeerBackend, SocketBackend, SocketType, ZmqError, ZmqResult};
 use async_trait::async_trait;
@@ -8,39 +10,29 @@ use dashmap::DashMap;
 use futures::channel::{mpsc, oneshot};
 use futures::SinkExt;
 use futures_codec::{FramedRead, FramedWrite};
+use parking_lot::{Mutex, RawMutex};
+use std::sync::Arc;
 
 pub(crate) struct Peer {
-    pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
+    pub(crate) send_queue: ZmqFramedWrite,
 }
 
 pub(crate) struct GenericSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, Peer>,
-    peer_queue_in: mpsc::Sender<(PeerIdentity, FramedRead<Box<dyn FrameableRead>, ZmqCodec>)>,
-    _fair_queue_close_handle: oneshot::Sender<bool>,
+    fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
     socket_type: SocketType,
 }
 
 impl GenericSocketBackend {
     pub(crate) fn new(
-        queue_sender: mpsc::Sender<(PeerIdentity, Message)>,
+        fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
         socket_type: SocketType,
     ) -> Self {
-        // TODO define buffer size
-        let default_queue_size = 100;
-        let (peer_in, peer_out) = mpsc::channel(default_queue_size);
-        let (fair_queue_close_handle, fqueue_close_recevier) = oneshot::channel();
-        tokio::spawn(util::process_fair_queue_messages(FairQueueProcessor {
-            fair_queue_stream: FairQueue::new(false),
-            socket_incoming_queue: queue_sender,
-            peer_queue_in: peer_out,
-            _io_close_handle: fqueue_close_recevier,
-        }));
         Self {
             peers: DashMap::new(),
-            peer_queue_in: peer_in,
+            fair_queue_inner,
             round_robin: SegQueue::new(),
-            _fair_queue_close_handle: fair_queue_close_handle,
             socket_type,
         }
     }
@@ -108,10 +100,12 @@ impl MultiPeerBackend for GenericSocketBackend {
         let (recv_queue, send_queue) = io.into_parts();
         self.peers.insert(peer_id.clone(), Peer { send_queue });
         self.round_robin.push(peer_id.clone());
-        self.peer_queue_in
-            .clone()
-            .try_send((peer_id.clone(), recv_queue))
-            .unwrap();
+        match &self.fair_queue_inner {
+            None => {}
+            Some(inner) => {
+                inner.lock().insert(peer_id.clone(), recv_queue);
+            }
+        };
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {

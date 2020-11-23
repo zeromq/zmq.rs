@@ -18,19 +18,18 @@ use std::sync::Arc;
 
 struct RepPeer {
     pub(crate) _identity: PeerIdentity,
-    pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
+    pub(crate) send_queue: ZmqFramedWrite,
 }
 
 struct RepSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, RepPeer>,
-    fair_queue_inner:
-        Arc<Mutex<QueueInner<FramedRead<Box<dyn FrameableRead>, ZmqCodec>, PeerIdentity>>>,
+    fair_queue_inner: Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>,
 }
 
 pub struct RepSocket {
     backend: Arc<RepSocketBackend>,
     current_request: Option<PeerIdentity>,
-    fair_queue: FairQueue<FramedRead<Box<dyn FrameableRead>, ZmqCodec>, PeerIdentity>,
+    fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 

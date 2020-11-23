@@ -1,5 +1,6 @@
 use crate::backend::GenericSocketBackend;
-use crate::codec::Message;
+use crate::codec::{Message, ZmqFramedRead};
+use crate::fair_queue::FairQueue;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketType, ZmqMessage, ZmqResult};
@@ -12,7 +13,7 @@ use std::sync::Arc;
 
 pub struct DealerSocket {
     backend: Arc<GenericSocketBackend>,
-    fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
+    fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
@@ -25,11 +26,12 @@ impl Drop for DealerSocket {
 #[async_trait]
 impl Socket for DealerSocket {
     fn new() -> Self {
-        // TODO define buffer size
-        let default_queue_size = 100;
-        let (queue_sender, fair_queue) = mpsc::channel(default_queue_size);
+        let fair_queue = FairQueue::new(true);
         Self {
-            backend: Arc::new(GenericSocketBackend::new(queue_sender, SocketType::DEALER)),
+            backend: Arc::new(GenericSocketBackend::new(
+                Some(fair_queue.inner()),
+                SocketType::DEALER,
+            )),
             fair_queue,
             binds: HashMap::new(),
         }
@@ -47,7 +49,7 @@ impl DealerSocket {
     pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
         loop {
             match self.fair_queue.next().await {
-                Some((_peer_id, Message::Multipart(messages))) => {
+                Some((_peer_id, Ok(Message::Multipart(messages)))) => {
                     return Ok(messages);
                 }
                 Some((_peer_id, _)) => todo!(),

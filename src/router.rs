@@ -9,6 +9,7 @@ use crate::backend::GenericSocketBackend;
 use crate::codec::*;
 use crate::endpoint::Endpoint;
 use crate::error::{ZmqError, ZmqResult};
+use crate::fair_queue::FairQueue;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
@@ -19,7 +20,7 @@ use futures::SinkExt;
 pub struct RouterSocket {
     backend: Arc<GenericSocketBackend>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
-    fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
+    fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
 }
 
 impl Drop for RouterSocket {
@@ -31,11 +32,12 @@ impl Drop for RouterSocket {
 #[async_trait]
 impl Socket for RouterSocket {
     fn new() -> Self {
-        // TODO define buffer size
-        let default_queue_size = 100;
-        let (queue_sender, fair_queue) = mpsc::channel(default_queue_size);
+        let fair_queue = FairQueue::new(true);
         Self {
-            backend: Arc::new(GenericSocketBackend::new(queue_sender, SocketType::ROUTER)),
+            backend: Arc::new(GenericSocketBackend::new(
+                Some(fair_queue.inner()),
+                SocketType::ROUTER,
+            )),
             binds: HashMap::new(),
             fair_queue,
         }
@@ -54,7 +56,7 @@ impl RouterSocket {
     pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
         loop {
             match self.fair_queue.next().await {
-                Some((peer_id, Message::Multipart(mut messages))) => {
+                Some((peer_id, Ok(Message::Multipart(mut messages)))) => {
                     messages.insert(0, peer_id.into());
                     return Ok(messages);
                 }
