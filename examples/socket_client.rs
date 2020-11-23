@@ -12,7 +12,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .expect("Failed to connect");
     println!("Connected to server");
 
-    for _ in 0..200_000u64 {
+    for _ in 0..10u64 {
         socket.send("Hello".into()).await?;
         let repl: String = socket.recv().await?.try_into()?;
         // dbg!(repl);
