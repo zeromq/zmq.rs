@@ -1,4 +1,4 @@
-use crate::codec::{FrameableWrite, Message, ZmqCodec};
+use crate::codec::{FrameableRead, FrameableWrite, FramedIo, Message, ZmqCodec};
 use crate::fair_queue::FairQueue;
 use crate::util::{FairQueueProcessor, PeerIdentity};
 use crate::{util, MultiPeerBackend, SocketBackend, SocketType, ZmqError, ZmqResult};
@@ -7,17 +7,15 @@ use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use futures::channel::{mpsc, oneshot};
 use futures::SinkExt;
-use futures_codec::FramedWrite;
+use futures_codec::{FramedRead, FramedWrite};
 
 pub(crate) struct Peer {
     pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
-    pub(crate) recv_queue_in: mpsc::Sender<Message>,
-    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
 pub(crate) struct GenericSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, Peer>,
-    peer_queue_in: mpsc::Sender<(PeerIdentity, mpsc::Receiver<Message>)>,
+    peer_queue_in: mpsc::Sender<(PeerIdentity, FramedRead<Box<dyn FrameableRead>, ZmqCodec>)>,
     _fair_queue_close_handle: oneshot::Sender<bool>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
     socket_type: SocketType,
@@ -94,14 +92,7 @@ impl GenericSocketBackend {
 
 #[async_trait]
 impl SocketBackend for GenericSocketBackend {
-    async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
-        if let Some(mut peer) = self.peers.get_mut(peer_id) {
-            peer.recv_queue_in
-                .send(message)
-                .await
-                .expect("Failed to send");
-        }
-    }
+    async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {}
 
     fn socket_type(&self) -> SocketType {
         self.socket_type
@@ -113,30 +104,14 @@ impl SocketBackend for GenericSocketBackend {
 }
 
 impl MultiPeerBackend for GenericSocketBackend {
-    fn peer_connected(
-        &self,
-        peer_id: &PeerIdentity,
-        outgoing: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
-    ) -> oneshot::Receiver<bool> {
-        let default_queue_size = 100;
-        let (in_queue, in_queue_receiver) = mpsc::channel(default_queue_size);
-        let (stop_handle, stop_callback) = oneshot::channel::<bool>();
-
-        self.peers.insert(
-            peer_id.clone(),
-            Peer {
-                send_queue: outgoing,
-                recv_queue_in: in_queue,
-                _io_close_handle: stop_handle,
-            },
-        );
+    fn peer_connected(&self, peer_id: &PeerIdentity, io: FramedIo) {
+        let (recv_queue, send_queue) = io.into_parts();
+        self.peers.insert(peer_id.clone(), Peer { send_queue });
         self.round_robin.push(peer_id.clone());
         self.peer_queue_in
             .clone()
-            .try_send((peer_id.clone(), in_queue_receiver))
+            .try_send((peer_id.clone(), recv_queue))
             .unwrap();
-
-        stop_callback
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {

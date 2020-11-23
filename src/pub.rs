@@ -17,7 +17,6 @@ use std::sync::Arc;
 pub(crate) struct Subscriber {
     pub(crate) subscriptions: Vec<Vec<u8>>,
     pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
-    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
 pub(crate) struct PubSocketBackend {
@@ -83,23 +82,16 @@ impl SocketBackend for PubSocketBackend {
 }
 
 impl MultiPeerBackend for PubSocketBackend {
-    fn peer_connected(
-        &self,
-        peer_id: &PeerIdentity,
-        outgoing: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
-    ) -> oneshot::Receiver<bool> {
-        let default_queue_size = 100;
-        let (stop_handle, stop_callback) = oneshot::channel::<bool>();
-
+    fn peer_connected(&self, peer_id: &PeerIdentity, io: FramedIo) {
+        let (recv_queue, send_queue) = io.into_parts();
+        // TODO provide handling for recv_queue
         self.subscribers.insert(
             peer_id.clone(),
             Subscriber {
                 subscriptions: vec![],
-                send_queue: outgoing,
-                _io_close_handle: stop_handle,
+                send_queue,
             },
         );
-        stop_callback
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {

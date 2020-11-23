@@ -11,19 +11,19 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use futures::SinkExt;
 use futures::StreamExt;
+use futures_codec::FramedRead;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 struct RepPeer {
     pub(crate) _identity: PeerIdentity,
     pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
-    pub(crate) recv_queue_in: mpsc::Sender<Message>,
-    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
 struct RepSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, RepPeer>,
-    pub(crate) peer_queue_in: mpsc::Sender<(PeerIdentity, mpsc::Receiver<Message>)>,
+    pub(crate) peer_queue_in:
+        mpsc::Sender<(PeerIdentity, FramedRead<Box<dyn FrameableRead>, ZmqCodec>)>,
 }
 
 pub struct RepSocket {
@@ -76,30 +76,20 @@ impl Socket for RepSocket {
 }
 
 impl MultiPeerBackend for RepSocketBackend {
-    fn peer_connected(
-        &self,
-        peer_id: &PeerIdentity,
-        outgoing: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
-    ) -> oneshot::Receiver<bool> {
-        let default_queue_size = 100;
-        let (in_queue, in_queue_receiver) = mpsc::channel::<Message>(default_queue_size);
-        let (stop_handle, stop_callback) = oneshot::channel::<bool>();
+    fn peer_connected(&self, peer_id: &PeerIdentity, io: FramedIo) {
+        let (recv_queue, send_queue) = io.into_parts();
 
         self.peers.insert(
             peer_id.clone(),
             RepPeer {
                 _identity: peer_id.clone(),
-                send_queue: outgoing,
-                recv_queue_in: in_queue,
-                _io_close_handle: stop_handle,
+                send_queue,
             },
         );
         self.peer_queue_in
             .clone()
-            .try_send((peer_id.clone(), in_queue_receiver))
+            .try_send((peer_id.clone(), recv_queue))
             .unwrap();
-
-        stop_callback
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
@@ -109,15 +99,7 @@ impl MultiPeerBackend for RepSocketBackend {
 
 #[async_trait]
 impl SocketBackend for RepSocketBackend {
-    async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
-        self.peers
-            .get_mut(peer_id)
-            .expect("Not found peer by id")
-            .recv_queue_in
-            .send(message)
-            .await
-            .expect("Failed to send");
-    }
+    async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {}
 
     fn socket_type(&self) -> SocketType {
         SocketType::REP

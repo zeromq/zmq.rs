@@ -84,15 +84,10 @@ impl BlockingRecv for ReqSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         match self.current_request.take() {
             Some(peer_id) => {
-                if let Some(recv_queue) = self
-                    .backend
-                    .peers
-                    .get(&peer_id)
-                    .map(|p| p.recv_queue.clone())
-                {
-                    let message = recv_queue.lock().await.next().await;
+                if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
+                    let message = peer.recv_queue.next().await;
                     match message {
-                        Some(Message::Multipart(mut message)) => {
+                        Some(Ok(Message::Multipart(mut message))) => {
                             assert!(message.len() == 2);
                             assert!(message[0].data.is_empty()); // Ensure that we have delimeter as first part
                             Ok(message.pop().unwrap())
@@ -133,28 +128,17 @@ impl Socket for ReqSocket {
 }
 
 impl MultiPeerBackend for ReqSocketBackend {
-    fn peer_connected(
-        &self,
-        peer_id: &PeerIdentity,
-        outgoing: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
-    ) -> oneshot::Receiver<bool> {
-        let default_queue_size = 1;
-        let (in_queue, in_queue_receiver) = mpsc::channel(default_queue_size);
-        let (stop_handle, stop_callback) = oneshot::channel::<bool>();
-
+    fn peer_connected(&self, peer_id: &PeerIdentity, io: FramedIo) {
+        let (recv_queue, send_queue) = io.into_parts();
         self.peers.insert(
             peer_id.clone(),
             Peer {
                 _identity: peer_id.clone(),
-                send_queue: outgoing,
-                recv_queue: Arc::new(Mutex::new(in_queue_receiver)),
-                recv_queue_in: in_queue,
-                _io_close_handle: stop_handle,
+                send_queue,
+                recv_queue,
             },
         );
         self.round_robin.push(peer_id.clone());
-
-        stop_callback
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
@@ -164,28 +148,7 @@ impl MultiPeerBackend for ReqSocketBackend {
 
 #[async_trait]
 impl SocketBackend for ReqSocketBackend {
-    async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
-        // This is needed to ensure that we only store messages that we are expecting to
-        // get Other messages are silently discarded according to spec
-        let curr_req_lock = self.current_request_peer_id.lock().await;
-        match curr_req_lock.as_ref() {
-            Some(id) => {
-                if id != peer_id {
-                    return;
-                }
-            }
-            None => return,
-        }
-        drop(curr_req_lock);
-        // We've got reply that we were waiting for
-        self.peers
-            .get_mut(peer_id)
-            .expect("Not found peer by id")
-            .recv_queue_in
-            .send(message)
-            .await
-            .expect("Failed to send");
-    }
+    async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {}
 
     fn socket_type(&self) -> SocketType {
         SocketType::REQ

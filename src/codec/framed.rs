@@ -11,7 +11,7 @@ impl<T> FrameableWrite for T where T: futures::AsyncWrite + Unpin + Send + Sync 
 
 /// Equivalent to [`futures_codec::Framed<T, ZmqCodec>`] or
 /// [`tokio_util::codec::Framed`]
-pub(crate) struct FramedIo {
+pub struct FramedIo {
     pub read_half: futures_codec::FramedRead<Box<dyn FrameableRead>, ZmqCodec>,
     pub write_half: futures_codec::FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
 }

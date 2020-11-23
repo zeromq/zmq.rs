@@ -7,6 +7,7 @@ use bytes::Bytes;
 use futures::lock::Mutex;
 use futures::stream::StreamExt;
 use futures::SinkExt;
+use futures_codec::FramedRead;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -58,9 +59,7 @@ impl From<PeerIdentity> for Bytes {
 pub(crate) struct Peer {
     pub(crate) _identity: PeerIdentity,
     pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
-    pub(crate) recv_queue: Arc<Mutex<mpsc::Receiver<Message>>>,
-    pub(crate) recv_queue_in: mpsc::Sender<Message>,
-    pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
+    pub(crate) recv_queue: FramedRead<Box<dyn FrameableRead>, ZmqCodec>,
 }
 
 const COMPATIBILITY_MATRIX: [u8; 121] = [
@@ -161,39 +160,15 @@ pub(crate) async fn peer_connected(
         .await
         .expect("Failed to exchange ready messages");
 
-    let (mut read, write) = raw_socket.into_parts();
-    let stop_callback = backend.peer_connected(&peer_id, write);
-
-    // TODO: can we hold this handle somewhere to detect failure and clean up
-    // properly?
-    let _io_task_handle = tokio::spawn(async move {
-        let mut stop_callback = stop_callback;
-        loop {
-            tokio::select! {
-                _ = &mut stop_callback => {
-                    break;
-                },
-                incoming = read.next() => {
-                    match incoming {
-                        Some(Ok(message)) => {
-                            backend.message_received(&peer_id, message).await;
-                        }
-                        None => {
-                            backend.peer_disconnected(&peer_id);
-                            break;
-                        }
-                        _ => todo!(),
-                    }
-                },
-            }
-        }
-    });
+    backend.peer_connected(&peer_id, raw_socket);
 }
 
 pub(crate) struct FairQueueProcessor {
-    pub(crate) fair_queue_stream: FairQueue<mpsc::Receiver<Message>, PeerIdentity>,
+    pub(crate) fair_queue_stream:
+        FairQueue<FramedRead<Box<dyn FrameableRead>, ZmqCodec>, PeerIdentity>,
     pub(crate) socket_incoming_queue: mpsc::Sender<(PeerIdentity, Message)>,
-    pub(crate) peer_queue_in: mpsc::Receiver<(PeerIdentity, mpsc::Receiver<Message>)>,
+    pub(crate) peer_queue_in:
+        mpsc::Receiver<(PeerIdentity, FramedRead<Box<dyn FrameableRead>, ZmqCodec>)>,
     pub(crate) _io_close_handle: oneshot::Receiver<bool>,
 }
 
@@ -221,8 +196,8 @@ pub(crate) async fn process_fair_queue_messages(mut processor: FairQueueProcesso
             },
             message = processor.fair_queue_stream.next(), if waiting_for_data => {
                 match message {
-                    Some(m) => {
-                        let result = processor.socket_incoming_queue.send(m).await;
+                    Some((peer_id, Ok(m))) => {
+                        let result = processor.socket_incoming_queue.send((peer_id, m)).await;
                         match result {
                             Ok(()) => (),
                             Err(e) => {
@@ -232,6 +207,7 @@ pub(crate) async fn process_fair_queue_messages(mut processor: FairQueueProcesso
                             }
                         }
                     },
+                    Some((peer_id, Err(_))) => todo!(),
                     None => {
                         // This is the case when there are no connected clients
                         // We should sleep and wait for new clients to connect

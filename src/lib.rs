@@ -107,11 +107,7 @@ pub trait MultiPeerBackend: SocketBackend {
     /// This should not be public..
     /// Find a better way of doing this
 
-    fn peer_connected(
-        &self,
-        peer_id: &PeerIdentity,
-        outgoing: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
-    ) -> oneshot::Receiver<bool>;
+    fn peer_connected(&self, peer_id: &PeerIdentity, io: FramedIo);
     fn peer_disconnected(&self, peer_id: &PeerIdentity);
 }
 
