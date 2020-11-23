@@ -4,17 +4,19 @@ use crate::error::ZmqResult;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{MultiPeerBackend, NonBlockingSend, Socket, SocketBackend, SocketType};
+use crate::{BlockingSend, MultiPeerBackend, NonBlockingSend, Socket, SocketBackend, SocketType};
 
 use async_trait::async_trait;
 use dashmap::DashMap;
 use futures::channel::{mpsc, oneshot};
+use futures::SinkExt;
+use futures_codec::FramedWrite;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub(crate) struct Subscriber {
     pub(crate) subscriptions: Vec<Vec<u8>>,
-    pub(crate) send_queue: mpsc::Sender<Message>,
+    pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
     pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
 
@@ -80,28 +82,27 @@ impl SocketBackend for PubSocketBackend {
     }
 }
 
-#[async_trait]
 impl MultiPeerBackend for PubSocketBackend {
-    async fn peer_connected(
+    fn peer_connected(
         &self,
         peer_id: &PeerIdentity,
-    ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
+        outgoing: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
+    ) -> oneshot::Receiver<bool> {
         let default_queue_size = 100;
-        let (out_queue, out_queue_receiver) = mpsc::channel(default_queue_size);
         let (stop_handle, stop_callback) = oneshot::channel::<bool>();
 
         self.subscribers.insert(
             peer_id.clone(),
             Subscriber {
                 subscriptions: vec![],
-                send_queue: out_queue,
+                send_queue: outgoing,
                 _io_close_handle: stop_handle,
             },
         );
-        (out_queue_receiver, stop_callback)
+        stop_callback
     }
 
-    async fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+    fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         log::info!("Client disconnected {:?}", peer_id);
         self.subscribers.remove(peer_id);
     }
@@ -118,14 +119,16 @@ impl Drop for PubSocket {
     }
 }
 
-impl NonBlockingSend for PubSocket {
-    fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+#[async_trait]
+impl BlockingSend for PubSocket {
+    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         for mut subscriber in self.backend.subscribers.iter_mut() {
             for sub_filter in &subscriber.subscriptions {
                 if sub_filter.as_slice() == &message.data[0..sub_filter.len()] {
                     let _res = subscriber
                         .send_queue
-                        .try_send(Message::Message(message.clone()));
+                        .send(Message::Message(message.clone()))
+                        .await?;
                     // TODO handle result
                     break;
                 }

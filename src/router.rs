@@ -14,6 +14,7 @@ use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{MultiPeerBackend, SocketType};
 use crate::{Socket, SocketBackend};
+use futures::SinkExt;
 
 pub struct RouterSocket {
     backend: Arc<GenericSocketBackend>,
@@ -68,7 +69,8 @@ impl RouterSocket {
         match self.backend.peers.get_mut(&peer_id) {
             Some(mut peer) => {
                 peer.send_queue
-                    .try_send(Message::Multipart(messages[1..].to_vec()))?;
+                    .send(Message::Multipart(messages[1..].to_vec()))
+                    .await?;
                 Ok(())
             }
             None => Err(ZmqError::Other("Destination client not found by identity")),

@@ -1,4 +1,4 @@
-use crate::codec::Message;
+use crate::codec::{FrameableWrite, Message, ZmqCodec};
 use crate::fair_queue::FairQueue;
 use crate::util::{FairQueueProcessor, PeerIdentity};
 use crate::{util, MultiPeerBackend, SocketBackend, SocketType, ZmqError, ZmqResult};
@@ -7,9 +7,10 @@ use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use futures::channel::{mpsc, oneshot};
 use futures::SinkExt;
+use futures_codec::FramedWrite;
 
 pub(crate) struct Peer {
-    pub(crate) send_queue: mpsc::Sender<Message>,
+    pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
     pub(crate) recv_queue_in: mpsc::Sender<Message>,
     pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
@@ -46,7 +47,7 @@ impl GenericSocketBackend {
         }
     }
 
-    pub(crate) async fn send_round_robin(&self, mut message: Message) -> ZmqResult<PeerIdentity> {
+    pub(crate) async fn send_round_robin(&self, message: Message) -> ZmqResult<PeerIdentity> {
         // In normal scenario this will always be only 1 iteration
         // There can be special case when peer has disconnected and his id is still in
         // RR queue This happens because SegQueue don't have an api to delete
@@ -74,19 +75,14 @@ impl GenericSocketBackend {
             };
             match self.peers.get_mut(&next_peer_id) {
                 Some(mut peer) => {
-                    let send_result = peer.send_queue.try_send(message);
+                    let send_result = peer.send_queue.send(message).await;
                     match send_result {
                         Ok(()) => {
                             self.round_robin.push(next_peer_id.clone());
-                            return Ok(next_peer_id.clone());
+                            return Ok(next_peer_id);
                         }
-                        Err(e) => {
-                            if e.is_full() {
-                                // Try again later
-                                self.round_robin.push(next_peer_id.clone());
-                            }
-                            message = e.into_inner();
-                            continue;
+                        Err(_) => {
+                            panic!("Don't know how to handle this now");
                         }
                     };
                 }
@@ -116,21 +112,20 @@ impl SocketBackend for GenericSocketBackend {
     }
 }
 
-#[async_trait]
 impl MultiPeerBackend for GenericSocketBackend {
-    async fn peer_connected(
+    fn peer_connected(
         &self,
         peer_id: &PeerIdentity,
-    ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
+        outgoing: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
+    ) -> oneshot::Receiver<bool> {
         let default_queue_size = 100;
-        let (out_queue, out_queue_receiver) = mpsc::channel(default_queue_size);
         let (in_queue, in_queue_receiver) = mpsc::channel(default_queue_size);
         let (stop_handle, stop_callback) = oneshot::channel::<bool>();
 
         self.peers.insert(
             peer_id.clone(),
             Peer {
-                send_queue: out_queue,
+                send_queue: outgoing,
                 recv_queue_in: in_queue,
                 _io_close_handle: stop_handle,
             },
@@ -141,10 +136,10 @@ impl MultiPeerBackend for GenericSocketBackend {
             .try_send((peer_id.clone(), in_queue_receiver))
             .unwrap();
 
-        (out_queue_receiver, stop_callback)
+        stop_callback
     }
 
-    async fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+    fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         self.peers.remove(peer_id);
     }
 }

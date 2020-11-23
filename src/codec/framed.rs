@@ -4,10 +4,10 @@ use crate::codec::ZmqCodec;
 use futures_codec::{FramedRead, FramedWrite};
 
 // Enables us to have multiple bounds on the dyn trait in `InnerFramed`
-pub trait FrameableRead: futures::AsyncRead + Unpin + Send {}
-impl<T> FrameableRead for T where T: futures::AsyncRead + Unpin + Send {}
-pub trait FrameableWrite: futures::AsyncWrite + Unpin + Send {}
-impl<T> FrameableWrite for T where T: futures::AsyncWrite + Unpin + Send {}
+pub trait FrameableRead: futures::AsyncRead + Unpin + Send + Sync {}
+impl<T> FrameableRead for T where T: futures::AsyncRead + Unpin + Send + Sync {}
+pub trait FrameableWrite: futures::AsyncWrite + Unpin + Send + Sync {}
+impl<T> FrameableWrite for T where T: futures::AsyncWrite + Unpin + Send + Sync {}
 
 /// Equivalent to [`futures_codec::Framed<T, ZmqCodec>`] or
 /// [`tokio_util::codec::Framed`]

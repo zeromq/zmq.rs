@@ -39,6 +39,7 @@ extern crate enum_primitive_derive;
 
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
+use futures_codec::FramedWrite;
 use num_traits::ToPrimitive;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -102,16 +103,16 @@ impl Display for SocketType {
     }
 }
 
-#[async_trait]
 pub trait MultiPeerBackend: SocketBackend {
     /// This should not be public..
     /// Find a better way of doing this
 
-    async fn peer_connected(
+    fn peer_connected(
         &self,
         peer_id: &PeerIdentity,
-    ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>);
-    async fn peer_disconnected(&self, peer_id: &PeerIdentity);
+        outgoing: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
+    ) -> oneshot::Receiver<bool>;
+    fn peer_disconnected(&self, peer_id: &PeerIdentity);
 }
 
 #[async_trait]

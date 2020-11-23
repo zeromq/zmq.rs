@@ -132,14 +132,13 @@ impl Socket for ReqSocket {
     }
 }
 
-#[async_trait]
 impl MultiPeerBackend for ReqSocketBackend {
-    async fn peer_connected(
+    fn peer_connected(
         &self,
         peer_id: &PeerIdentity,
-    ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
+        outgoing: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
+    ) -> oneshot::Receiver<bool> {
         let default_queue_size = 1;
-        let (out_queue, out_queue_receiver) = mpsc::channel(default_queue_size);
         let (in_queue, in_queue_receiver) = mpsc::channel(default_queue_size);
         let (stop_handle, stop_callback) = oneshot::channel::<bool>();
 
@@ -147,7 +146,7 @@ impl MultiPeerBackend for ReqSocketBackend {
             peer_id.clone(),
             Peer {
                 _identity: peer_id.clone(),
-                send_queue: out_queue,
+                send_queue: outgoing,
                 recv_queue: Arc::new(Mutex::new(in_queue_receiver)),
                 recv_queue_in: in_queue,
                 _io_close_handle: stop_handle,
@@ -155,10 +154,10 @@ impl MultiPeerBackend for ReqSocketBackend {
         );
         self.round_robin.push(peer_id.clone());
 
-        (out_queue_receiver, stop_callback)
+        stop_callback
     }
 
-    async fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+    fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         self.peers.remove(peer_id);
     }
 }

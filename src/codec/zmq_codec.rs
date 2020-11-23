@@ -24,7 +24,7 @@ enum DecoderState {
 }
 
 #[derive(Debug)]
-pub(crate) struct ZmqCodec {
+pub struct ZmqCodec {
     state: DecoderState,
     waiting_for: usize, // Number of bytes needed to decode frame
     // Needed to store incoming multipart message

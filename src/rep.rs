@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 struct RepPeer {
     pub(crate) _identity: PeerIdentity,
-    pub(crate) send_queue: mpsc::Sender<Message>,
+    pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
     pub(crate) recv_queue_in: mpsc::Sender<Message>,
     pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
 }
@@ -75,14 +75,13 @@ impl Socket for RepSocket {
     }
 }
 
-#[async_trait]
 impl MultiPeerBackend for RepSocketBackend {
-    async fn peer_connected(
+    fn peer_connected(
         &self,
         peer_id: &PeerIdentity,
-    ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>) {
+        outgoing: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
+    ) -> oneshot::Receiver<bool> {
         let default_queue_size = 100;
-        let (out_queue, out_queue_receiver) = mpsc::channel(default_queue_size);
         let (in_queue, in_queue_receiver) = mpsc::channel::<Message>(default_queue_size);
         let (stop_handle, stop_callback) = oneshot::channel::<bool>();
 
@@ -90,7 +89,7 @@ impl MultiPeerBackend for RepSocketBackend {
             peer_id.clone(),
             RepPeer {
                 _identity: peer_id.clone(),
-                send_queue: out_queue,
+                send_queue: outgoing,
                 recv_queue_in: in_queue,
                 _io_close_handle: stop_handle,
             },
@@ -100,10 +99,10 @@ impl MultiPeerBackend for RepSocketBackend {
             .try_send((peer_id.clone(), in_queue_receiver))
             .unwrap();
 
-        (out_queue_receiver, stop_callback)
+        stop_callback
     }
 
-    async fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+    fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         self.peers.remove(peer_id);
     }
 }
@@ -129,8 +128,9 @@ impl SocketBackend for RepSocketBackend {
     }
 }
 
-impl NonBlockingSend for RepSocket {
-    fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+#[async_trait]
+impl BlockingSend for RepSocket {
+    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         match self.current_request.take() {
             Some(peer_id) => {
                 if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
@@ -138,7 +138,7 @@ impl NonBlockingSend for RepSocket {
                         "".into(), // delimiter frame
                         message,
                     ];
-                    peer.send_queue.try_send(Message::Multipart(frames))?;
+                    peer.send_queue.send(Message::Multipart(frames)).await?;
                     Ok(())
                 } else {
                     Err(ZmqError::ReturnToSender {

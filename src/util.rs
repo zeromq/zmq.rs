@@ -57,7 +57,7 @@ impl From<PeerIdentity> for Bytes {
 
 pub(crate) struct Peer {
     pub(crate) _identity: PeerIdentity,
-    pub(crate) send_queue: mpsc::Sender<Message>,
+    pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
     pub(crate) recv_queue: Arc<Mutex<mpsc::Receiver<Message>>>,
     pub(crate) recv_queue_in: mpsc::Sender<Message>,
     pub(crate) _io_close_handle: futures::channel::oneshot::Sender<bool>,
@@ -161,35 +161,25 @@ pub(crate) async fn peer_connected(
         .await
         .expect("Failed to exchange ready messages");
 
-    let (outgoing_queue, stop_callback) = backend.peer_connected(&peer_id).await;
+    let (mut read, write) = raw_socket.into_parts();
+    let stop_callback = backend.peer_connected(&peer_id, write);
 
     // TODO: can we hold this handle somewhere to detect failure and clean up
     // properly?
     let _io_task_handle = tokio::spawn(async move {
         let mut stop_callback = stop_callback;
-        let mut outgoing_queue = outgoing_queue;
         loop {
             tokio::select! {
                 _ = &mut stop_callback => {
                     break;
                 },
-                outgoing = outgoing_queue.next() => {
-                    match outgoing {
-                        Some(message) => {
-                            raw_socket.write_half.send(message).await.expect("Codec Error in send task");
-                        },
-                        None => {
-                            break;
-                        }
-                    }
-                },
-                incoming = raw_socket.read_half.next() => {
+                incoming = read.next() => {
                     match incoming {
                         Some(Ok(message)) => {
                             backend.message_received(&peer_id, message).await;
                         }
                         None => {
-                            backend.peer_disconnected(&peer_id).await;
+                            backend.peer_disconnected(&peer_id);
                             break;
                         }
                         _ => todo!(),
