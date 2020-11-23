@@ -9,6 +9,8 @@ use std::sync::{Arc, Mutex};
 struct QueueInner<S, K> {
     ready_queue: BinaryHeap<PriorityStream<S, K>>,
     pending_streams: HashMap<usize, PriorityStream<S, K>>,
+    // See wake_by_ref for details
+    weak_up_processing: Option<usize>,
     waker: Option<Waker>,
 }
 
@@ -29,11 +31,20 @@ where
 {
     fn wake_by_ref(arc_self: &Arc<Self>) {
         let mut inner = arc_self.inner.lock().unwrap();
-        let s = inner
-            .pending_streams
-            .remove(&arc_self.index)
-            .expect("Corrupted index given to waker");
-        inner.ready_queue.push(s);
+        match inner.pending_streams.remove(&arc_self.index) {
+            None => {
+                // This is a tricky part..
+                // Some streams call waker inside the poll_next method.
+                // At that moment stream is neither ready or pending.
+                // We leave it's priority hang for the moment.
+                // It's responsibility of the FairQueue::poll_next to take this into account.
+                // In such case it will put stream as ready (cause it explicitly asked for it)
+                inner.weak_up_processing = Some(arc_self.index);
+            }
+            Some(s) => {
+                inner.ready_queue.push(s);
+            }
+        };
         if let Some(waker) = inner.waker.take() {
             waker.wake_by_ref();
         }
@@ -100,17 +111,23 @@ where
                 Poll::Ready(Some(res)) => {
                     s.priority = stream.counter.fetch_add(1, atomic::Ordering::Relaxed);
                     let item = Some((s.key.clone(), res));
-                    stream.inner.lock().unwrap().ready_queue.push(s);
+                    let mut inner = stream.inner.lock().unwrap();
+                    inner.ready_queue.push(s);
+                    inner.weak_up_processing = None;
                     return Poll::Ready(item);
                 }
                 Poll::Ready(None) => continue,
                 Poll::Pending => {
-                    stream
-                        .inner
-                        .lock()
-                        .unwrap()
-                        .pending_streams
-                        .insert(s.priority, s);
+                    let mut inner = stream.inner.lock().unwrap();
+                    match inner.weak_up_processing.take() {
+                        None => {
+                            inner.pending_streams.insert(s.priority, s);
+                        }
+                        Some(prio) => {
+                            assert_eq!(prio, s.priority);
+                            inner.ready_queue.push(s);
+                        }
+                    };
                     return Poll::Pending;
                 }
             }
@@ -125,6 +142,7 @@ impl<S, K> FairQueue<S, K> {
             inner: Arc::new(Mutex::new(QueueInner {
                 ready_queue: BinaryHeap::new(),
                 pending_streams: HashMap::new(),
+                weak_up_processing: None,
                 waker: None,
             })),
         }
