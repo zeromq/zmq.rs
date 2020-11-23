@@ -10,7 +10,6 @@ use crate::backend::GenericSocketBackend;
 use crate::fair_queue::FairQueue;
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
-use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;

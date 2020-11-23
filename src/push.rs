@@ -6,7 +6,6 @@ use crate::{
     ZmqResult,
 };
 use async_trait::async_trait;
-use futures::channel::mpsc;
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;

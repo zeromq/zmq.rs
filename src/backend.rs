@@ -1,16 +1,12 @@
-use crate::codec::{
-    FrameableRead, FrameableWrite, FramedIo, Message, ZmqCodec, ZmqFramedRead, ZmqFramedWrite,
-};
-use crate::fair_queue::{FairQueue, QueueInner};
-use crate::util::{FairQueueProcessor, PeerIdentity};
-use crate::{util, MultiPeerBackend, SocketBackend, SocketType, ZmqError, ZmqResult};
+use crate::codec::{FramedIo, Message, ZmqFramedRead, ZmqFramedWrite};
+use crate::fair_queue::QueueInner;
+use crate::util::PeerIdentity;
+use crate::{MultiPeerBackend, SocketBackend, SocketType, ZmqError, ZmqResult};
 use async_trait::async_trait;
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
-use futures::channel::{mpsc, oneshot};
 use futures::SinkExt;
-use futures_codec::{FramedRead, FramedWrite};
-use parking_lot::{Mutex, RawMutex};
+use parking_lot::Mutex;
 use std::sync::Arc;
 
 pub(crate) struct Peer {

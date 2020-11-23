@@ -9,7 +9,6 @@ use crate::{SocketType, ZmqResult};
 use async_trait::async_trait;
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
-use futures::channel::{mpsc, oneshot};
 use futures::lock::Mutex;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;

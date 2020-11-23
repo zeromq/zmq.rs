@@ -3,15 +3,12 @@ use crate::endpoint::Endpoint;
 use crate::error::*;
 use crate::fair_queue::{FairQueue, QueueInner};
 use crate::transport::AcceptStopHandle;
-use crate::util::FairQueueProcessor;
 use crate::*;
-use crate::{util, SocketType, ZmqResult};
-
+use crate::{SocketType, ZmqResult};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use futures::SinkExt;
 use futures::StreamExt;
-use futures_codec::FramedRead;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;

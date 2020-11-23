@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use futures::channel::mpsc;
 use futures::stream::StreamExt;
 use std::collections::HashMap;
 use std::convert::TryInto;

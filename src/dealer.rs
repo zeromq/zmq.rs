@@ -5,7 +5,6 @@ use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketType, ZmqMessage, ZmqResult};
 use async_trait::async_trait;
-use futures::channel::mpsc;
 use futures::StreamExt;
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;

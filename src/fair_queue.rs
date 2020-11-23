@@ -165,10 +165,6 @@ impl<S, K> FairQueue<S, K> {
         }
     }
 
-    pub fn insert(&mut self, k: K, s: S) {
-        self.inner.lock().insert(k, s);
-    }
-
     pub(crate) fn inner(&self) -> Arc<Mutex<QueueInner<S, K>>> {
         self.inner.clone()
     }

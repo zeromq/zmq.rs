@@ -1,10 +1,8 @@
 use crate::codec::CodecResult;
 use crate::codec::FramedIo;
-use crate::fair_queue::FairQueue;
 use crate::*;
 
 use bytes::Bytes;
-use futures::lock::Mutex;
 use futures::stream::StreamExt;
 use futures::SinkExt;
 use futures_codec::FramedRead;
@@ -161,69 +159,6 @@ pub(crate) async fn peer_connected(
         .expect("Failed to exchange ready messages");
 
     backend.peer_connected(&peer_id, raw_socket);
-}
-
-pub(crate) struct FairQueueProcessor {
-    pub(crate) fair_queue_stream:
-        FairQueue<FramedRead<Box<dyn FrameableRead>, ZmqCodec>, PeerIdentity>,
-    pub(crate) socket_incoming_queue: mpsc::Sender<(PeerIdentity, Message)>,
-    pub(crate) peer_queue_in:
-        mpsc::Receiver<(PeerIdentity, FramedRead<Box<dyn FrameableRead>, ZmqCodec>)>,
-    pub(crate) _io_close_handle: oneshot::Receiver<bool>,
-}
-
-pub(crate) async fn process_fair_queue_messages(mut processor: FairQueueProcessor) {
-    let mut stop_callback = processor._io_close_handle;
-    let mut waiting_for_clients = true;
-    let mut waiting_for_data = true;
-    loop {
-        tokio::select! {
-            _ = &mut stop_callback => {
-                break;
-            },
-            peer_in = processor.peer_queue_in.next(), if waiting_for_clients => {
-                match peer_in {
-                    Some((peer_id, receiver)) => {
-                        processor.fair_queue_stream.insert(peer_id, receiver);
-                        waiting_for_data = true;
-                    },
-                    None => {
-                        // Channel for newly connected clients was closed
-                        // so we no longer wait for the to arrive
-                        waiting_for_clients = false;
-                    },
-                };
-            },
-            message = processor.fair_queue_stream.next(), if waiting_for_data => {
-                match message {
-                    Some((peer_id, Ok(m))) => {
-                        let result = processor.socket_incoming_queue.send((peer_id, m)).await;
-                        match result {
-                            Ok(()) => (),
-                            Err(e) => {
-                                if e.is_disconnected() {
-                                    break;
-                                }
-                            }
-                        }
-                    },
-                    Some((peer_id, Err(_))) => todo!(),
-                    None => {
-                        // This is the case when there are no connected clients
-                        // We should sleep and wait for new clients to connect
-                        // This is handled by 2nd branch of select
-                        if waiting_for_clients {
-                            waiting_for_data = false;
-                        } else {
-                            // We're not waiting for client and have no data...
-                            // stop the loop and cleanup
-                            break;
-                        };
-                    }
-                };
-            }
-        }
-    }
 }
 
 #[cfg(test)]

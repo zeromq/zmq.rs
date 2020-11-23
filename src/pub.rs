@@ -4,11 +4,10 @@ use crate::error::ZmqResult;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{BlockingSend, MultiPeerBackend, NonBlockingSend, Socket, SocketBackend, SocketType};
+use crate::{BlockingSend, MultiPeerBackend, Socket, SocketBackend, SocketType};
 
 use async_trait::async_trait;
 use dashmap::DashMap;
-use futures::channel::{mpsc, oneshot};
 use futures::SinkExt;
 use futures_codec::FramedWrite;
 use std::collections::HashMap;
