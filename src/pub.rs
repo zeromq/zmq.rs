@@ -150,6 +150,7 @@ impl BlockingSend for PubSocket {
         for mut subscriber in self.backend.subscribers.iter_mut() {
             for sub_filter in &subscriber.subscriptions {
                 if sub_filter.as_slice() == &message.data[0..sub_filter.len()] {
+                    // TODO should use try_send here
                     let res = subscriber
                         .send_queue
                         .send(Message::Message(message.clone()))
