@@ -182,9 +182,13 @@ mod test {
         let c = futures::stream::iter(vec!["c1", "c2", "c3"]);
 
         let mut f_queue: FairQueue<_, u64> = FairQueue::new(false);
-        f_queue.insert(1, a);
-        f_queue.insert(2, b);
-        f_queue.insert(3, c);
+        {
+            let inner = f_queue.inner();
+            let mut inner_lock = inner.lock();
+            inner_lock.insert(1, a);
+            inner_lock.insert(2, b);
+            inner_lock.insert(3, c);
+        }
 
         let mut results = Vec::new();
         while let Some(i) = f_queue.next().await {
@@ -213,9 +217,13 @@ mod test {
         let c = futures::stream::iter(vec!["c1", "c2"]);
 
         let mut f_queue: FairQueue<_, u64> = FairQueue::new(false);
-        f_queue.insert(1, a);
-        f_queue.insert(2, b);
-        f_queue.insert(3, c);
+        {
+            let inner = f_queue.inner();
+            let mut inner_lock = inner.lock();
+            inner_lock.insert(1, a);
+            inner_lock.insert(2, b);
+            inner_lock.insert(3, c);
+        }
 
         let mut results = Vec::new();
         while let Some(i) = f_queue.next().await {
