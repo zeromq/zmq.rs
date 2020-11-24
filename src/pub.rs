@@ -97,7 +97,7 @@ impl MultiPeerBackend for PubSocketBackend {
                 _subscription_coro_stop: sender,
             },
         );
-        let backend = self.clone();
+        let backend = self;
         let peer_id = peer_id.clone();
         tokio::spawn(async move {
             use futures::StreamExt;

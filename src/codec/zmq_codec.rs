@@ -43,6 +43,12 @@ impl ZmqCodec {
     }
 }
 
+impl Default for ZmqCodec {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Decoder for ZmqCodec {
     type Error = CodecError;
     type Item = Message;
