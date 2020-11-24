@@ -4,20 +4,19 @@ use crate::error::ZmqResult;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{BlockingSend, MultiPeerBackend, Socket, SocketBackend, SocketType};
+use crate::{BlockingSend, MultiPeerBackend, Socket, SocketBackend, SocketType, ZmqError};
 use futures::channel::oneshot;
 
 use async_trait::async_trait;
 use dashmap::DashMap;
-use futures::SinkExt;
-use futures_codec::FramedWrite;
 use std::collections::HashMap;
 use std::io::ErrorKind;
+use std::pin::Pin;
 use std::sync::Arc;
 
 pub(crate) struct Subscriber {
     pub(crate) subscriptions: Vec<Vec<u8>>,
-    pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
+    pub(crate) send_queue: Pin<Box<ZmqFramedWrite>>,
     _subscription_coro_stop: oneshot::Sender<()>,
 }
 
@@ -93,7 +92,7 @@ impl MultiPeerBackend for PubSocketBackend {
             peer_id.clone(),
             Subscriber {
                 subscriptions: vec![],
-                send_queue,
+                send_queue: Box::pin(send_queue),
                 _subscription_coro_stop: sender,
             },
         );
@@ -150,14 +149,13 @@ impl BlockingSend for PubSocket {
         for mut subscriber in self.backend.subscribers.iter_mut() {
             for sub_filter in &subscriber.subscriptions {
                 if sub_filter.as_slice() == &message.data[0..sub_filter.len()] {
-                    // TODO should use try_send here
                     let res = subscriber
                         .send_queue
-                        .send(Message::Message(message.clone()))
-                        .await;
+                        .as_mut()
+                        .try_send(Message::Message(message.clone()));
                     match res {
                         Ok(()) => {}
-                        Err(CodecError::Io(e)) => {
+                        Err(ZmqError::Codec(CodecError::Io(e))) => {
                             if e.kind() == ErrorKind::BrokenPipe {
                                 dead_peers.push(subscriber.key().clone());
                             } else {

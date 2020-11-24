@@ -29,12 +29,7 @@ impl FramedIo {
         }
     }
 
-    pub fn into_parts(
-        self,
-    ) -> (
-        futures_codec::FramedRead<Box<dyn FrameableRead>, ZmqCodec>,
-        futures_codec::FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
-    ) {
+    pub fn into_parts(self) -> (ZmqFramedRead, ZmqFramedWrite) {
         (self.read_half, self.write_half)
     }
 }
