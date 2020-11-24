@@ -5,26 +5,28 @@ use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{BlockingSend, MultiPeerBackend, Socket, SocketBackend, SocketType};
+use futures::channel::oneshot;
 
 use async_trait::async_trait;
 use dashmap::DashMap;
 use futures::SinkExt;
 use futures_codec::FramedWrite;
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::sync::Arc;
 
 pub(crate) struct Subscriber {
     pub(crate) subscriptions: Vec<Vec<u8>>,
     pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
+    _subscription_coro_stop: oneshot::Sender<()>,
 }
 
 pub(crate) struct PubSocketBackend {
     subscribers: DashMap<PeerIdentity, Subscriber>,
 }
 
-#[async_trait]
-impl SocketBackend for PubSocketBackend {
-    async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
+impl PubSocketBackend {
+    fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
         let message = match message {
             Message::Message(m) => m,
             _ => return,
@@ -70,7 +72,9 @@ impl SocketBackend for PubSocketBackend {
             _ => (),
         }
     }
+}
 
+impl SocketBackend for PubSocketBackend {
     fn socket_type(&self) -> SocketType {
         SocketType::PUB
     }
@@ -81,16 +85,45 @@ impl SocketBackend for PubSocketBackend {
 }
 
 impl MultiPeerBackend for PubSocketBackend {
-    fn peer_connected(&self, peer_id: &PeerIdentity, io: FramedIo) {
-        let (recv_queue, send_queue) = io.into_parts();
+    fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+        let (mut recv_queue, send_queue) = io.into_parts();
         // TODO provide handling for recv_queue
+        let (sender, mut stop_receiver) = oneshot::channel();
         self.subscribers.insert(
             peer_id.clone(),
             Subscriber {
                 subscriptions: vec![],
                 send_queue,
+                _subscription_coro_stop: sender,
             },
         );
+        let backend = self.clone();
+        let peer_id = peer_id.clone();
+        tokio::spawn(async move {
+            use futures::StreamExt;
+            loop {
+                tokio::select! {
+                     _ = &mut stop_receiver => {
+                         break;
+                     },
+                     message = &mut recv_queue.next() => {
+                        match message {
+                            Some(Ok(m)) => backend.message_received(&peer_id, m),
+                            Some(Err(e)) => {
+                                dbg!(e);
+                                backend.peer_disconnected(&peer_id);
+                                break;
+                            }
+                            None => {
+                                backend.peer_disconnected(&peer_id);
+                                break
+                            }
+                        }
+
+                     }
+                }
+            }
+        });
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
@@ -113,17 +146,34 @@ impl Drop for PubSocket {
 #[async_trait]
 impl BlockingSend for PubSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+        let mut dead_peers = Vec::new();
         for mut subscriber in self.backend.subscribers.iter_mut() {
             for sub_filter in &subscriber.subscriptions {
                 if sub_filter.as_slice() == &message.data[0..sub_filter.len()] {
-                    let _res = subscriber
+                    let res = subscriber
                         .send_queue
                         .send(Message::Message(message.clone()))
-                        .await?;
-                    // TODO handle result
+                        .await;
+                    match res {
+                        Ok(()) => {}
+                        Err(CodecError::Io(e)) => {
+                            if e.kind() == ErrorKind::BrokenPipe {
+                                dead_peers.push(subscriber.key().clone());
+                            } else {
+                                dbg!(e);
+                            }
+                        }
+                        Err(e) => {
+                            dbg!(e);
+                            todo!()
+                        }
+                    }
                     break;
                 }
             }
+        }
+        for peer in dead_peers {
+            self.backend.peer_disconnected(&peer);
         }
         Ok(())
     }

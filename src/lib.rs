@@ -106,14 +106,11 @@ pub trait MultiPeerBackend: SocketBackend {
     /// This should not be public..
     /// Find a better way of doing this
 
-    fn peer_connected(&self, peer_id: &PeerIdentity, io: FramedIo);
+    fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo);
     fn peer_disconnected(&self, peer_id: &PeerIdentity);
 }
 
-#[async_trait]
 pub trait SocketBackend: Send + Sync {
-    async fn message_received(&self, peer_id: &PeerIdentity, message: Message);
-
     fn socket_type(&self) -> SocketType;
     fn shutdown(&self);
 }

@@ -2,7 +2,6 @@ use crate::codec::{FramedIo, Message, ZmqFramedRead, ZmqFramedWrite};
 use crate::fair_queue::QueueInner;
 use crate::util::PeerIdentity;
 use crate::{MultiPeerBackend, SocketBackend, SocketType, ZmqError, ZmqResult};
-use async_trait::async_trait;
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use futures::SinkExt;
@@ -78,10 +77,7 @@ impl GenericSocketBackend {
     }
 }
 
-#[async_trait]
 impl SocketBackend for GenericSocketBackend {
-    async fn message_received(&self, peer_id: &PeerIdentity, message: Message) {}
-
     fn socket_type(&self) -> SocketType {
         self.socket_type
     }
@@ -92,7 +88,7 @@ impl SocketBackend for GenericSocketBackend {
 }
 
 impl MultiPeerBackend for GenericSocketBackend {
-    fn peer_connected(&self, peer_id: &PeerIdentity, io: FramedIo) {
+    fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, send_queue) = io.into_parts();
         self.peers.insert(peer_id.clone(), Peer { send_queue });
         self.round_robin.push(peer_id.clone());
