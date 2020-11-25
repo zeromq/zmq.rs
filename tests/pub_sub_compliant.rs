@@ -91,10 +91,14 @@ async fn test_their_pub_our_sub() {
         .join()
         .expect("Their pub terminated with an error!");
 
-    for _ in 0..N_SUBS {
+    for _ in 0..(N_SUBS - 1) {
         assert_eq!(
             zmq::SocketEvent::DISCONNECTED,
             get_monitor_event(&their_monitor).0
         );
     }
+    assert_eq!(
+        zmq::SocketEvent::CLOSED,
+        get_monitor_event(&their_monitor).0
+    );
 }

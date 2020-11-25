@@ -53,6 +53,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     .unwrap();
                 rep_owned
                     .send(format!("{} Rep - {}", mess, i).into())
+                    .await
                     .expect("Rep failed to send");
             }
             // yield for a moment to ensure that server has some time to flush socket

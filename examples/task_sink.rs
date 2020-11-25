@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::io::Write;
 use std::time::Instant;
-use zeromq::{BlockingRecv, NonBlockingSend, Socket};
+use zeromq::{BlockingRecv, BlockingSend, NonBlockingSend, Socket};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
 
     // Send kill signal to workers
-    controller.send("KILL".into())?;
+    controller.send("KILL".into()).await?;
 
     receiver.close().await;
     controller.close().await;

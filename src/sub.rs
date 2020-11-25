@@ -7,16 +7,16 @@ use crate::util::PeerIdentity;
 use crate::{BlockingRecv, MultiPeerBackend, Socket, SocketBackend, SocketType};
 
 use crate::backend::GenericSocketBackend;
+use crate::fair_queue::FairQueue;
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
-use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct SubSocket {
     backend: Arc<GenericSocketBackend>,
-    fair_queue: mpsc::Receiver<(PeerIdentity, Message)>,
+    fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
@@ -56,11 +56,12 @@ impl SubSocket {
 #[async_trait]
 impl Socket for SubSocket {
     fn new() -> Self {
-        // TODO define buffer size
-        let default_queue_size = 100;
-        let (queue_sender, fair_queue) = mpsc::channel(default_queue_size);
+        let fair_queue = FairQueue::new(true);
         Self {
-            backend: Arc::new(GenericSocketBackend::new(queue_sender, SocketType::SUB)),
+            backend: Arc::new(GenericSocketBackend::new(
+                Some(fair_queue.inner()),
+                SocketType::SUB,
+            )),
             fair_queue,
             binds: HashMap::new(),
         }
@@ -80,7 +81,7 @@ impl BlockingRecv for SubSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {
-                Some((_peer_id, Message::Message(message))) => {
+                Some((_peer_id, Ok(Message::Message(message)))) => {
                     return Ok(message);
                 }
                 Some((_peer_id, _)) => todo!(),

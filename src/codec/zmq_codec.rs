@@ -24,7 +24,7 @@ enum DecoderState {
 }
 
 #[derive(Debug)]
-pub(crate) struct ZmqCodec {
+pub struct ZmqCodec {
     state: DecoderState,
     waiting_for: usize, // Number of bytes needed to decode frame
     // Needed to store incoming multipart message
@@ -40,6 +40,12 @@ impl ZmqCodec {
             waiting_for: 64, // len of the greeting frame,
             buffered_message: None,
         }
+    }
+}
+
+impl Default for ZmqCodec {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

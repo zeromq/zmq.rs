@@ -10,7 +10,9 @@ async fn run_rep_server(mut rep_socket: RepSocket) -> Result<(), Box<dyn Error>>
 
     for i in 0..10i32 {
         let mess: String = rep_socket.recv().await?.try_into()?;
-        rep_socket.send(format!("{} Rep - {}", mess, i).into())?;
+        rep_socket
+            .send(format!("{} Rep - {}", mess, i).into())
+            .await?;
     }
     // yield for a moment to ensure that server has some time to flush socket
     let errs = rep_socket.close().await;
@@ -73,7 +75,7 @@ async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
 
     for _ in 0..10000i32 {
         let mess: String = rep_socket.recv().await?.try_into()?;
-        rep_socket.send(format!("{} Rep", mess).into())?;
+        rep_socket.send(format!("{} Rep", mess).into()).await?;
     }
     Ok(())
 }

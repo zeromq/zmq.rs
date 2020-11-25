@@ -38,7 +38,7 @@ use util::PeerIdentity;
 extern crate enum_primitive_derive;
 
 use async_trait::async_trait;
-use futures::channel::{mpsc, oneshot};
+use futures_codec::FramedWrite;
 use num_traits::ToPrimitive;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -102,22 +102,15 @@ impl Display for SocketType {
     }
 }
 
-#[async_trait]
 pub trait MultiPeerBackend: SocketBackend {
     /// This should not be public..
     /// Find a better way of doing this
 
-    async fn peer_connected(
-        &self,
-        peer_id: &PeerIdentity,
-    ) -> (mpsc::Receiver<Message>, oneshot::Receiver<bool>);
-    async fn peer_disconnected(&self, peer_id: &PeerIdentity);
+    fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo);
+    fn peer_disconnected(&self, peer_id: &PeerIdentity);
 }
 
-#[async_trait]
 pub trait SocketBackend: Send + Sync {
-    async fn message_received(&self, peer_id: &PeerIdentity, message: Message);
-
     fn socket_type(&self) -> SocketType;
     fn shutdown(&self);
 }

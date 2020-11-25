@@ -9,13 +9,15 @@ use crate::ZmqResult;
 use futures::{select, FutureExt};
 use std::path::{Path, PathBuf};
 use tokio_util::compat::Tokio02AsyncReadCompatExt;
+use tokio_util::compat::Tokio02AsyncWriteCompatExt;
 
 pub(crate) async fn connect(path: PathBuf) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = tokio::net::UnixStream::connect(&path).await?;
     let peer_addr = raw_socket.peer_addr()?;
     let peer_addr = peer_addr.as_pathname().map(|a| a.to_owned());
-    let boxed_sock = Box::new(raw_socket.compat());
-    Ok((FramedIo::new(boxed_sock), Endpoint::Ipc(peer_addr)))
+    let (read, write) = tokio::io::split(raw_socket);
+    let raw_sock = FramedIo::new(Box::new(read.compat()), Box::new(write.compat_write()));
+    Ok((raw_sock, Endpoint::Ipc(peer_addr)))
 }
 
 pub(crate) async fn begin_accept<T>(
@@ -40,7 +42,8 @@ where
             select! {
                 incoming = listener.accept().fuse() => {
                     let maybe_accepted: Result<_, _> = incoming.map(|(raw_sock, peer_addr)| {
-                        let raw_sock = FramedIo::new(Box::new(raw_sock.compat()));
+                        let (read, write) = tokio::io::split(raw_sock);
+                        let raw_sock = FramedIo::new(Box::new(read.compat()), Box::new(write.compat_write()));
                         let peer_addr = peer_addr.as_pathname().map(|a| a.to_owned());
                         (raw_sock, Endpoint::Ipc(peer_addr))
                     }).map_err(|err| err.into());
