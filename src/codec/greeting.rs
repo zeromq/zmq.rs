@@ -4,9 +4,11 @@ use super::mechanism::ZmqMechanism;
 use bytes::{Bytes, BytesMut};
 use std::convert::TryFrom;
 
+pub type ZmtpVersion = (u8, u8);
+
 #[derive(Debug, Copy, Clone)]
 pub struct ZmqGreeting {
-    pub version: (u8, u8),
+    pub version: ZmtpVersion,
     pub mechanism: ZmqMechanism,
     pub as_server: bool,
 }
