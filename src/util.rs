@@ -1,5 +1,4 @@
-use crate::codec::CodecResult;
-use crate::codec::FramedIo;
+use crate::codec::{CodecResult, FramedIo};
 use crate::*;
 
 use bytes::Bytes;
@@ -187,6 +186,7 @@ pub(crate) async fn peer_connected(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::codec::mechanism::ZmqMechanism;
 
     pub async fn test_bind_to_unspecified_interface_helper(
         any: std::net::IpAddr,
