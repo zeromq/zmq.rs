@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::io::Write;
 use std::time::Instant;
-use zeromq::{BlockingRecv, BlockingSend, NonBlockingSend, Socket};
+use zeromq::{BlockingRecv, BlockingSend, Socket};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

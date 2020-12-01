@@ -3,25 +3,24 @@ use futures::Stream;
 use parking_lot::Mutex;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
+use std::hash::Hash;
 use std::pin::Pin;
 use std::sync::atomic;
 use std::sync::Arc;
 
-pub(crate) struct QueueInner<S, K> {
+pub(crate) struct QueueInner<S, K: Clone> {
     counter: atomic::AtomicUsize,
-    ready_queue: BinaryHeap<PriorityStream<S, K>>,
-    pending_streams: HashMap<usize, PriorityStream<S, K>>,
-    // See wake_by_ref for details
-    weak_up_processing: Option<usize>,
+    ready_queue: BinaryHeap<ReadyEvent<K>>,
+    streams: HashMap<K, Pin<Box<S>>>,
     waker: Option<Waker>,
 }
 
-impl<S, K> QueueInner<S, K> {
+impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
     pub fn insert(&mut self, k: K, s: S) {
-        self.ready_queue.push(PriorityStream {
+        self.streams.insert(k.clone(), Box::pin(s));
+        self.ready_queue.push(ReadyEvent {
             priority: self.counter.fetch_add(1, atomic::Ordering::Relaxed),
             key: k,
-            stream: Box::pin(s),
         });
         match &self.waker {
             Some(w) => w.wake_by_ref(),
@@ -30,64 +29,51 @@ impl<S, K> QueueInner<S, K> {
     }
 }
 
-pub struct FairQueue<S, K> {
+pub struct FairQueue<S, K: Clone> {
     block_on_no_clients: bool,
     inner: Arc<Mutex<QueueInner<S, K>>>,
 }
 
-struct StreamWaker<S, K> {
+#[derive(Clone)]
+struct ReadyEvent<K: Clone> {
+    priority: usize,
+    key: K,
+}
+
+impl<K: Clone> PartialEq for ReadyEvent<K> {
+    fn eq(&self, other: &Self) -> bool {
+        self.priority.eq(&other.priority)
+    }
+}
+impl<K: Clone> Eq for ReadyEvent<K> {}
+
+impl<K: Clone> PartialOrd for ReadyEvent<K> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        other.priority.partial_cmp(&self.priority)
+    }
+}
+impl<K: Clone> Ord for ReadyEvent<K> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other.priority.cmp(&self.priority)
+    }
+}
+
+struct StreamWaker<S, K: Clone> {
     inner: Arc<Mutex<QueueInner<S, K>>>,
-    index: usize,
+    event: ReadyEvent<K>,
 }
 
 impl<S, K> ArcWake for StreamWaker<S, K>
 where
     S: Send,
-    K: Send,
+    K: Clone + Send + Sync,
 {
     fn wake_by_ref(arc_self: &Arc<Self>) {
         let mut inner = arc_self.inner.lock();
-        match inner.pending_streams.remove(&arc_self.index) {
-            None => {
-                // This is a tricky part..
-                // Some streams call waker inside the poll_next method.
-                // At that moment stream is neither ready or pending.
-                // We leave it's priority hang for the moment.
-                // It's responsibility of the FairQueue::poll_next to take this into account.
-                // In such case it will put stream as ready (cause it explicitly asked for it)
-                inner.weak_up_processing = Some(arc_self.index);
-            }
-            Some(s) => {
-                inner.ready_queue.push(s);
-            }
-        };
+        inner.ready_queue.push(arc_self.event.clone());
         if let Some(waker) = inner.waker.take() {
             waker.wake_by_ref();
         }
-    }
-}
-
-struct PriorityStream<S, K> {
-    priority: usize,
-    key: K,
-    stream: Pin<Box<S>>,
-}
-
-impl<S, K> PartialEq for PriorityStream<S, K> {
-    fn eq(&self, other: &Self) -> bool {
-        self.priority.eq(&other.priority)
-    }
-}
-impl<S, K> Eq for PriorityStream<S, K> {}
-
-impl<S, K> PartialOrd for PriorityStream<S, K> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        other.priority.partial_cmp(&self.priority)
-    }
-}
-impl<S, K> Ord for PriorityStream<S, K> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        other.priority.cmp(&self.priority)
     }
 }
 
@@ -95,55 +81,54 @@ impl<S, T, K> Stream for FairQueue<S, K>
 where
     T: Send,
     S: Stream<Item = T> + Send,
-    K: Unpin + Clone + Send,
+    K: Eq + Hash + Unpin + Clone + Send + Sync,
 {
     type Item = (K, T);
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let stream = self.get_mut();
+        let fair_queue = self.get_mut();
         loop {
-            let mut s = {
-                let mut inner = stream.inner.lock();
+            let (event, mut io_stream) = {
+                let mut inner = fair_queue.inner.lock();
                 inner.waker = Some(cx.waker().clone());
-                match inner.ready_queue.pop() {
+                let event = match inner.ready_queue.pop() {
                     Some(s) => s,
                     None => {
-                        return if !inner.pending_streams.is_empty() || stream.block_on_no_clients {
+                        return if !inner.streams.is_empty() || fair_queue.block_on_no_clients {
                             Poll::Pending
                         } else {
                             Poll::Ready(None)
                         }
                     }
+                };
+                match inner.streams.remove(&event.key) {
+                    Some(stream) => (event, stream),
+                    None => continue,
                 }
             };
 
             let waker = Arc::new(StreamWaker {
-                inner: stream.inner.clone(),
-                index: s.priority,
+                inner: fair_queue.inner.clone(),
+                event: event.clone(),
             });
             let waker_ref = futures::task::waker_ref(&waker);
             let mut cx = Context::from_waker(&waker_ref);
-            match s.stream.as_mut().poll_next(&mut cx) {
+            match io_stream.as_mut().poll_next(&mut cx) {
                 Poll::Ready(Some(res)) => {
-                    let item = Some((s.key.clone(), res));
-                    let mut inner = stream.inner.lock();
-                    s.priority = inner.counter.fetch_add(1, atomic::Ordering::Relaxed);
-                    inner.ready_queue.push(s);
-                    inner.weak_up_processing = None;
+                    let item = Some((event.key.clone(), res));
+                    let mut inner = fair_queue.inner.lock();
+                    let priority = inner.counter.fetch_add(1, atomic::Ordering::Relaxed);
+                    inner.ready_queue.push(ReadyEvent {
+                        priority,
+                        key: event.key.clone(),
+                    });
+                    inner.streams.insert(event.key, io_stream);
                     return Poll::Ready(item);
                 }
                 Poll::Ready(None) => continue,
                 Poll::Pending => {
-                    let mut inner = stream.inner.lock();
-                    match inner.weak_up_processing.take() {
-                        None => {
-                            inner.pending_streams.insert(s.priority, s);
-                        }
-                        Some(prio) => {
-                            assert_eq!(prio, s.priority);
-                            inner.ready_queue.push(s);
-                        }
-                    };
+                    let mut inner = fair_queue.inner.lock();
+                    inner.streams.insert(event.key, io_stream);
                     return Poll::Pending;
                 }
             }
@@ -151,15 +136,14 @@ where
     }
 }
 
-impl<S, K> FairQueue<S, K> {
+impl<S, K: Clone> FairQueue<S, K> {
     pub fn new(block_on_no_clients: bool) -> Self {
         Self {
             block_on_no_clients,
             inner: Arc::new(Mutex::new(QueueInner {
                 counter: atomic::AtomicUsize::new(0),
                 ready_queue: BinaryHeap::new(),
-                pending_streams: HashMap::new(),
-                weak_up_processing: None,
+                streams: HashMap::new(),
                 waker: None,
             })),
         }

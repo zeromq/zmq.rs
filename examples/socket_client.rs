@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     for _ in 0..10u64 {
         socket.send("Hello".into()).await?;
         let repl: String = socket.recv().await?.try_into()?;
-        // dbg!(repl);
+        dbg!(repl);
     }
     Ok(())
 }
