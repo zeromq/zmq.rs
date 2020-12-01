@@ -248,7 +248,7 @@ pub(crate) mod tests {
 
     fn new_greeting(version: ZmtpVersion) -> CodecResult<Message> {
         Ok(Message::Greeting(ZmqGreeting {
-            version: version,
+            version,
             mechanism: ZmqMechanism::PLAIN,
             as_server: false,
         }))
