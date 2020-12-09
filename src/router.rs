@@ -12,8 +12,9 @@ use crate::fair_queue::FairQueue;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{MultiPeerBackend, SocketType};
+use crate::{MultiPeerBackend, SocketEvent, SocketType};
 use crate::{Socket, SocketBackend};
+use futures::channel::mpsc;
 use futures::SinkExt;
 
 pub struct RouterSocket {
@@ -48,6 +49,12 @@ impl Socket for RouterSocket {
 
     fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle> {
         &mut self.binds
+    }
+
+    fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {
+        let (sender, receiver) = mpsc::channel(1024);
+        self.backend.socket_monitor.lock().replace(sender);
+        receiver
     }
 }
 

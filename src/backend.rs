@@ -1,9 +1,10 @@
 use crate::codec::{FramedIo, Message, ZmqFramedRead, ZmqFramedWrite};
 use crate::fair_queue::QueueInner;
 use crate::util::PeerIdentity;
-use crate::{MultiPeerBackend, SocketBackend, SocketType, ZmqError, ZmqResult};
+use crate::{MultiPeerBackend, SocketBackend, SocketEvent, SocketType, ZmqError, ZmqResult};
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
+use futures::channel::mpsc;
 use futures::SinkExt;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -17,6 +18,7 @@ pub(crate) struct GenericSocketBackend {
     fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
     socket_type: SocketType,
+    pub(crate) socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
 }
 
 impl GenericSocketBackend {
@@ -29,6 +31,7 @@ impl GenericSocketBackend {
             fair_queue_inner,
             round_robin: SegQueue::new(),
             socket_type,
+            socket_monitor: Mutex::new(None),
         }
     }
 
@@ -84,6 +87,10 @@ impl SocketBackend for GenericSocketBackend {
 
     fn shutdown(&self) {
         self.peers.clear();
+    }
+
+    fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
+        &self.socket_monitor
     }
 }
 

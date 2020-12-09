@@ -38,8 +38,10 @@ use util::PeerIdentity;
 extern crate enum_primitive_derive;
 
 use async_trait::async_trait;
+use futures::channel::mpsc;
 use futures_codec::FramedWrite;
 use num_traits::ToPrimitive;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
@@ -102,6 +104,19 @@ impl Display for SocketType {
     }
 }
 
+#[derive(Debug)]
+pub enum SocketEvent {
+    Connected(Endpoint, PeerIdentity),
+    ConnectDelayed,
+    ConnectRetried,
+    Listening(Endpoint),
+    Accepted(Endpoint, PeerIdentity),
+    AcceptFailed(ZmqError),
+    Closed,
+    CloseFailed,
+    Disconnected(PeerIdentity),
+}
+
 pub trait MultiPeerBackend: SocketBackend {
     /// This should not be public..
     /// Find a better way of doing this
@@ -113,6 +128,7 @@ pub trait MultiPeerBackend: SocketBackend {
 pub trait SocketBackend: Send + Sync {
     fn socket_type(&self) -> SocketType;
     fn shutdown(&self);
+    fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>>;
 }
 
 #[async_trait]
@@ -148,8 +164,38 @@ pub trait Socket: Sized + Send {
         let endpoint = endpoint.try_into()?;
 
         let cloned_backend = self.backend();
-        let cback = move |result| util::peer_connected(result, cloned_backend.clone());
+        let cback = move |result| {
+            let cloned_backend = cloned_backend.clone();
+            async move {
+                let result = match result {
+                    Ok((socket, endpoint)) => {
+                        match util::peer_connected(socket, cloned_backend.clone()).await {
+                            Ok(peer_id) => Ok((endpoint, peer_id)),
+                            Err(e) => Err(e),
+                        }
+                    }
+                    Err(e) => Err(e),
+                };
+                match result {
+                    Ok((endpoint, peer_id)) => {
+                        if let Some(monitor) = cloned_backend.monitor().lock().as_mut() {
+                            let _ = monitor.try_send(SocketEvent::Accepted(endpoint, peer_id));
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(monitor) = cloned_backend.monitor().lock().as_mut() {
+                            let _ = monitor.try_send(SocketEvent::AcceptFailed(e));
+                        }
+                    }
+                }
+            }
+        };
+
         let (endpoint, stop_handle) = transport::begin_accept(endpoint, cback).await?;
+
+        if let Some(monitor) = self.backend().monitor().lock().as_mut() {
+            let _ = monitor.try_send(SocketEvent::Listening(endpoint.clone()));
+        }
 
         self.binds().insert(endpoint.clone(), stop_handle);
         Ok(endpoint)
@@ -190,10 +236,29 @@ pub trait Socket: Sized + Send {
         let backend = self.backend();
         let endpoint = endpoint.try_into()?;
 
-        let connect_result = transport::connect(endpoint).await;
-        util::peer_connected(connect_result, backend).await;
-        Ok(())
+        let result = match transport::connect(endpoint).await {
+            Ok((socket, endpoint)) => match util::peer_connected(socket, backend).await {
+                Ok(peer_id) => Ok((endpoint, peer_id)),
+                Err(e) => Err(e),
+            },
+            Err(e) => Err(e),
+        };
+        match result {
+            Ok((endpoint, peer_id)) => {
+                if let Some(monitor) = self.backend().monitor().lock().as_mut() {
+                    let _ = monitor.try_send(SocketEvent::Connected(endpoint, peer_id));
+                }
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
+
+    /// Creates and setups new socket monitor
+    ///
+    /// Subsequent calls to this method each create a new monitor channel.
+    /// Sender side of previous one is dropped.
+    fn monitor(&mut self) -> mpsc::Receiver<SocketEvent>;
 
     // TODO: async fn connections(&self) -> ?
 

@@ -2,10 +2,11 @@ use crate::backend::GenericSocketBackend;
 use crate::codec::Message;
 use crate::transport::AcceptStopHandle;
 use crate::{
-    BlockingSend, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketType, ZmqMessage,
-    ZmqResult,
+    BlockingSend, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketType,
+    ZmqMessage, ZmqResult,
 };
 use async_trait::async_trait;
+use futures::channel::mpsc;
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -35,6 +36,12 @@ impl Socket for PushSocket {
 
     fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle, RandomState> {
         &mut self.binds
+    }
+
+    fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {
+        let (sender, receiver) = mpsc::channel(1024);
+        self.backend.socket_monitor.lock().replace(sender);
+        receiver
     }
 }
 

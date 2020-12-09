@@ -1,6 +1,7 @@
 use zeromq::prelude::*;
 use zeromq::RepSocket;
 
+use futures::StreamExt;
 use std::convert::TryInto;
 use std::error::Error;
 use std::time::Duration;
@@ -27,6 +28,7 @@ async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
     pretty_env_logger::try_init().ok();
 
     let mut rep_socket = zeromq::RepSocket::new();
+    let monitor = rep_socket.monitor();
     let endpoint = rep_socket.bind("tcp://localhost:0").await?;
     println!("Started rep server on {}", endpoint);
 
@@ -42,6 +44,9 @@ async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
         let repl: String = req_socket.recv().await?.try_into()?;
         assert_eq!(format!("Req - {} Rep - {}", i, i), repl)
     }
+    req_socket.close().await;
+    let events: Vec<_> = monitor.collect().await;
+    assert_eq!(2, events.len(), "{:?}", &events);
     Ok(())
 }
 
