@@ -4,11 +4,14 @@ use crate::error::ZmqResult;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{BlockingSend, MultiPeerBackend, Socket, SocketBackend, SocketType, ZmqError};
-use futures::channel::oneshot;
+use crate::{
+    BlockingSend, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketType, ZmqError,
+};
+use futures::channel::{mpsc, oneshot};
 
 use async_trait::async_trait;
 use dashmap::DashMap;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::pin::Pin;
@@ -22,6 +25,7 @@ pub(crate) struct Subscriber {
 
 pub(crate) struct PubSocketBackend {
     subscribers: DashMap<PeerIdentity, Subscriber>,
+    socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
 }
 
 impl PubSocketBackend {
@@ -80,6 +84,10 @@ impl SocketBackend for PubSocketBackend {
 
     fn shutdown(&self) {
         self.subscribers.clear();
+    }
+
+    fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
+        &self.socket_monitor
     }
 }
 
@@ -184,6 +192,7 @@ impl Socket for PubSocket {
         Self {
             backend: Arc::new(PubSocketBackend {
                 subscribers: DashMap::new(),
+                socket_monitor: Mutex::new(None),
             }),
             binds: HashMap::new(),
         }
@@ -195,6 +204,12 @@ impl Socket for PubSocket {
 
     fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle> {
         &mut self.binds
+    }
+
+    fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {
+        let (sender, receiver) = mpsc::channel(1024);
+        self.backend.socket_monitor.lock().replace(sender);
+        receiver
     }
 }
 

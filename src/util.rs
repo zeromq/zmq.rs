@@ -169,18 +169,13 @@ pub(crate) async fn ready_exchange(
 }
 
 pub(crate) async fn peer_connected(
-    accept_result: ZmqResult<(FramedIo, Endpoint)>,
+    mut raw_socket: FramedIo,
     backend: Arc<dyn MultiPeerBackend>,
-) {
-    let (mut raw_socket, _remote_endpoint) = accept_result.expect("Failed to accept");
-    greet_exchange(&mut raw_socket)
-        .await
-        .expect("Failed to exchange greetings");
-    let peer_id = ready_exchange(&mut raw_socket, backend.socket_type())
-        .await
-        .expect("Failed to exchange ready messages");
-
+) -> ZmqResult<PeerIdentity> {
+    greet_exchange(&mut raw_socket).await?;
+    let peer_id = ready_exchange(&mut raw_socket, backend.socket_type()).await?;
     backend.peer_connected(&peer_id, raw_socket);
+    Ok(peer_id)
 }
 
 #[cfg(test)]

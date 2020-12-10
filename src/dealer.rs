@@ -3,8 +3,12 @@ use crate::codec::{Message, ZmqFramedRead};
 use crate::fair_queue::FairQueue;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketType, ZmqMessage, ZmqResult};
+use crate::{
+    Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketType, ZmqMessage,
+    ZmqResult,
+};
 use async_trait::async_trait;
+use futures::channel::mpsc;
 use futures::StreamExt;
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
@@ -41,6 +45,12 @@ impl Socket for DealerSocket {
 
     fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle, RandomState> {
         &mut self.binds
+    }
+
+    fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {
+        let (sender, receiver) = mpsc::channel(1024);
+        self.backend.socket_monitor.lock().replace(sender);
+        receiver
     }
 }
 

@@ -21,6 +21,7 @@ struct RepPeer {
 struct RepSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, RepPeer>,
     fair_queue_inner: Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>,
+    socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
 }
 
 pub struct RepSocket {
@@ -44,6 +45,7 @@ impl Socket for RepSocket {
             backend: Arc::new(RepSocketBackend {
                 peers: DashMap::new(),
                 fair_queue_inner: fair_queue.inner(),
+                socket_monitor: Mutex::new(None),
             }),
             current_request: None,
             fair_queue,
@@ -57,6 +59,12 @@ impl Socket for RepSocket {
 
     fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle> {
         &mut self.binds
+    }
+
+    fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {
+        let (sender, receiver) = mpsc::channel(1024);
+        self.backend.socket_monitor.lock().replace(sender);
+        receiver
     }
 }
 
@@ -77,6 +85,9 @@ impl MultiPeerBackend for RepSocketBackend {
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+        if let Some(monitor) = self.monitor().lock().as_mut() {
+            let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
+        }
         self.peers.remove(peer_id);
     }
 }
@@ -88,6 +99,10 @@ impl SocketBackend for RepSocketBackend {
 
     fn shutdown(&self) {
         self.peers.clear();
+    }
+
+    fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
+        &self.socket_monitor
     }
 }
 

@@ -9,7 +9,6 @@ use crate::{SocketType, ZmqResult};
 use async_trait::async_trait;
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
-use futures::lock::Mutex;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,7 +16,7 @@ use std::sync::Arc;
 struct ReqSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, Peer>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
-    pub(crate) current_request_peer_id: Mutex<Option<PeerIdentity>>,
+    socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
 }
 
 pub struct ReqSocket {
@@ -64,11 +63,6 @@ impl BlockingSend for ReqSocket {
                         message,
                     ];
                     peer.send_queue.send(Message::Multipart(frames)).await?;
-                    self.backend
-                        .current_request_peer_id
-                        .lock()
-                        .await
-                        .replace(next_peer_id.clone());
                     self.current_request = Some(next_peer_id);
                     return Ok(());
                 }
@@ -110,7 +104,7 @@ impl Socket for ReqSocket {
             backend: Arc::new(ReqSocketBackend {
                 peers: DashMap::new(),
                 round_robin: SegQueue::new(),
-                current_request_peer_id: Mutex::new(None),
+                socket_monitor: Mutex::new(None),
             }),
             current_request: None,
             binds: HashMap::new(),
@@ -123,6 +117,12 @@ impl Socket for ReqSocket {
 
     fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle> {
         &mut self.binds
+    }
+
+    fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {
+        let (sender, receiver) = mpsc::channel(1024);
+        self.backend.socket_monitor.lock().replace(sender);
+        receiver
     }
 }
 
@@ -151,7 +151,10 @@ impl SocketBackend for ReqSocketBackend {
     }
 
     fn shutdown(&self) {
-        println!("Shutting down req backend");
         self.peers.clear();
+    }
+
+    fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
+        &self.socket_monitor
     }
 }
