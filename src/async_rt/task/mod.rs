@@ -16,11 +16,7 @@ pub enum JoinError {
 }
 impl JoinError {
     pub fn is_cancelled(&self) -> bool {
-        if let Self::Cancelled = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, Self::Cancelled)
     }
 
     pub fn is_panic(&self) -> bool {

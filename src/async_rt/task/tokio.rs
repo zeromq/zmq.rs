@@ -11,6 +11,7 @@ where
     tokio::task::spawn(task).into()
 }
 
+#[allow(unused)]
 pub fn spawn_blocking<F, R>(f: F) -> JoinHandle<R>
 where
     F: FnOnce() -> R + Send + 'static,
