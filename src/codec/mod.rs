@@ -1,3 +1,6 @@
+//! Implements a codec for ZMQ, providing a way to convert from a byte-oriented
+//! io device to a protocal comprised of [`Message`] frames. See [`FramedIo`]
+
 mod command;
 mod error;
 mod framed;
