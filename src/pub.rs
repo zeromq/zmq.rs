@@ -1,3 +1,4 @@
+use crate::async_rt;
 use crate::codec::*;
 use crate::endpoint::Endpoint;
 use crate::error::ZmqResult;
@@ -7,10 +8,11 @@ use crate::util::PeerIdentity;
 use crate::{
     BlockingSend, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketType, ZmqError,
 };
-use futures::channel::{mpsc, oneshot};
 
 use async_trait::async_trait;
 use dashmap::DashMap;
+use futures::channel::{mpsc, oneshot};
+use futures::FutureExt;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::io::ErrorKind;
@@ -108,12 +110,13 @@ impl MultiPeerBackend for PubSocketBackend {
         let peer_id = peer_id.clone();
         tokio::spawn(async move {
             use futures::StreamExt;
+            let mut stop_receiver = stop_receiver.fuse();
             loop {
-                tokio::select! {
-                     _ = &mut stop_receiver => {
+                futures::select! {
+                     _ = stop_receiver => {
                          break;
                      },
-                     message = &mut recv_queue.next() => {
+                     message = recv_queue.next().fuse() => {
                         match message {
                             Some(Ok(m)) => backend.message_received(&peer_id, m),
                             Some(Err(e)) => {
