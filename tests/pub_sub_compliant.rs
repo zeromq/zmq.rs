@@ -87,18 +87,20 @@ async fn test_their_pub_our_sub() {
 
     let their_join_handle = run_their_pub(their_pub, NUM_MSGS);
     run_our_subs(our_subs, NUM_MSGS).await;
-    their_join_handle
+    let their_pub = their_join_handle
         .join()
         .expect("Their pub terminated with an error!");
 
-    for _ in 0..(N_SUBS - 1) {
+    for _ in 0..N_SUBS {
         assert_eq!(
-            zmq::SocketEvent::DISCONNECTED,
-            get_monitor_event(&their_monitor).0
+            get_monitor_event(&their_monitor).0,
+            zmq::SocketEvent::DISCONNECTED
         );
     }
+
+    drop(their_pub);
     assert_eq!(
-        zmq::SocketEvent::CLOSED,
-        get_monitor_event(&their_monitor).0
+        get_monitor_event(&their_monitor).0,
+        zmq::SocketEvent::CLOSED
     );
 }
