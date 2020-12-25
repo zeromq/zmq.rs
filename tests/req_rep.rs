@@ -62,7 +62,7 @@ async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
         let cloned_endpoint = endpoint.to_string();
         tokio::spawn(async move {
             // yield for a moment to ensure that server has some time to open socket
-            tokio::time::delay_for(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
             let mut req_socket = zeromq::ReqSocket::new();
             req_socket.connect(&cloned_endpoint).await.unwrap();
 

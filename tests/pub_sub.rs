@@ -38,7 +38,7 @@ async fn test_pub_sub_sockets() {
                     .send(cloned_payload.clone().into())
                     .await
                     .expect("Failed to send");
-                tokio::time::delay_for(Duration::from_millis(1)).await;
+                tokio::time::sleep(Duration::from_millis(1)).await;
             }
 
             let errs = pub_socket.close().await;
@@ -68,7 +68,7 @@ async fn test_pub_sub_sockets() {
 
                 sub_socket.subscribe("").await.expect("Failed to subscribe");
 
-                tokio::time::delay_for(std::time::Duration::from_millis(500)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
                 for _ in 0..10 {
                     let recv_payload: String = sub_socket

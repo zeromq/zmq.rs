@@ -8,8 +8,8 @@ use crate::ZmqResult;
 
 use futures::{select, FutureExt};
 use std::path::{Path, PathBuf};
-use tokio_util::compat::Tokio02AsyncReadCompatExt;
-use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+use tokio_util::compat::TokioAsyncReadCompatExt;
+use tokio_util::compat::TokioAsyncWriteCompatExt;
 
 pub(crate) async fn connect(path: PathBuf) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = tokio::net::UnixStream::connect(&path).await?;
@@ -31,7 +31,7 @@ where
     if path == wildcard {
         todo!("Need to implement support for wildcard paths!");
     }
-    let mut listener = tokio::net::UnixListener::bind(path)?;
+    let listener = tokio::net::UnixListener::bind(path)?;
     let resolved_addr = listener.local_addr()?;
     let resolved_addr = resolved_addr.as_pathname().map(|a| a.to_owned());
     let listener_addr = resolved_addr.clone();
