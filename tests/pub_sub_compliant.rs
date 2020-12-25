@@ -80,7 +80,7 @@ async fn test_their_pub_our_sub() {
         );
     }
     // This is necessary to avoid slow joiner problem
-    tokio::time::delay_for(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
     println!("Setup done");
 
     const NUM_MSGS: u32 = 64;

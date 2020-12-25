@@ -14,8 +14,8 @@ async-trait = "0.1"
 parking_lot = "0.11"
 rand = "0.7"
 bytes = "0.5"
-tokio = { version = "0.2", features = ["full", "tcp"] }
-tokio-util = { version = "0.3", features = ["compat"] }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.6", features = ["compat"] }
 num-traits = "0.2"
 enum-primitive-derive = "0.1"
 dashmap = "3.11"

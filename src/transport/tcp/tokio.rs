@@ -7,8 +7,8 @@ use crate::task_handle::TaskHandle;
 use crate::ZmqResult;
 
 use futures::{select, FutureExt};
-use tokio_util::compat::Tokio02AsyncReadCompatExt;
-use tokio_util::compat::Tokio02AsyncWriteCompatExt;
+use tokio_util::compat::TokioAsyncReadCompatExt;
+use tokio_util::compat::TokioAsyncWriteCompatExt;
 
 pub(crate) async fn connect(host: Host, port: Port) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = tokio::net::TcpStream::connect((host.to_string().as_str(), port)).await?;
@@ -26,7 +26,7 @@ pub(crate) async fn begin_accept<T>(
 where
     T: std::future::Future<Output = ()> + Send + 'static,
 {
-    let mut listener = tokio::net::TcpListener::bind((host.to_string().as_str(), port)).await?;
+    let listener = tokio::net::TcpListener::bind((host.to_string().as_str(), port)).await?;
     let resolved_addr = listener.local_addr()?;
     let (stop_channel, stop_callback) = futures::channel::oneshot::channel::<()>();
     let task_handle = tokio::spawn(async move {
