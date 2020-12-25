@@ -1,6 +1,7 @@
 //! Tokio-specific implementations
 
 use super::AcceptStopHandle;
+use crate::async_rt;
 use crate::codec::FramedIo;
 use crate::endpoint::Endpoint;
 use crate::task_handle::TaskHandle;
@@ -36,7 +37,7 @@ where
     let resolved_addr = resolved_addr.as_pathname().map(|a| a.to_owned());
     let listener_addr = resolved_addr.clone();
     let (stop_channel, stop_callback) = futures::channel::oneshot::channel::<()>();
-    let task_handle = tokio::spawn(async move {
+    let task_handle = async_rt::task::spawn(async move {
         let mut stop_callback = stop_callback.fuse();
         loop {
             select! {
@@ -47,7 +48,7 @@ where
                         let peer_addr = peer_addr.as_pathname().map(|a| a.to_owned());
                         (raw_sock, Endpoint::Ipc(peer_addr))
                     }).map_err(|err| err.into());
-                    tokio::spawn(cback(maybe_accepted));
+                    async_rt::task::spawn(cback(maybe_accepted));
                 },
                 _ = stop_callback => {
                     log::debug!("Accept task received stop signal. {:?}", listener_addr);

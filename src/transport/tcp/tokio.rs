@@ -1,6 +1,7 @@
 //! Tokio-specific implementations
 
 use super::AcceptStopHandle;
+use crate::async_rt;
 use crate::codec::FramedIo;
 use crate::endpoint::{Endpoint, Host, Port};
 use crate::task_handle::TaskHandle;
@@ -29,7 +30,7 @@ where
     let listener = tokio::net::TcpListener::bind((host.to_string().as_str(), port)).await?;
     let resolved_addr = listener.local_addr()?;
     let (stop_channel, stop_callback) = futures::channel::oneshot::channel::<()>();
-    let task_handle = tokio::spawn(async move {
+    let task_handle = async_rt::task::spawn(async move {
         let mut stop_callback = stop_callback.fuse();
         loop {
             select! {
@@ -39,7 +40,7 @@ where
                         let raw_sock = FramedIo::new(Box::new(read.compat()), Box::new(write.compat_write()));
                         (raw_sock, Endpoint::from_tcp_addr(remote_addr))
                     }).map_err(|err| err.into());
-                    tokio::spawn(cback(maybe_accepted));
+                    async_rt::task::spawn(cback(maybe_accepted));
                 },
                 _ = stop_callback => {
                     break

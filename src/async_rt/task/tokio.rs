@@ -1,3 +1,5 @@
+use super::JoinError;
+
 use std::{future::Future, task::Context};
 use std::{pin::Pin, task::Poll};
 
@@ -17,12 +19,16 @@ where
     tokio::task::spawn_blocking(f).into()
 }
 
-pub struct JoinError(tokio::task::JoinError);
-impl From<tokio::task::JoinError> for JoinError {
+impl From<tokio::task::JoinError> for super::JoinError {
     fn from(err: tokio::task::JoinError) -> Self {
-        Self(err)
+        if err.is_cancelled() {
+            Self::Cancelled
+        } else {
+            Self::Panic(err.into_panic())
+        }
     }
 }
+
 pub struct JoinHandle<T>(tokio::task::JoinHandle<T>);
 impl<T> Future for JoinHandle<T> {
     type Output = Result<T, JoinError>;
