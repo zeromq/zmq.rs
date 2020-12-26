@@ -40,3 +40,23 @@ where
         )),
     }
 }
+
+#[cfg(feature = "tokio-runtime")]
+fn make_framed<T>(stream: T) -> FramedIo
+where
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Sync + 'static,
+{
+    use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+    let (read, write) = tokio::io::split(stream);
+    FramedIo::new(Box::new(read.compat()), Box::new(write.compat_write()))
+}
+
+#[cfg(feature = "async-std-runtime")]
+fn make_framed<T>(stream: T) -> FramedIo
+where
+    T: futures::AsyncRead + futures::AsyncWrite + Send + Sync + 'static,
+{
+    use futures::AsyncReadExt;
+    let (read, write) = stream.split();
+    FramedIo::new(Box::new(read), Box::new(write))
+}

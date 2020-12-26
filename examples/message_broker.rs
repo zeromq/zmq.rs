@@ -1,7 +1,11 @@
+mod async_helpers;
+
 use std::error::Error;
 use zeromq::prelude::*;
 
-#[tokio::main]
+use futures::{select, FutureExt};
+
+#[async_helpers::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let mut frontend = zeromq::RouterSocket::new();
     frontend
@@ -15,8 +19,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
         .expect("Failed to bind");
     loop {
-        tokio::select! {
-            router_mess = frontend.recv_multipart() => {
+        select! {
+            router_mess = frontend.recv_multipart().fuse() => {
                 dbg!(&router_mess);
                 match router_mess {
                     Ok(message) => {
@@ -27,7 +31,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
             },
-            dealer_mess = backend.recv_multipart() => {
+            dealer_mess = backend.recv_multipart().fuse() => {
                 dbg!(&dealer_mess);
                 match dealer_mess {
                     Ok(message) => {

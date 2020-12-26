@@ -1,7 +1,9 @@
+mod async_helpers;
+
 use std::convert::TryInto;
 use zeromq::*;
 
-#[tokio::main]
+#[async_helpers::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Start server");
     let mut socket = zeromq::RepSocket::new();

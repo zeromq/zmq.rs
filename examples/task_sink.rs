@@ -1,9 +1,12 @@
+mod async_helpers;
+
 use std::error::Error;
 use std::io::Write;
 use std::time::Instant;
+
 use zeromq::{BlockingRecv, BlockingSend, Socket};
 
-#[tokio::main]
+#[async_helpers::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Socket to receive messages on
     let mut receiver = zeromq::PullSocket::new();

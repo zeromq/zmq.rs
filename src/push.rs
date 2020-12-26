@@ -30,6 +30,7 @@ impl Socket for PushSocket {
             binds: HashMap::new(),
         }
     }
+
     fn backend(&self) -> Arc<dyn MultiPeerBackend> {
         self.backend.clone()
     }

@@ -20,10 +20,16 @@ jobs:
         with:
           path: ~/.cargo/
           key: cache-cargo-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
-      - uses: actions-rs/cargo@v1
+      - name: Check Tokio version
+        uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all --tests --benches --all-features -- --deny warnings
+          args: --all --all-targets -- --deny warnings
+      - name: Check Async-std version
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all --all-targets --no-default-features --features async-std-runtime -- --deny warnings
 
   test:
     name: Test
@@ -43,10 +49,16 @@ jobs:
         with:
           path: ~/.cargo/
           key: cache-cargo-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
-      - uses: actions-rs/cargo@v1
+      - name: Test Tokio version
+        uses: actions-rs/cargo@v1
         with:
           command: test
           args: --all
+      - name: Test Async-std version
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all --no-default-features --features async-std-runtime
 
   fmt:
     name: Formatting

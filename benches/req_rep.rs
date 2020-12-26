@@ -1,8 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::convert::TryInto;
 use std::time::Duration;
-use tokio::runtime::Runtime;
 
+use zeromq::__async_rt as async_rt;
 use zeromq::{prelude::*, RepSocket, ReqSocket};
 
 type BenchGroup<'a> = criterion::BenchmarkGroup<'a, criterion::measurement::WallTime>;
@@ -22,7 +22,15 @@ async fn setup(endpoint: &str) -> (ReqSocket, RepSocket) {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let mut rt = Runtime::new().unwrap();
+    #[cfg(feature = "tokio-runtime")]
+    type Runtime = tokio::runtime::Runtime;
+    #[cfg(feature = "async-std-runtime")]
+    type Runtime = ();
+
+    #[cfg(feature = "tokio-runtime")]
+    let mut rt = tokio::runtime::Runtime::new().unwrap();
+    #[cfg(feature = "async-std-runtime")]
+    let mut rt = ();
 
     const N_MSG: u32 = 512;
 
@@ -32,18 +40,30 @@ fn criterion_benchmark(c: &mut Criterion) {
     bench(&mut group, "IPC", "ipc://req_rep.sock", &mut rt);
 
     fn bench(group: &mut BenchGroup, bench_name: &str, endpoint: &str, rt: &mut Runtime) {
+        #[allow(unused)]
+        let rt = rt;
+
+        #[cfg(feature = "tokio-runtime")]
         let (req, rep) = rt.block_on(setup(endpoint));
+        #[cfg(feature = "async-std-runtime")]
+        let (req, rep) = async_std::task::block_on(setup(endpoint));
+
         let (mut req, mut rep) = (Some(req), Some(rep));
 
         group.bench_function(bench_name, |b| {
-            b.iter(|| rt.block_on(iter_fn(&mut req, &mut rep)))
+            b.iter(|| {
+                #[cfg(feature = "tokio-runtime")]
+                rt.block_on(iter_fn(&mut req, &mut rep));
+                #[cfg(feature = "async-std-runtime")]
+                async_std::task::block_on(iter_fn(&mut req, &mut rep));
+            })
         });
     }
 
     async fn iter_fn(req: &mut Option<ReqSocket>, rep: &mut Option<RepSocket>) {
         let mut req_owned = req.take().unwrap();
         let mut rep_owned = rep.take().unwrap();
-        let rep_handle = tokio::spawn(async move {
+        let rep_handle = async_rt::task::spawn(async move {
             for i in 0..N_MSG {
                 let mess: String = rep_owned
                     .recv()

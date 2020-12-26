@@ -1,12 +1,13 @@
 use zeromq::prelude::*;
 use zeromq::Endpoint;
+use zeromq::__async_rt as async_rt;
 
 use futures::channel::{mpsc, oneshot};
 use futures::{SinkExt, StreamExt};
 use std::convert::TryInto;
 use std::time::Duration;
 
-#[tokio::test]
+#[async_rt::test]
 async fn test_pub_sub_sockets() {
     pretty_env_logger::try_init().ok();
 
@@ -19,7 +20,7 @@ async fn test_pub_sub_sockets() {
         let cloned_payload = payload.clone();
         let (server_stop_sender, mut server_stop) = oneshot::channel::<()>();
         let (has_bound_sender, has_bound) = oneshot::channel::<Endpoint>();
-        task_handles.push(tokio::spawn(async move {
+        task_handles.push(async_rt::task::spawn(async move {
             let mut pub_socket = zeromq::PubSocket::new();
             let bound_to = pub_socket
                 .bind(bind_addr)
@@ -38,7 +39,7 @@ async fn test_pub_sub_sockets() {
                     .send(cloned_payload.clone().into())
                     .await
                     .expect("Failed to send");
-                tokio::time::sleep(Duration::from_millis(1)).await;
+                async_rt::task::sleep(Duration::from_millis(1)).await;
             }
 
             let errs = pub_socket.close().await;
@@ -59,7 +60,7 @@ async fn test_pub_sub_sockets() {
             let mut cloned_sub_sender = sub_results_sender.clone();
             let cloned_payload = payload.clone();
             let cloned_bound_addr = bound_addr.to_string();
-            task_handles.push(tokio::spawn(async move {
+            task_handles.push(async_rt::task::spawn(async move {
                 let mut sub_socket = zeromq::SubSocket::new();
                 sub_socket
                     .connect(&cloned_bound_addr)
@@ -68,7 +69,7 @@ async fn test_pub_sub_sockets() {
 
                 sub_socket.subscribe("").await.expect("Failed to subscribe");
 
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                async_rt::task::sleep(std::time::Duration::from_millis(500)).await;
 
                 for _ in 0..10 {
                     let recv_payload: String = sub_socket

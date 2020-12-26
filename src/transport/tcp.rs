@@ -1,5 +1,10 @@
-//! Tokio-specific implementations
+#[cfg(feature = "tokio-runtime")]
+use tokio::net::{TcpListener, TcpStream};
 
+#[cfg(feature = "async-std-runtime")]
+use async_std::net::{TcpListener, TcpStream};
+
+use super::make_framed;
 use super::AcceptStopHandle;
 use crate::async_rt;
 use crate::codec::FramedIo;
@@ -8,15 +13,12 @@ use crate::task_handle::TaskHandle;
 use crate::ZmqResult;
 
 use futures::{select, FutureExt};
-use tokio_util::compat::TokioAsyncReadCompatExt;
-use tokio_util::compat::TokioAsyncWriteCompatExt;
 
 pub(crate) async fn connect(host: Host, port: Port) -> ZmqResult<(FramedIo, Endpoint)> {
-    let raw_socket = tokio::net::TcpStream::connect((host.to_string().as_str(), port)).await?;
+    let raw_socket = TcpStream::connect((host.to_string().as_str(), port)).await?;
     let peer_addr = raw_socket.peer_addr()?;
-    let (read, write) = tokio::io::split(raw_socket);
-    let raw_sock = FramedIo::new(Box::new(read.compat()), Box::new(write.compat_write()));
-    Ok((raw_sock, Endpoint::from_tcp_addr(peer_addr)))
+
+    Ok((make_framed(raw_socket), Endpoint::from_tcp_addr(peer_addr)))
 }
 
 pub(crate) async fn begin_accept<T>(
@@ -27,7 +29,7 @@ pub(crate) async fn begin_accept<T>(
 where
     T: std::future::Future<Output = ()> + Send + 'static,
 {
-    let listener = tokio::net::TcpListener::bind((host.to_string().as_str(), port)).await?;
+    let listener = TcpListener::bind((host.to_string().as_str(), port)).await?;
     let resolved_addr = listener.local_addr()?;
     let (stop_channel, stop_callback) = futures::channel::oneshot::channel::<()>();
     let task_handle = async_rt::task::spawn(async move {
@@ -35,10 +37,8 @@ where
         loop {
             select! {
                 incoming = listener.accept().fuse() => {
-                    let maybe_accepted: Result<_, _> = incoming.map(|(raw_sock, remote_addr)| {
-                        let (read, write) = tokio::io::split(raw_sock);
-                        let raw_sock = FramedIo::new(Box::new(read.compat()), Box::new(write.compat_write()));
-                        (raw_sock, Endpoint::from_tcp_addr(remote_addr))
+                    let maybe_accepted: Result<_, _> = incoming.map(|(raw_socket, remote_addr)| {
+                        (make_framed(raw_socket), Endpoint::from_tcp_addr(remote_addr))
                     }).map_err(|err| err.into());
                     async_rt::task::spawn(cback(maybe_accepted));
                 },

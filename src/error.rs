@@ -29,7 +29,8 @@ pub enum ZmqError {
     },
     // TODO refactor this.
     // Most likely Message enum should be part of public API.
-    // In such case we'll be able to use this enum to return both message and multipart message in same type
+    // In such case we'll be able to use this enum to return both message and multipart message in
+    // same type
     #[error("Failed to deliver messages cause of {reason}")]
     ReturnToSenderMultipart {
         reason: &'static str,

@@ -269,9 +269,9 @@ pub(crate) mod tests {
 
     #[test]
     fn negotiate_version_peer_is_using_an_older_version() {
-        // if the other end is using an older protocol version, we should adjust to them, but
-        // interoperability with older peers is not implemented at the moment, so we just give
-        // up immediately, which is allowed by the spec
+        // if the other end is using an older protocol version, we should adjust to
+        // them, but interoperability with older peers is not implemented at the
+        // moment, so we just give up immediately, which is allowed by the spec
         let peer_version = (2, 1);
         let actual = negotiate_version(Some(new_greeting(peer_version)));
         match actual {

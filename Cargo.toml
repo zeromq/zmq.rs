@@ -4,7 +4,10 @@ version = "0.1.0"
 authors = ["Alexei Kornienko <alexei.kornienko@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = ["tokio-runtime"]
+tokio-runtime = ["tokio", "tokio-util"]
+async-std-runtime = ["async-std"]
 
 [dependencies]
 thiserror = "1"
@@ -14,8 +17,8 @@ async-trait = "0.1"
 parking_lot = "0.11"
 rand = "0.7"
 bytes = "0.5"
-tokio = { version = "1", features = ["full"] }
-tokio-util = { version = "0.6", features = ["compat"] }
+tokio = { version = "1", features = ["full"], optional = true }
+tokio-util = { version = "0.6", features = ["compat"], optional = true }
 num-traits = "0.2"
 enum-primitive-derive = "0.1"
 dashmap = "3.11"
@@ -25,12 +28,14 @@ regex = "1"
 lazy_static = "1"
 log = "0.4"
 futures_codec = "0.4"
+async-std = { version = "1", features = ["attributes"], optional = true }
 
 [dev-dependencies]
 chrono = "0.4"
 criterion = "0.3"
 pretty_env_logger = "0.4"
 zmq = "0.9"
+
 
 [lib]
 bench = false

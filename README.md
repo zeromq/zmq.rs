@@ -18,6 +18,19 @@ We plan to support most of the basic ZMQ messaging patterns. The current list is
 * Publish/Subscribe (PUB, SUB)
 * Pipeline (PUSH, PULL)
 
+## Usage
+See the [examples](examples) for some ways to get up and running quickly. You can also generate the documentation by doing `cargo doc --open` on the source code.
+
+### Choosing your async runtime
+The project currently supports both [`tokio`](tokio.rs) and [`async-std`](async.rs), controllable via feature flags. `tokio` is used by default. See the section about feature flags for more info.
+
+### Feature Flags
+Feature flags provide a way to customize the functionality provided by this library. Refer to [the cargo guide](https://doc.rust-lang.org/cargo/reference/features.html) for more info.
+
+Features:
+- (default) `tokio-runtime`: Use `tokio` as your async runtime.
+- `async-std-runtime`: Use `async-std` as your async runtime.
+
 ## Contributing
 Contributions are welcome! See our issue tracker for a list of the things we need help with.
 

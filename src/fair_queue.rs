@@ -156,10 +156,11 @@ impl<S, K: Clone> FairQueue<S, K> {
 
 #[cfg(test)]
 mod test {
+    use crate::async_rt;
     use crate::fair_queue::FairQueue;
     use futures::StreamExt;
 
-    #[tokio::test]
+    #[async_rt::test]
     async fn test_fair_queue_ready() {
         let a = futures::stream::iter(vec!["a1", "a2", "a3"]);
         let b = futures::stream::iter(vec!["b1", "b2", "b3"]);
@@ -194,7 +195,7 @@ mod test {
         );
     }
 
-    #[tokio::test]
+    #[async_rt::test]
     async fn test_fair_queue_different_size() {
         let a = futures::stream::iter(vec!["a1", "a2", "a3"]);
         let b = futures::stream::iter(vec!["b1"]);
