@@ -1,7 +1,14 @@
+#[cfg(feature = "tokio-runtime")]
 mod tokio;
-use std::any::Any;
-
+#[cfg(feature = "tokio-runtime")]
 use self::tokio as rt;
+
+#[cfg(feature = "async-std-runtime")]
+mod async_std;
+#[cfg(feature = "async-std-runtime")]
+use self::async_std as rt;
+
+use std::any::Any;
 
 pub use rt::{spawn, spawn_blocking, JoinHandle};
 

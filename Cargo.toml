@@ -7,6 +7,7 @@ edition = "2018"
 [features]
 default = ["tokio-runtime"]
 tokio-runtime = ["tokio", "tokio-util"]
+async-std-runtime = ["async-std"]
 
 [dependencies]
 thiserror = "1"
@@ -27,6 +28,7 @@ regex = "1"
 lazy_static = "1"
 log = "0.4"
 futures_codec = "0.4"
+async-std = { version = "1", optional = true }
 
 [dev-dependencies]
 chrono = "0.4"

@@ -1,7 +1,13 @@
-// TODO: Conditionally compile things
+#[cfg(feature = "tokio-runtime")]
 mod tokio;
+#[cfg(feature = "tokio-runtime")]
+use self::tokio as rt;
 
-use self::tokio as tk;
+#[cfg(feature = "async-std-runtime")]
+mod async_std;
+#[cfg(feature = "async-std-runtime")]
+use self::async_std as rt;
+
 use super::AcceptStopHandle;
 use crate::codec::FramedIo;
 use crate::endpoint::Endpoint;
@@ -10,7 +16,7 @@ use crate::ZmqResult;
 use std::path::PathBuf;
 
 pub(crate) async fn connect(path: PathBuf) -> ZmqResult<(FramedIo, Endpoint)> {
-    tk::connect(path).await
+    rt::connect(path).await
 }
 
 pub(crate) async fn begin_accept<T>(
@@ -20,5 +26,5 @@ pub(crate) async fn begin_accept<T>(
 where
     T: std::future::Future<Output = ()> + Send + 'static,
 {
-    tk::begin_accept(path, cback).await
+    rt::begin_accept(path, cback).await
 }
