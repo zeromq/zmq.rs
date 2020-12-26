@@ -18,7 +18,7 @@ impl<T> Future for JoinHandle<T> {
         // unify with tokio, we simply make an `Ok` result.
         let result = rt_task::JoinHandle::poll(Pin::new(&mut self.0), cx);
         #[cfg(feature = "async-std-runtime")]
-        return result.map(|p| Ok(p));
+        return result.map(Ok);
         #[cfg(feature = "tokio-runtime")]
         return result.map_err(|e| e.into());
     }
