@@ -1,5 +1,6 @@
 use zeromq::prelude::*;
 use zeromq::RepSocket;
+use zeromq::__async_rt as async_rt;
 
 use futures::StreamExt;
 use std::convert::TryInto;
@@ -23,7 +24,7 @@ async fn run_rep_server(mut rep_socket: RepSocket) -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
-#[tokio::test]
+#[async_rt::test]
 async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
     pretty_env_logger::try_init().ok();
 
@@ -32,7 +33,7 @@ async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
     let endpoint = rep_socket.bind("tcp://localhost:0").await?;
     println!("Started rep server on {}", endpoint);
 
-    tokio::spawn(async {
+    async_rt::task::spawn(async {
         run_rep_server(rep_socket).await.unwrap();
     });
 
@@ -50,7 +51,7 @@ async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-#[tokio::test]
+#[async_rt::test]
 async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
     pretty_env_logger::try_init().ok();
 
@@ -60,9 +61,9 @@ async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
 
     for i in 0..100i32 {
         let cloned_endpoint = endpoint.to_string();
-        tokio::spawn(async move {
+        async_rt::task::spawn(async move {
             // yield for a moment to ensure that server has some time to open socket
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            async_rt::task::sleep(Duration::from_millis(100)).await;
             let mut req_socket = zeromq::ReqSocket::new();
             req_socket.connect(&cloned_endpoint).await.unwrap();
 

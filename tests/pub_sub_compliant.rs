@@ -1,7 +1,7 @@
 mod compliance;
-
 use compliance::{get_monitor_event, setup_monitor};
 
+use zeromq::__async_rt as async_rt;
 use zeromq::prelude::*;
 
 use std::time::Duration;
@@ -47,7 +47,7 @@ fn run_their_pub(their_pub: zmq::Socket, num_to_send: u32) -> std::thread::JoinH
 
 async fn run_our_subs(our_subs: Vec<zeromq::SubSocket>, num_to_recv: u32) {
     let join_handles = our_subs.into_iter().map(|mut sub| {
-        tokio::spawn(async move {
+        async_rt::task::spawn(async move {
             for i in 0..num_to_recv {
                 let msg = sub.recv().await.expect("Failed to recv");
                 let msg_string = String::from_utf8(msg.data.to_vec()).unwrap();
@@ -61,7 +61,7 @@ async fn run_our_subs(our_subs: Vec<zeromq::SubSocket>, num_to_recv: u32) {
     println!("Finished sub task");
 }
 
-#[tokio::test]
+#[async_rt::test]
 async fn test_their_pub_our_sub() {
     const N_SUBS: u8 = 16;
 
@@ -80,7 +80,7 @@ async fn test_their_pub_our_sub() {
         );
     }
     // This is necessary to avoid slow joiner problem
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    async_rt::task::sleep(Duration::from_millis(100)).await;
     println!("Setup done");
 
     const NUM_MSGS: u32 = 64;

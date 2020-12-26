@@ -28,13 +28,14 @@ regex = "1"
 lazy_static = "1"
 log = "0.4"
 futures_codec = "0.4"
-async-std = { version = "1", optional = true }
+async-std = { version = "1", features = ["attributes"], optional = true }
 
 [dev-dependencies]
 chrono = "0.4"
 criterion = "0.3"
 pretty_env_logger = "0.4"
 zmq = "0.9"
+
 
 [lib]
 bench = false

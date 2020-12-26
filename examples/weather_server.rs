@@ -1,8 +1,11 @@
+mod async_helpers;
+
 use rand::Rng;
 use std::time::Duration;
+
 use zeromq::*;
 
-#[tokio::main]
+#[async_helpers::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rng = rand::thread_rng();
     println!("Start server");
@@ -16,6 +19,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let relhumidity = rng.gen_range(10, 60);
         let message = format!("{} {} {}", zipcode, temperature, relhumidity);
         socket.send(message.into()).await?;
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        async_helpers::sleep(Duration::from_millis(100)).await;
     }
 }

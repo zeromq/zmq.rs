@@ -1,9 +1,11 @@
+mod async_helpers;
+
 use std::convert::TryInto;
 use std::error::Error;
 use zeromq::Socket;
 use zeromq::{BlockingRecv, BlockingSend};
 
-#[tokio::main]
+#[async_helpers::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let mut socket = zeromq::ReqSocket::new();
     socket

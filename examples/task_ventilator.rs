@@ -1,10 +1,13 @@
+mod async_helpers;
+
 use rand::Rng;
 use std::error::Error;
 use std::io::Read;
+
 use zeromq::BlockingSend;
 use zeromq::Socket;
 
-#[tokio::main]
+#[async_helpers::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Socket to send messages on
     let mut sender = zeromq::PushSocket::new();

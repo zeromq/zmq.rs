@@ -225,20 +225,20 @@ mod tests {
     use crate::ZmqResult;
     use std::net::IpAddr;
 
-    #[tokio::test]
+    #[async_rt::test]
     async fn test_bind_to_any_port() -> ZmqResult<()> {
         let s = PubSocket::new();
         test_bind_to_any_port_helper(s).await
     }
 
-    #[tokio::test]
+    #[async_rt::test]
     async fn test_bind_to_any_ipv4_interface() -> ZmqResult<()> {
         let any_ipv4: IpAddr = "0.0.0.0".parse().unwrap();
         let s = PubSocket::new();
         test_bind_to_unspecified_interface_helper(any_ipv4, s, 4000).await
     }
 
-    #[tokio::test]
+    #[async_rt::test]
     async fn test_bind_to_any_ipv6_interface() -> ZmqResult<()> {
         let any_ipv6: IpAddr = "::".parse().unwrap();
         let s = PubSocket::new();

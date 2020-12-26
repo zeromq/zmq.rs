@@ -1,7 +1,7 @@
 mod compliance;
-
 use compliance::{get_monitor_event, setup_monitor};
 
+use zeromq::__async_rt as async_rt;
 use zeromq::prelude::*;
 
 /// Returns (socket, bound_endpoint, monitor)
@@ -55,7 +55,7 @@ async fn run_our_req(our_req: &mut zeromq::ReqSocket, num_req: u32) {
     }
 }
 
-#[tokio::test]
+#[async_rt::test]
 async fn test_their_rep_our_req() {
     let (their_rep, bind_endpoint, their_monitor) = setup_their_rep("tcp://127.0.0.1:0");
     println!("Their rep was bound to {}", bind_endpoint);

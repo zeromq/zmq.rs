@@ -19,6 +19,12 @@ mod task_handle;
 mod transport;
 pub mod util;
 
+#[doc(hidden)]
+pub mod __async_rt {
+    //! DO NOT USE! PRIVATE IMPLEMENTATION, EXPOSED ONLY FOR INTEGRATION TESTS.
+    pub use super::async_rt::*;
+}
+
 pub use crate::dealer::*;
 pub use crate::endpoint::{Endpoint, Host, Transport, TryIntoEndpoint};
 pub use crate::error::{ZmqError, ZmqResult};
