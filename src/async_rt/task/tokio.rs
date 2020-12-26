@@ -11,15 +11,6 @@ where
     tokio::task::spawn(task).into()
 }
 
-#[allow(unused)]
-pub fn spawn_blocking<F, R>(f: F) -> JoinHandle<R>
-where
-    F: FnOnce() -> R + Send + 'static,
-    R: Send + 'static,
-{
-    tokio::task::spawn_blocking(f).into()
-}
-
 impl From<tokio::task::JoinError> for super::JoinError {
     fn from(err: tokio::task::JoinError) -> Self {
         if err.is_cancelled() {

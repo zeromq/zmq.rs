@@ -39,6 +39,7 @@ impl Socket for DealerSocket {
             binds: HashMap::new(),
         }
     }
+
     fn backend(&self) -> Arc<dyn MultiPeerBackend> {
         self.backend.clone()
     }

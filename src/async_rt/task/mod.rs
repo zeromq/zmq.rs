@@ -10,7 +10,7 @@ use self::async_std as rt;
 
 use std::any::Any;
 
-pub use rt::{spawn, spawn_blocking, JoinHandle};
+pub use rt::{spawn, JoinHandle};
 
 /// The type of error the occurred in the task. See [`JoinHandle`].
 ///
