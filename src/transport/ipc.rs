@@ -1,11 +1,10 @@
 #[cfg(feature = "tokio-runtime")]
 use tokio::net::{UnixListener, UnixStream};
-#[cfg(feature = "tokio-runtime")]
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 #[cfg(feature = "async-std-runtime")]
 use async_std::os::unix::net::{UnixListener, UnixStream};
 
+use super::make_framed;
 use super::AcceptStopHandle;
 use crate::async_rt;
 use crate::codec::FramedIo;
@@ -20,22 +19,8 @@ pub(crate) async fn connect(path: PathBuf) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = UnixStream::connect(&path).await?;
     let peer_addr = raw_socket.peer_addr()?;
     let peer_addr = peer_addr.as_pathname().map(|a| a.to_owned());
-    let framed_io = {
-        #[cfg(feature = "tokio-runtime")]
-        {
-            let (read, write) = tokio::io::split(raw_socket);
-            FramedIo::new(Box::new(read.compat()), Box::new(write.compat_write()))
-        }
 
-        #[cfg(feature = "async-std-runtime")]
-        {
-            use futures::AsyncReadExt;
-            let (read, write) = raw_socket.split();
-            FramedIo::new(Box::new(read), Box::new(write))
-        }
-    };
-
-    Ok((framed_io, Endpoint::Ipc(peer_addr)))
+    Ok((make_framed(raw_socket), Endpoint::Ipc(peer_addr)))
 }
 
 pub(crate) async fn begin_accept<T>(
@@ -65,22 +50,8 @@ where
             select! {
                 incoming = listener.accept().fuse() => {
                     let maybe_accepted: Result<_, _> = incoming.map(|(raw_socket, peer_addr)| {
-                        let framed_io = {
-                            #[cfg(feature = "tokio-runtime")]
-                            {
-                                let (read, write) = tokio::io::split(raw_socket);
-                                FramedIo::new(Box::new(read.compat()), Box::new(write.compat_write()))
-                            }
-
-                            #[cfg(feature = "async-std-runtime")]
-                            {
-                                use futures::AsyncReadExt;
-                                let (read, write) = raw_socket.split();
-                                FramedIo::new(Box::new(read), Box::new(write))
-                            }
-                        };
                         let peer_addr = peer_addr.as_pathname().map(|a| a.to_owned());
-                        (framed_io, Endpoint::Ipc(peer_addr))
+                        (make_framed(raw_socket), Endpoint::Ipc(peer_addr))
                     }).map_err(|err| err.into());
                     async_rt::task::spawn(cback(maybe_accepted));
                 },
