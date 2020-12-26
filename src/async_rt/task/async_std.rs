@@ -17,7 +17,9 @@ impl<T> Future for JoinHandle<T> {
     type Output = Result<T, JoinError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        async_std::task::JoinHandle::poll(Pin::new(&mut self.0), cx)
+        // In async-std, the program aborts on panic so results arent returned. To
+        // unify with tokio, we simply make an `Ok` result.
+        async_std::task::JoinHandle::poll(Pin::new(&mut self.0), cx).map(|p| Ok(p))
     }
 }
 impl<T> From<async_std::task::JoinHandle<T>> for JoinHandle<T> {
