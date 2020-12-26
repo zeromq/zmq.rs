@@ -1,5 +1,6 @@
 #![recursion_limit = "1024"]
 
+mod async_rt;
 mod backend;
 mod codec;
 mod dealer;

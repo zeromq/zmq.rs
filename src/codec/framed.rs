@@ -1,5 +1,3 @@
-//! General types and traits to facilitate compatibility across async runtimes
-
 use crate::codec::ZmqCodec;
 use futures_codec::{FramedRead, FramedWrite};
 
