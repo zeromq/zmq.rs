@@ -9,6 +9,7 @@ use std::time::Duration;
 fn setup_their_pub(bind_endpoint: &str) -> (zmq::Socket, String, zmq::Socket) {
     let ctx = zmq::Context::new();
     let their_pub = ctx.socket(zmq::PUB).expect("Couldn't make pub socket");
+    their_pub.set_ipv6(true).expect("Failed to enable IPV6"); // IPV6 off by default
     their_pub.bind(bind_endpoint).expect("Failed to bind");
 
     let resolved_bind = their_pub.get_last_endpoint().unwrap().unwrap();
@@ -65,42 +66,62 @@ async fn run_our_subs(our_subs: Vec<zeromq::SubSocket>, num_to_recv: u32) {
 async fn test_their_pub_our_sub() {
     const N_SUBS: u8 = 16;
 
-    let (their_pub, bind_endpoint, their_monitor) = setup_their_pub("tcp://127.0.0.1:0");
-    println!("Their pub was bound to {}", bind_endpoint);
+    async fn do_test(their_endpoint: &str) {
+        let (their_pub, bind_endpoint, their_monitor) = setup_their_pub(their_endpoint);
+        println!("Their pub was bound to {}", bind_endpoint);
 
-    let our_subs = setup_our_subs(&bind_endpoint, N_SUBS).await;
-    for _ in 0..N_SUBS {
-        assert_eq!(
-            zmq::SocketEvent::ACCEPTED,
-            get_monitor_event(&their_monitor).0
-        );
-        assert_eq!(
-            zmq::SocketEvent::HANDSHAKE_SUCCEEDED,
-            get_monitor_event(&their_monitor).0
-        );
-    }
-    // This is necessary to avoid slow joiner problem
-    async_rt::task::sleep(Duration::from_millis(100)).await;
-    println!("Setup done");
+        let our_subs = setup_our_subs(&bind_endpoint, N_SUBS).await;
+        for _ in 0..N_SUBS {
+            assert_eq!(
+                zmq::SocketEvent::ACCEPTED,
+                get_monitor_event(&their_monitor).0
+            );
+            assert_eq!(
+                zmq::SocketEvent::HANDSHAKE_SUCCEEDED,
+                get_monitor_event(&their_monitor).0
+            );
+        }
+        // This is necessary to avoid slow joiner problem
+        async_rt::task::sleep(Duration::from_millis(100)).await;
+        println!("Setup done");
 
-    const NUM_MSGS: u32 = 64;
+        const NUM_MSGS: u32 = 64;
 
-    let their_join_handle = run_their_pub(their_pub, NUM_MSGS);
-    run_our_subs(our_subs, NUM_MSGS).await;
-    let their_pub = their_join_handle
-        .join()
-        .expect("Their pub terminated with an error!");
+        let their_join_handle = run_their_pub(their_pub, NUM_MSGS);
+        run_our_subs(our_subs, NUM_MSGS).await;
+        let their_pub = their_join_handle
+            .join()
+            .expect("Their pub terminated with an error!");
 
-    for _ in 0..N_SUBS {
+        for _ in 0..N_SUBS {
+            assert_eq!(
+                get_monitor_event(&their_monitor).0,
+                zmq::SocketEvent::DISCONNECTED
+            );
+        }
+
+        drop(their_pub);
         assert_eq!(
             get_monitor_event(&their_monitor).0,
-            zmq::SocketEvent::DISCONNECTED
+            zmq::SocketEvent::CLOSED
         );
     }
 
-    drop(their_pub);
-    assert_eq!(
-        get_monitor_event(&their_monitor).0,
-        zmq::SocketEvent::CLOSED
-    );
+    let endpoints = vec![
+        "tcp://127.0.0.1:0",
+        "tcp://[::1]:0",
+        "ipc://asdf.sock",
+        "ipc://anothersocket-asdf",
+    ];
+    for e in endpoints {
+        println!("Testing with endpoint {}", e);
+        do_test(e).await;
+
+        // Unfortunately not all libzmq versions actually delete the ipc file. See
+        // https://github.com/zeromq/libzmq/issues/3387
+        // So we will delete it ourselves.
+        if let Some(path) = e.strip_prefix("ipc://") {
+            std::fs::remove_file(path).expect("Failed to remove ipc file")
+        }
+    }
 }
