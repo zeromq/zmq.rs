@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-/// Represents an error when parsing an [`Endpoint`]
+/// Represents an error when parsing an [`crate::Endpoint`]
 #[derive(Error, Debug)]
 pub enum EndpointError {
     #[error("Failed to parse IP address or port")]

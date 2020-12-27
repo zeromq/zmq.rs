@@ -29,6 +29,7 @@ pub struct TaskHandle<T> {
     join_handle: async_rt::task::JoinHandle<ZmqResult<T>>,
 }
 impl<T> TaskHandle<T> {
+    #[allow(unused)]
     pub(crate) fn new(
         stop_channel: futures::channel::oneshot::Sender<()>,
         join_handle: async_rt::task::JoinHandle<ZmqResult<T>>,

@@ -1,17 +1,44 @@
+#[cfg(feature = "ipc-transport")]
 mod ipc;
+#[cfg(feature = "tcp-transport")]
 mod tcp;
 
 use crate::codec::FramedIo;
 use crate::endpoint::Endpoint;
-use crate::error::ZmqError;
 use crate::task_handle::TaskHandle;
 use crate::ZmqResult;
 
+macro_rules! do_if_enabled {
+    ($feature:literal, $body:expr) => {{
+        #[cfg(feature = $feature)]
+        {
+            $body
+        }
+
+        #[cfg(not(feature = $feature))]
+        panic!(format!("feature \"{}\" is not enabled", $feature))
+    }};
+}
+
+/// Connectes to the given endpoint
+///
+/// # Panics
+/// Panics if the requested endpoint uses a transport type that isn't enabled
 pub(crate) async fn connect(endpoint: Endpoint) -> ZmqResult<(FramedIo, Endpoint)> {
     match endpoint {
-        Endpoint::Tcp(host, port) => tcp::connect(host, port).await,
-        Endpoint::Ipc(Some(path)) => ipc::connect(path).await,
-        Endpoint::Ipc(None) => Err(ZmqError::Socket("Cannot connect to an unnamed ipc socket")),
+        Endpoint::Tcp(_host, _port) => {
+            do_if_enabled!("tcp-transport", tcp::connect(_host, _port).await)
+        }
+        Endpoint::Ipc(_path) => do_if_enabled!(
+            "ipc-transport",
+            if let Some(path) = _path {
+                ipc::connect(path).await
+            } else {
+                Err(crate::error::ZmqError::Socket(
+                    "Cannot connect to an unnamed ipc socket",
+                ))
+            }
+        ),
     }
 }
 
@@ -25,6 +52,9 @@ pub struct AcceptStopHandle(pub(crate) TaskHandle<()>);
 ///
 /// Returns a ZmqResult, which when Ok is a tuple of the resolved bound
 /// endpoint, as well as a channel to stop the async accept task
+///
+/// # Panics
+/// Panics if the requested endpoint uses a transport type that isn't enabled
 pub(crate) async fn begin_accept<T>(
     endpoint: Endpoint,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
@@ -32,15 +62,26 @@ pub(crate) async fn begin_accept<T>(
 where
     T: std::future::Future<Output = ()> + Send + 'static,
 {
+    let _cback = cback;
     match endpoint {
-        Endpoint::Tcp(host, port) => tcp::begin_accept(host, port, cback).await,
-        Endpoint::Ipc(Some(path)) => ipc::begin_accept(path, cback).await,
-        Endpoint::Ipc(None) => Err(ZmqError::Socket(
-            "Cannot begin accepting peers at an unnamed ipc socket",
-        )),
+        Endpoint::Tcp(_host, _port) => do_if_enabled!(
+            "tcp-transport",
+            tcp::begin_accept(_host, _port, _cback).await
+        ),
+        Endpoint::Ipc(_path) => do_if_enabled!(
+            "ipc-transport",
+            if let Some(path) = _path {
+                ipc::begin_accept(path, _cback).await
+            } else {
+                Err(crate::error::ZmqError::Socket(
+                    "Cannot begin accepting peers at an unnamed ipc socket",
+                ))
+            }
+        ),
     }
 }
 
+#[allow(unused)]
 #[cfg(feature = "tokio-runtime")]
 fn make_framed<T>(stream: T) -> FramedIo
 where
@@ -51,6 +92,7 @@ where
     FramedIo::new(Box::new(read.compat()), Box::new(write.compat_write()))
 }
 
+#[allow(unused)]
 #[cfg(feature = "async-std-runtime")]
 fn make_framed<T>(stream: T) -> FramedIo
 where
