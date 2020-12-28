@@ -29,7 +29,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all --all-targets --no-default-features --features async-std-runtime -- --deny warnings
+          args: --all --all-targets --no-default-features --features async-std-runtime,all-transport -- --deny warnings
 
   test:
     name: Test
@@ -58,7 +58,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all --no-default-features --features async-std-runtime
+          args: --all --no-default-features --features async-std-runtime,all-transport
 
   fmt:
     name: Formatting
