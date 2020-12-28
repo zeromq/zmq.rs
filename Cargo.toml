@@ -8,9 +8,12 @@ license = "MIT"
 repository = "https://github.com/zeromq/zmq.rs"
 
 [features]
-default = ["tokio-runtime"]
+default = ["tokio-runtime", "all-transport"]
 tokio-runtime = ["tokio", "tokio-util"]
 async-std-runtime = ["async-std"]
+all-transport = ["ipc-transport", "tcp-transport"]
+ipc-transport = []
+tcp-transport = []
 
 [dependencies]
 thiserror = "1"
