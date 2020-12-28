@@ -3,6 +3,9 @@ name = "zeromq"
 version = "0.2.0"
 authors = ["Alexei Kornienko <alexei.kornienko@gmail.com>"]
 edition = "2018"
+description = "A native Rust implementation of ZeroMQ"
+license = "MIT"
+repository = "https://github.com/zeromq/zmq.rs"
 
 [features]
 default = ["tokio-runtime"]
