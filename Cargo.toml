@@ -38,6 +38,7 @@ uuid = { version = "0.8", features = ["v4"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 uuid = { version = "0.8", features = ["v4", "wasm-bindgen"] }
+async-std = { version = "1", features = ["attributes", "unstable"], optional = true }
 
 
 [dev-dependencies]
