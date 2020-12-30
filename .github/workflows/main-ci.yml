@@ -13,6 +13,7 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
+          target: wasm32-unknown-unknown
           override: true
           components: clippy
       - name: Cache cargo dependencies
@@ -30,6 +31,11 @@ jobs:
         with:
           command: clippy
           args: --all --all-targets --no-default-features --features async-std-runtime,all-transport -- --deny warnings
+      - name: Check WASM version (only library targets)
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all --no-default-features --features async-std-runtime --target wasm32-unknown-unknown -- --deny warnings
 
   test:
     name: Test
