@@ -12,7 +12,7 @@ where
 {
     #[cfg(feature = "tokio-runtime")]
     let result = tokio::task::spawn(task).into();
-    #[cfg(all(feature = "async-std-runtime", not(target_arch="wasm32")))]
+    #[cfg(all(feature = "async-std-runtime", not(target_arch = "wasm32")))]
     let result = async_std::task::spawn(task).into();
     #[cfg(target_arch = "wasm32")]
     let result = async_std::task::spawn_local(task).into();
