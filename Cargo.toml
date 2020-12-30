@@ -29,12 +29,16 @@ num-traits = "0.2"
 enum-primitive-derive = "0.1"
 dashmap = "3.11"
 crossbeam = "0.7"
-uuid = { version = "0.8", features = ["v4"] }
 regex = "1"
 lazy_static = "1"
 log = "0.4"
 futures_codec = "0.4"
 async-std = { version = "1", features = ["attributes"], optional = true }
+uuid = { version = "0.8", features = ["v4"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { version = "0.8", features = ["v4", "wasm-bindgen"] }
+
 
 [dev-dependencies]
 chrono = "0.4"
