@@ -243,7 +243,7 @@ pub trait Socket: Sized + Send {
         let backend = self.backend();
         let endpoint = endpoint.try_into()?;
 
-        let result = match transport::connect(endpoint).await {
+        let result = match util::connect_forever(endpoint).await {
             Ok((socket, endpoint)) => match util::peer_connected(socket, backend).await {
                 Ok(peer_id) => Ok((endpoint, peer_id)),
                 Err(e) => Err(e),
