@@ -1,59 +1,86 @@
-use crate::util::PeerIdentity;
-use bytes::{Bytes, BytesMut};
-use std::convert::TryFrom;
-use std::string::FromUtf8Error;
+use bytes::Bytes;
+use std::collections::vec_deque::{VecDeque,Iter};
+use std::convert::{From, TryFrom};
 
 #[derive(Debug, Clone)]
 pub struct ZmqMessage {
-    pub data: Bytes,
+    frames: VecDeque<Bytes>,
 }
 
-impl From<Bytes> for ZmqMessage {
-    fn from(data: Bytes) -> Self {
-        Self { data }
+impl ZmqMessage {
+    pub fn new() -> Self {
+	Self { frames: VecDeque::new() }
+    }
+
+    pub fn push_back(&mut self, frame: Bytes) {
+	self.frames.push_back(frame);
+    }
+    
+    pub fn push_front(&mut self, frame: Bytes) {
+	self.frames.push_front(frame);
+    }
+
+    pub fn iter(&self) -> Iter<'_, Bytes> {
+	self.frames.iter()
+    }
+
+    pub fn pop_front(&mut self) -> Option<Bytes> {
+	self.frames.pop_front()
+    }
+
+    pub fn pop_back(&mut self) -> Option<Bytes> {
+	self.frames.pop_back()
+    }
+
+    pub fn len(&self) -> usize {
+	self.frames.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+	self.frames.is_empty()
+    }
+    
+    pub fn get(&self, index: usize) -> Option<&Bytes> {
+	self.frames.get(index)
     }
 }
 
-impl From<BytesMut> for ZmqMessage {
-    fn from(data: BytesMut) -> Self {
-        data.freeze().into()
-    }
-}
-
-impl From<Vec<u8>> for ZmqMessage {
-    fn from(data: Vec<u8>) -> Self {
-        Bytes::from(data).into()
+impl From<Vec<Bytes>> for ZmqMessage {
+    fn from(v: Vec<Bytes>) -> Self {
+	Self { frames: v.into() }
     }
 }
 
 impl From<String> for ZmqMessage {
-    fn from(data: String) -> Self {
-        data.into_bytes().into()
-    }
-}
-
-impl From<PeerIdentity> for ZmqMessage {
-    fn from(data: PeerIdentity) -> Self {
-        Bytes::from(data).into()
+    fn from(s: String) -> Self {
+	let mut m: ZmqMessage = Default::default();
+	m.push_back(s.into());
+	m
     }
 }
 
 impl From<&str> for ZmqMessage {
-    fn from(data: &str) -> Self {
-        BytesMut::from(data).into()
-    }
+    fn from(s: &str) -> Self {
+	ZmqMessage::from(s.to_owned())
+    } 
 }
 
-impl From<ZmqMessage> for Vec<u8> {
-    fn from(m: ZmqMessage) -> Self {
-        m.data.to_vec()
+impl Default for ZmqMessage {
+    fn default() -> Self {
+	Self::new()
     }
 }
 
 impl TryFrom<ZmqMessage> for String {
-    type Error = FromUtf8Error;
-
-    fn try_from(m: ZmqMessage) -> Result<Self, Self::Error> {
-        String::from_utf8(m.into())
+    type Error = &'static str;
+    
+    fn try_from(mut z: ZmqMessage) -> Result<Self, Self::Error> {
+	if z.len() != 1 {
+	    return Err("Message must have only 1 frame to convert to String");
+	}
+	match String::from_utf8(z.pop_front().unwrap().to_vec()) {
+	    Ok(s) => Ok(s),
+	    Err(_) => Err("Could not parse string from message"),
+	}
     }
 }

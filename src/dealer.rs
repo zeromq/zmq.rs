@@ -56,11 +56,11 @@ impl Socket for DealerSocket {
 }
 
 impl DealerSocket {
-    pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
+    pub async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {
-                Some((_peer_id, Ok(Message::Multipart(messages)))) => {
-                    return Ok(messages);
+                Some((_peer_id, Ok(Message::Message(message)))) => {
+                    return Ok(message);
                 }
                 Some((_peer_id, _)) => todo!(),
                 None => todo!(),
@@ -68,9 +68,9 @@ impl DealerSocket {
         }
     }
 
-    pub async fn send_multipart(&mut self, messages: Vec<ZmqMessage>) -> ZmqResult<()> {
+    pub async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         self.backend
-            .send_round_robin(Message::Multipart(messages))
+            .send_round_robin(Message::Message(message))
             .await?;
         Ok(())
     }

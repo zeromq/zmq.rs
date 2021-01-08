@@ -1,9 +1,7 @@
 mod async_helpers;
 
-use std::convert::TryInto;
 use std::error::Error;
-use zeromq::Socket;
-use zeromq::{BlockingRecv, BlockingSend};
+use zeromq::{BlockingRecv, BlockingSend, Socket};
 
 #[async_helpers::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -16,7 +14,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     for _ in 0..10u64 {
         socket.send("Hello".into()).await?;
-        let repl: String = socket.recv().await?.try_into()?;
+        let repl = socket.recv().await?;
         dbg!(repl);
     }
     Ok(())

@@ -53,12 +53,6 @@ impl GenericSocketBackend {
                             message: m,
                         })
                     }
-                    Message::Multipart(m) => {
-                        return Err(ZmqError::ReturnToSenderMultipart {
-                            reason: "Not connected to peers. Unable to send messages",
-                            messages: m,
-                        })
-                    }
                 },
             };
             match self.peers.get_mut(&next_peer_id) {

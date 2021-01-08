@@ -12,7 +12,8 @@ use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
-
+use bytes::Bytes;
+    
 struct ReqSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, Peer>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
@@ -33,7 +34,7 @@ impl Drop for ReqSocket {
 
 #[async_trait]
 impl BlockingSend for ReqSocket {
-    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+    async fn send(&mut self, mut message: ZmqMessage) -> ZmqResult<()> {
         if self.current_request.is_some() {
             return Err(ZmqError::ReturnToSender {
                 reason: "Unable to send message. Request already in progress",
@@ -58,11 +59,8 @@ impl BlockingSend for ReqSocket {
             match self.backend.peers.get_mut(&next_peer_id) {
                 Some(mut peer) => {
                     self.backend.round_robin.push(next_peer_id.clone());
-                    let frames = vec![
-                        "".into(), // delimiter frame
-                        message,
-                    ];
-                    peer.send_queue.send(Message::Multipart(frames)).await?;
+                    message.push_front(Bytes::new());
+                    peer.send_queue.send(Message::Message(message)).await?;
                     self.current_request = Some(next_peer_id);
                     return Ok(());
                 }
@@ -79,13 +77,12 @@ impl BlockingRecv for ReqSocket {
             Some(peer_id) => {
                 if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
                     let message = peer.recv_queue.next().await;
-                    match message {
-                        Some(Ok(Message::Multipart(mut message))) => {
-                            assert!(message.len() == 2);
-                            assert!(message[0].data.is_empty()); // Ensure that we have delimeter as first part
-                            Ok(message.pop().unwrap())
-                        }
-                        Some(_) => Err(ZmqError::Other("Wrong message type received")),
+		    match message {
+			Some(Ok(Message::Message(mut m))) => {
+			    assert!(m.pop_front().unwrap().is_empty()); // Ensure that we have delimeter as first part
+			    Ok(m)
+			},
+			Some(_) => todo!(),
                         None => Err(ZmqError::NoMessage),
                     }
                 } else {

@@ -12,6 +12,7 @@ use futures::StreamExt;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
+use bytes::Bytes;
 
 struct RepPeer {
     pub(crate) _identity: PeerIdentity,
@@ -108,15 +109,12 @@ impl SocketBackend for RepSocketBackend {
 
 #[async_trait]
 impl BlockingSend for RepSocket {
-    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+    async fn send(&mut self, mut message: ZmqMessage) -> ZmqResult<()> {
         match self.current_request.take() {
             Some(peer_id) => {
                 if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
-                    let frames = vec![
-                        "".into(), // delimiter frame
-                        message,
-                    ];
-                    peer.send_queue.send(Message::Multipart(frames)).await?;
+		    message.push_front(Bytes::from(""));
+                    peer.send_queue.send(Message::Message(message)).await?;
                     Ok(())
                 } else {
                     Err(ZmqError::ReturnToSender {
@@ -138,12 +136,16 @@ impl BlockingRecv for RepSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {
-                Some((peer_id, Ok(Message::Multipart(mut messages)))) => {
-                    assert!(messages.len() == 2);
-                    assert!(messages[0].data.is_empty()); // Ensure that we have delimeter as first part
-                    self.current_request = Some(peer_id);
-                    return Ok(messages.pop().unwrap());
-                }
+                Some((peer_id, Ok(message))) => {
+		    match message {
+			Message::Message(mut m) => {
+			    assert!(m.pop_front().unwrap().is_empty()); // Ensure that we have delimeter as first part
+			    self.current_request = Some(peer_id);
+			    return Ok(m);
+			},
+			_ => todo!()
+		    }
+		}
                 Some((_peer_id, _)) => todo!(),
                 None => return Err(ZmqError::NoMessage),
             };

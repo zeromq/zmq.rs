@@ -25,7 +25,6 @@ pub enum Message {
     Greeting(ZmqGreeting),
     Command(ZmqCommand),
     Message(ZmqMessage),
-    Multipart(Vec<ZmqMessage>),
 }
 
 pub(crate) trait TrySend {
