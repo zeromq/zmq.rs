@@ -14,7 +14,7 @@ use crate::ZmqResult;
 
 use futures::{select, FutureExt};
 
-pub(crate) async fn connect(host: Host, port: Port) -> ZmqResult<(FramedIo, Endpoint)> {
+pub(crate) async fn connect(host: &Host, port: Port) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = TcpStream::connect((host.to_string().as_str(), port)).await?;
     let peer_addr = raw_socket.peer_addr()?;
 

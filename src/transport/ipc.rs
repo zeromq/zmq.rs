@@ -13,10 +13,10 @@ use crate::task_handle::TaskHandle;
 use crate::ZmqResult;
 
 use futures::{select, FutureExt};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-pub(crate) async fn connect(path: PathBuf) -> ZmqResult<(FramedIo, Endpoint)> {
-    let raw_socket = UnixStream::connect(&path).await?;
+pub(crate) async fn connect(path: &Path) -> ZmqResult<(FramedIo, Endpoint)> {
+    let raw_socket = UnixStream::connect(path).await?;
     let peer_addr = raw_socket.peer_addr()?;
     let peer_addr = peer_addr.as_pathname().map(|a| a.to_owned());
 
@@ -24,7 +24,7 @@ pub(crate) async fn connect(path: PathBuf) -> ZmqResult<(FramedIo, Endpoint)> {
 }
 
 pub(crate) async fn begin_accept<T>(
-    path: PathBuf,
+    path: &Path,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
 ) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where

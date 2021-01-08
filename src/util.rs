@@ -5,6 +5,8 @@ use bytes::Bytes;
 use futures::stream::StreamExt;
 use futures::SinkExt;
 use futures_codec::FramedRead;
+use num_traits::Pow;
+use rand::Rng;
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -176,6 +178,27 @@ pub(crate) async fn peer_connected(
     let peer_id = ready_exchange(&mut raw_socket, backend.socket_type()).await?;
     backend.peer_connected(&peer_id, raw_socket);
     Ok(peer_id)
+}
+
+pub(crate) async fn connect_forever(endpoint: Endpoint) -> ZmqResult<(FramedIo, Endpoint)> {
+    let mut try_num: u64 = 0;
+    loop {
+        match transport::connect(&endpoint).await {
+            Ok(res) => return Ok(res),
+            Err(ZmqError::Network(e)) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
+                if try_num < 5 {
+                    try_num += 1;
+                }
+                let delay = {
+                    let mut rng = rand::thread_rng();
+                    std::f64::consts::E.pow(try_num as f64 / 3.0) + rng.gen_range(0.0f64, 0.1f64)
+                };
+                async_rt::task::sleep(std::time::Duration::from_secs_f64(delay)).await;
+                continue;
+            }
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 #[cfg(test)]
