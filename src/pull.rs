@@ -3,10 +3,7 @@ use crate::codec::{Message, ZmqFramedRead};
 use crate::fair_queue::FairQueue;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{
-    BlockingRecv, Endpoint, MultiPeerBackend, Socket, SocketEvent, SocketType, ZmqMessage,
-    ZmqResult,
-};
+use crate::{BlockingRecv, Endpoint, MultiPeerBackend, Socket, SocketEvent, SocketType, ZmqResult};
 use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::StreamExt;
@@ -51,10 +48,10 @@ impl Socket for PullSocket {
 
 #[async_trait]
 impl BlockingRecv for PullSocket {
-    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
+    async fn recv(&mut self) -> ZmqResult<Message> {
         loop {
             match self.fair_queue.next().await {
-                Some((_peer_id, Ok(Message::Message(message)))) => {
+                Some((_peer_id, Ok(message))) => {
                     return Ok(message);
                 }
                 Some((_peer_id, _)) => todo!(),

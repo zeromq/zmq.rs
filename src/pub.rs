@@ -2,7 +2,6 @@ use crate::async_rt;
 use crate::codec::*;
 use crate::endpoint::Endpoint;
 use crate::error::ZmqResult;
-use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
@@ -155,15 +154,17 @@ impl Drop for PubSocket {
 
 #[async_trait]
 impl BlockingSend for PubSocket {
-    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+    async fn send(&mut self, message: Message) -> ZmqResult<()> {
         let mut dead_peers = Vec::new();
         for mut subscriber in self.backend.subscribers.iter_mut() {
             for sub_filter in &subscriber.subscriptions {
-                if sub_filter.as_slice() == &message.data[0..sub_filter.len()] {
-                    let res = subscriber
-                        .send_queue
-                        .as_mut()
-                        .try_send(Message::Message(message.clone()));
+                let first_frame_data = match &message {
+                    Message::Message(m) => &m.data,
+                    Message::Multipart(messages) => &messages[0].data,
+                    _ => todo!(),
+                };
+                if sub_filter.as_slice() == &first_frame_data[0..sub_filter.len()] {
+                    let res = subscriber.send_queue.as_mut().try_send(message.clone());
                     match res {
                         Ok(()) => {}
                         Err(ZmqError::Codec(CodecError::Io(e))) => {

@@ -44,22 +44,12 @@ impl GenericSocketBackend {
         loop {
             let next_peer_id = match self.round_robin.pop() {
                 Ok(peer) => peer,
-                Err(_) => match message {
-                    Message::Greeting(_) => panic!("Sending greeting is not supported"),
-                    Message::Command(_) => panic!("Sending commands is not supported"),
-                    Message::Message(m) => {
-                        return Err(ZmqError::ReturnToSender {
-                            reason: "Not connected to peers. Unable to send messages",
-                            message: m,
-                        })
-                    }
-                    Message::Multipart(m) => {
-                        return Err(ZmqError::ReturnToSenderMultipart {
-                            reason: "Not connected to peers. Unable to send messages",
-                            messages: m,
-                        })
-                    }
-                },
+                Err(_) => {
+                    return Err(ZmqError::ReturnToSender {
+                        reason: "Not connected to peers. Unable to send messages",
+                        message,
+                    })
+                }
             };
             match self.peers.get_mut(&next_peer_id) {
                 Some(mut peer) => {

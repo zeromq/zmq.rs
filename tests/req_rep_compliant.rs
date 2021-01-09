@@ -1,6 +1,7 @@
 mod compliance;
 use compliance::{get_monitor_event, setup_monitor};
 
+use std::convert::TryInto;
 use zeromq::__async_rt as async_rt;
 use zeromq::prelude::*;
 
@@ -49,7 +50,7 @@ async fn run_our_req(our_req: &mut zeromq::ReqSocket, num_req: u32) {
             .expect("Failed to send");
         let reply = our_req.recv().await.expect("Failed to recv");
 
-        let reply = String::from_utf8(reply.data.to_vec()).unwrap();
+        let reply: String = reply.try_into().unwrap();
         println!("Received reply: {}", &reply);
         assert_eq!(reply, format!("Reply: {}", i));
     }

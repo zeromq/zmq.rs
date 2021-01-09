@@ -140,20 +140,20 @@ pub trait SocketBackend: Send + Sync {
 
 #[async_trait]
 pub trait BlockingRecv {
-    async fn recv(&mut self) -> ZmqResult<ZmqMessage>;
+    async fn recv(&mut self) -> ZmqResult<Message>;
 }
 
 #[async_trait]
 pub trait BlockingSend {
-    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()>;
+    async fn send(&mut self, message: Message) -> ZmqResult<()>;
 }
 
 pub trait NonBlockingSend {
-    fn send(&mut self, message: ZmqMessage) -> ZmqResult<()>;
+    fn send(&mut self, message: Message) -> ZmqResult<()>;
 }
 
 pub trait NonBlockingRecv {
-    fn recv(&mut self) -> ZmqResult<ZmqMessage>;
+    fn recv(&mut self) -> ZmqResult<Message>;
 }
 
 #[async_trait]

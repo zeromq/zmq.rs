@@ -3,7 +3,7 @@ use crate::codec::Message;
 use crate::transport::AcceptStopHandle;
 use crate::{
     BlockingSend, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketType,
-    ZmqMessage, ZmqResult,
+    ZmqResult,
 };
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -48,10 +48,8 @@ impl Socket for PushSocket {
 
 #[async_trait]
 impl BlockingSend for PushSocket {
-    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
-        self.backend
-            .send_round_robin(Message::Message(message))
-            .await?;
+    async fn send(&mut self, message: Message) -> ZmqResult<()> {
+        self.backend.send_round_robin(message).await?;
         Ok(())
     }
 }

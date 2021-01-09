@@ -33,13 +33,28 @@ impl Drop for ReqSocket {
 
 #[async_trait]
 impl BlockingSend for ReqSocket {
-    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+    async fn send(&mut self, message: Message) -> ZmqResult<()> {
         if self.current_request.is_some() {
             return Err(ZmqError::ReturnToSender {
                 reason: "Unable to send message. Request already in progress",
                 message,
             });
         }
+
+        let message = match message {
+            Message::Message(m) => {
+                let frames = vec![
+                    "".into(), // delimiter frame
+                    m,
+                ];
+                Message::Multipart(frames)
+            }
+            Message::Multipart(mut messages) => {
+                messages.insert(0, "".into());
+                Message::Multipart(messages)
+            }
+            _ => todo!(),
+        };
         // In normal scenario this will always be only 1 iteration
         // There can be special case when peer has disconnected and his id is still in
         // RR queue This happens because SegQueue don't have an api to delete
@@ -58,11 +73,7 @@ impl BlockingSend for ReqSocket {
             match self.backend.peers.get_mut(&next_peer_id) {
                 Some(mut peer) => {
                     self.backend.round_robin.push(next_peer_id.clone());
-                    let frames = vec![
-                        "".into(), // delimiter frame
-                        message,
-                    ];
-                    peer.send_queue.send(Message::Multipart(frames)).await?;
+                    peer.send_queue.send(message).await?;
                     self.current_request = Some(next_peer_id);
                     return Ok(());
                 }
@@ -74,16 +85,24 @@ impl BlockingSend for ReqSocket {
 
 #[async_trait]
 impl BlockingRecv for ReqSocket {
-    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
+    async fn recv(&mut self) -> ZmqResult<Message> {
         match self.current_request.take() {
             Some(peer_id) => {
                 if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
                     let message = peer.recv_queue.next().await;
                     match message {
-                        Some(Ok(Message::Multipart(mut message))) => {
-                            assert!(message.len() == 2);
-                            assert!(message[0].data.is_empty()); // Ensure that we have delimeter as first part
-                            Ok(message.pop().unwrap())
+                        Some(Ok(Message::Multipart(mut messages))) => {
+                            match messages.len() {
+                                0 | 1 => Err(ZmqError::Other("Malformed response message")),
+                                2 => {
+                                    assert!(messages[0].data.is_empty()); // Ensure that we have delimeter as first part
+                                    Ok(Message::Message(messages.pop().unwrap()))
+                                }
+                                _ => {
+                                    assert!(messages[0].data.is_empty()); // Ensure that we have delimeter as first part
+                                    Ok(Message::Multipart(messages[1..].to_vec()))
+                                }
+                            }
                         }
                         Some(_) => Err(ZmqError::Other("Wrong message type received")),
                         None => Err(ZmqError::NoMessage),

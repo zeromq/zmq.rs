@@ -4,6 +4,7 @@ use compliance::{get_monitor_event, setup_monitor};
 use zeromq::__async_rt as async_rt;
 use zeromq::prelude::*;
 
+use std::convert::TryInto;
 use std::time::Duration;
 
 fn setup_their_pub(bind_endpoint: &str) -> (zmq::Socket, String, zmq::Socket) {
@@ -51,7 +52,7 @@ async fn run_our_subs(our_subs: Vec<zeromq::SubSocket>, num_to_recv: u32) {
         async_rt::task::spawn(async move {
             for i in 0..num_to_recv {
                 let msg = sub.recv().await.expect("Failed to recv");
-                let msg_string = String::from_utf8(msg.data.to_vec()).unwrap();
+                let msg_string: String = msg.try_into().unwrap();
                 assert_eq!(msg_string, format!("Their message: {}", i));
             }
         })

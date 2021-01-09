@@ -108,15 +108,25 @@ impl SocketBackend for RepSocketBackend {
 
 #[async_trait]
 impl BlockingSend for RepSocket {
-    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+    async fn send(&mut self, message: Message) -> ZmqResult<()> {
         match self.current_request.take() {
             Some(peer_id) => {
                 if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
-                    let frames = vec![
-                        "".into(), // delimiter frame
-                        message,
-                    ];
-                    peer.send_queue.send(Message::Multipart(frames)).await?;
+                    let message = match message {
+                        Message::Message(m) => {
+                            let frames = vec![
+                                "".into(), // delimiter frame
+                                m,
+                            ];
+                            Message::Multipart(frames)
+                        }
+                        Message::Multipart(mut messages) => {
+                            messages.insert(0, "".into());
+                            Message::Multipart(messages)
+                        }
+                        _ => todo!(),
+                    };
+                    peer.send_queue.send(message).await?;
                     Ok(())
                 } else {
                     Err(ZmqError::ReturnToSender {
@@ -135,14 +145,24 @@ impl BlockingSend for RepSocket {
 
 #[async_trait]
 impl BlockingRecv for RepSocket {
-    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
+    async fn recv(&mut self) -> ZmqResult<Message> {
         loop {
             match self.fair_queue.next().await {
                 Some((peer_id, Ok(Message::Multipart(mut messages)))) => {
-                    assert!(messages.len() == 2);
-                    assert!(messages[0].data.is_empty()); // Ensure that we have delimeter as first part
                     self.current_request = Some(peer_id);
-                    return Ok(messages.pop().unwrap());
+                    return match messages.len() {
+                        0 | 1 => Err(ZmqError::Other("Malformed reply message")),
+                        2 => {
+                            // Ensure that we have delimeter as first part
+                            assert!(messages[0].data.is_empty());
+                            Ok(Message::Message(messages.pop().unwrap()))
+                        }
+                        _ => {
+                            // Ensure that we have delimeter as first part
+                            assert!(messages[0].data.is_empty());
+                            Ok(Message::Multipart(messages[1..].to_vec()))
+                        }
+                    };
                 }
                 Some((_peer_id, _)) => todo!(),
                 None => return Err(ZmqError::NoMessage),
