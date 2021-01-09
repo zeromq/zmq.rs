@@ -32,7 +32,7 @@ Features:
 - `async-std-runtime`: Use `async-std` as your async runtime.
 - (default) `all-transport`: Enable all the `*-transport` flags
 - `ipc-transport`: Enable IPC as a transport mechanism
-- `tcp-transport`: Enable TPC as a transport mechanism
+- `tcp-transport`: Enable TCP as a transport mechanism
 
 ## Contributing
 Contributions are welcome! See our issue tracker for a list of the things we need help with.
