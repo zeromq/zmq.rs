@@ -9,10 +9,9 @@ use crate::codec::*;
 use crate::endpoint::Endpoint;
 use crate::error::{ZmqError, ZmqResult};
 use crate::fair_queue::FairQueue;
-use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{MultiPeerBackend, SocketEvent, SocketType};
+use crate::{BlockingRecv, BlockingSend, MultiPeerBackend, SocketEvent, SocketType};
 use crate::{Socket, SocketBackend};
 use futures::channel::mpsc;
 use futures::SinkExt;
@@ -58,30 +57,39 @@ impl Socket for RouterSocket {
     }
 }
 
-impl RouterSocket {
-    pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
+#[async_trait]
+impl BlockingSend for RouterSocket {
+    async fn send(&mut self, message: Message) -> ZmqResult<()> {
+        match message {
+            Message::Multipart(messages) => {
+                let peer_id: PeerIdentity = messages[0].data.to_vec().try_into()?;
+                match self.backend.peers.get_mut(&peer_id) {
+                    Some(mut peer) => {
+                        peer.send_queue
+                            .send(Message::Multipart(messages[1..].to_vec()))
+                            .await?;
+                        Ok(())
+                    }
+                    None => Err(ZmqError::Other("Destination client not found by identity")),
+                }
+            }
+            _ => Err(ZmqError::Other("This socket expects multipart messages")),
+        }
+    }
+}
+
+#[async_trait]
+impl BlockingRecv for RouterSocket {
+    async fn recv(&mut self) -> ZmqResult<Message> {
         loop {
             match self.fair_queue.next().await {
                 Some((peer_id, Ok(Message::Multipart(mut messages)))) => {
                     messages.insert(0, peer_id.into());
-                    return Ok(messages);
+                    return Ok(Message::Multipart(messages));
                 }
                 Some((_peer_id, _)) => todo!(),
                 None => todo!(),
             };
-        }
-    }
-
-    pub async fn send_multipart(&mut self, messages: Vec<ZmqMessage>) -> ZmqResult<()> {
-        let peer_id: PeerIdentity = messages[0].data.to_vec().try_into()?;
-        match self.backend.peers.get_mut(&peer_id) {
-            Some(mut peer) => {
-                peer.send_queue
-                    .send(Message::Multipart(messages[1..].to_vec()))
-                    .await?;
-                Ok(())
-            }
-            None => Err(ZmqError::Other("Destination client not found by identity")),
         }
     }
 }

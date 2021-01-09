@@ -4,8 +4,8 @@ use crate::fair_queue::FairQueue;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
-    Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketType, ZmqMessage,
-    ZmqResult,
+    BlockingRecv, BlockingSend, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent,
+    SocketType, ZmqResult,
 };
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -55,23 +55,25 @@ impl Socket for DealerSocket {
     }
 }
 
-impl DealerSocket {
-    pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
+#[async_trait]
+impl BlockingSend for DealerSocket {
+    async fn send(&mut self, message: Message) -> ZmqResult<()> {
+        self.backend.send_round_robin(message).await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl BlockingRecv for DealerSocket {
+    async fn recv(&mut self) -> ZmqResult<Message> {
         loop {
             match self.fair_queue.next().await {
-                Some((_peer_id, Ok(Message::Multipart(messages)))) => {
-                    return Ok(messages);
+                Some((_peer_id, Ok(m))) => {
+                    return Ok(m);
                 }
                 Some((_peer_id, _)) => todo!(),
                 None => todo!(),
             };
         }
-    }
-
-    pub async fn send_multipart(&mut self, messages: Vec<ZmqMessage>) -> ZmqResult<()> {
-        self.backend
-            .send_round_robin(Message::Multipart(messages))
-            .await?;
-        Ok(())
     }
 }
