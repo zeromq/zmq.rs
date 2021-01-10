@@ -290,7 +290,7 @@ pub(crate) mod tests {
         }
 
         // unexpected message during greetings exchange
-        let message = Ok(Message::Message(ZmqMessage::new()));
+        let message = Ok(Message::Message(ZmqMessage::from("")));
         let actual = negotiate_version(Some(message));
         match actual {
             Err(ZmqError::Other(_)) => {}

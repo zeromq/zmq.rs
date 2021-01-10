@@ -7,7 +7,7 @@ use crate::ZmqMessage;
 use bytes::{Buf, BufMut, BytesMut, Bytes};
 use futures_codec::{Decoder, Encoder};
 use std::convert::TryFrom;
-
+    
 #[derive(Debug, Clone, Copy)]
 struct Frame {
     command: bool,
@@ -30,7 +30,7 @@ pub struct ZmqCodec {
     // Needed to store incoming multipart message
     // This allows to incapsulate it's processing inside codec and not expose
     // internal details to higher levels
-    buffered_message: Option<Message>,
+    buffered_message: Option<Vec<Bytes>>,
 }
 
 impl ZmqCodec {
@@ -54,69 +54,70 @@ impl Decoder for ZmqCodec {
     type Item = Message;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if src.len() < self.waiting_for {
-            src.reserve(self.waiting_for - src.len());
-            return Ok(None);
-        }
-        match self.state {
-            DecoderState::Greeting => {
-                if src[0] != 0xff {
-                    return Err(CodecError::Decode("Bad first byte of greeting"));
-                }
-                self.state = DecoderState::FrameHeader;
-                self.waiting_for = 1;
-                Ok(Some(Message::Greeting(ZmqGreeting::try_from(
-                    src.split_to(64).freeze(),
-                )?)))
-            }
-            DecoderState::FrameHeader => {
-                let flags = src.get_u8();
-                let command = (flags & 0b0000_0100) != 0;
-                let long = (flags & 0b0000_0010) != 0;
-                let more = (flags & 0b0000_0001) != 0;
+	if src.len() < self.waiting_for {
+	    src.reserve(self.waiting_for - src.len());
+	    return Ok(None);
+	}
+	match self.state {
+	    DecoderState::Greeting => {
+		if src[0] != 0xff {
+		    return Err(CodecError::Decode("Bad first byte of greeting"));
+		}
+		self.state = DecoderState::FrameHeader;
+		self.waiting_for = 1;
+		Ok(Some(Message::Greeting(ZmqGreeting::try_from(
+		    src.split_to(64).freeze(),
+		)?)))
+	    }
+	    DecoderState::FrameHeader => {
+		let flags = src.get_u8();
+		let command = (flags & 0b0000_0100) != 0;
+		let long = (flags & 0b0000_0010) != 0;
+		let more = (flags & 0b0000_0001) != 0;
 
-                if self.buffered_message.is_none() {
-                    self.buffered_message = Some(Message::Message(ZmqMessage::new()));
-                }
-                let frame = Frame {
-                    command,
-                    long,
-                    more,
-                };
-                self.state = DecoderState::FrameLen(frame);
-                self.waiting_for = if frame.long { 8 } else { 1 };
-                self.decode(src)
-            }
-            DecoderState::FrameLen(frame) => {
-                self.state = DecoderState::Frame(frame);
-                self.waiting_for = if frame.long {
-                    src.get_u64() as usize
-                } else {
-                    src.get_u8() as usize
-                };
-                self.decode(src)
-            }
-            DecoderState::Frame(frame) => {
-                let data = src.split_to(self.waiting_for);
-                self.state = DecoderState::FrameHeader;
-                self.waiting_for = 1;
-                if frame.command {
-                    Ok(Some(Message::Command(ZmqCommand::try_from(data)?)))
-                } else if frame.more {
-                    // cache incoming multipart message
-                    match &mut self.buffered_message {
-                        Some(Message::Message(message)) => message.push_back(data.into()),
-                        _ => panic!("Corrupted decoder state"),
-                    }
-                    self.decode(src)
-                } else if let Some(Message::Message(mut message)) = self.buffered_message.take() {
-                    message.push_back(data.into());
-                    Ok(Some(Message::Message(message)))
-                } else {
+		if self.buffered_message.is_none() {
+		    let v: Vec<Bytes> = Vec::new();
+		    self.buffered_message = Some(v);
+		}
+		let frame = Frame {
+		    command,
+		    long,
+		    more,
+		};
+		self.state = DecoderState::FrameLen(frame);
+		self.waiting_for = if frame.long { 8 } else { 1 };
+		self.decode(src)
+	    }
+	    DecoderState::FrameLen(frame) => {
+		self.state = DecoderState::Frame(frame);
+		self.waiting_for = if frame.long {
+		    src.get_u64() as usize
+		} else {
+		    src.get_u8() as usize
+		};
+		self.decode(src)
+	    }
+	    DecoderState::Frame(frame) => {
+		let data = src.split_to(self.waiting_for);
+		self.state = DecoderState::FrameHeader;
+		self.waiting_for = 1;
+		if frame.command {
+		    Ok(Some(Message::Command(ZmqCommand::try_from(data)?)))
+		} else if frame.more {
+		    // cache incoming multipart message
+		    match &mut self.buffered_message {
+			Some(v) => v.push(data.freeze()),
+			_ => panic!("Corrupted decoder state"),
+		    }
+		    self.decode(src)
+		} else if let Some(mut v) = self.buffered_message.take() {
+		    v.push(data.freeze());
+		    Ok(Some(Message::Message(ZmqMessage::from(v))))
+		} else {
 		    panic!("Corrupted decoder state");
 		}
-            }
-        }
+	    }
+	}
     }
 }
 

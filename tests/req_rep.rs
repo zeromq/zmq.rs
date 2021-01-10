@@ -41,8 +41,8 @@ async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
     req_socket.connect(endpoint.to_string().as_str()).await?;
 
     for i in 0..10i32 {
-	let mut m = ZmqMessage::new();
-	m.push_back(format!("Req - {}", i).into());
+	let ms: String = format!("Req - {}", i);
+	let m = ZmqMessage::from(ms);
         req_socket.send(m).await?;
         let mut repl = req_socket.recv().await?;
         assert_eq!(format!("Req - {} Rep - {}", i, i), String::from_utf8(repl.pop_front().unwrap().to_vec()).unwrap())
@@ -70,8 +70,8 @@ async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
             req_socket.connect(&cloned_endpoint).await.unwrap();
 
             for j in 0..100i32 {
-		let mut m = ZmqMessage::new();
-		m.push_back(format!("Socket {} Req - {}", i, j).into());
+		let ms: String = format!("Socket {} Req - {}", i, j);
+		let m = ZmqMessage::from(ms);
                 req_socket.send(m).await.unwrap();
                 let mut repl = req_socket.recv().await.unwrap();
                 assert_eq!(format!("Socket {} Req - {} Rep", i, j), String::from_utf8(repl.pop_front().unwrap().to_vec()).unwrap());

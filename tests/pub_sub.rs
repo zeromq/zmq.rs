@@ -35,9 +35,9 @@ async fn test_pub_sub_sockets() {
                     break;
                 }
 
-		let mut m = ZmqMessage::new();
-		m.push_back(cloned_payload.clone().into());
-                pub_socket .send(m).await.expect("Failed to send");
+		let s: String = cloned_payload.clone();
+		let m = ZmqMessage::from(s);
+                pub_socket.send(m).await.expect("Failed to send");
                 async_rt::task::sleep(Duration::from_millis(1)).await;
             }
 

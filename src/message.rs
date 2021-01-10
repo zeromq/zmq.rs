@@ -8,10 +8,6 @@ pub struct ZmqMessage {
 }
 
 impl ZmqMessage {
-    pub fn new() -> Self {
-	Self { frames: VecDeque::new() }
-    }
-
     pub fn push_back(&mut self, frame: Bytes) {
 	self.frames.push_back(frame);
     }
@@ -51,11 +47,16 @@ impl From<Vec<Bytes>> for ZmqMessage {
     }
 }
 
+impl From<Bytes> for ZmqMessage {
+    fn from(b: Bytes) -> Self {
+	Self{ frames: vec![b].into() }
+    }
+}
+
 impl From<String> for ZmqMessage {
     fn from(s: String) -> Self {
-	let mut m: ZmqMessage = Default::default();
-	m.push_back(s.into());
-	m
+	let b: Bytes = s.into();
+	ZmqMessage::from(b)
     }
 }
 
@@ -63,12 +64,6 @@ impl From<&str> for ZmqMessage {
     fn from(s: &str) -> Self {
 	ZmqMessage::from(s.to_owned())
     } 
-}
-
-impl Default for ZmqMessage {
-    fn default() -> Self {
-	Self::new()
-    }
 }
 
 impl TryFrom<ZmqMessage> for String {
