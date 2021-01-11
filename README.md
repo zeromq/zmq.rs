@@ -38,7 +38,7 @@ Features:
 Contributions are welcome! See our issue tracker for a list of the things we need help with.
 
 ## Questions
-You can ask quesions in our Discord channel - https://discord.gg/G8jEhXQa
+You can ask quesions in our Discord channel - https://discord.gg/pFXSqWtjQT
 
 ## Useful links
 * https://rfc.zeromq.org/
