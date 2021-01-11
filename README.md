@@ -37,6 +37,9 @@ Features:
 ## Contributing
 Contributions are welcome! See our issue tracker for a list of the things we need help with.
 
+## Questions
+You can ask quesions in our Discord channel - https://discord.gg/G8jEhXQa
+
 ## Useful links
 * https://rfc.zeromq.org/
 * https://rfc.zeromq.org/spec:23/ZMTP/
