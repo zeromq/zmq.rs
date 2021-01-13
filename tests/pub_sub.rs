@@ -71,8 +71,8 @@ async fn test_pub_sub_sockets() {
                 async_rt::task::sleep(std::time::Duration::from_millis(500)).await;
 
                 for _ in 0..10 {
-                    let mut recv_message = sub_socket.recv().await.unwrap();
-		    let recv_payload = String::from_utf8(recv_message.pop_front().unwrap().to_vec()).unwrap();
+                    let recv_message = sub_socket.recv().await.unwrap();
+		    let recv_payload = String::from_utf8(recv_message.get(0).unwrap().to_vec()).unwrap();
                     assert_eq!(cloned_payload, recv_payload);
                     cloned_sub_sender.send(()).await.unwrap();
                 }

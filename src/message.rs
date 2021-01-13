@@ -1,6 +1,16 @@
 use bytes::Bytes;
 use std::collections::vec_deque::{VecDeque,Iter};
 use std::convert::{From, TryFrom};
+use std::fmt;
+
+#[derive(Debug)]
+pub struct ZmqEmptyMessageError;
+
+impl fmt::Display for ZmqEmptyMessageError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+	write!(f,"Unable to construct an empty ZmqMessage")
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ZmqMessage {
@@ -20,11 +30,11 @@ impl ZmqMessage {
 	self.frames.iter()
     }
 
-    pub fn pop_front(&mut self) -> Option<Bytes> {
+    pub(crate) fn pop_front(&mut self) -> Option<Bytes> {
 	self.frames.pop_front()
     }
 
-    pub fn pop_back(&mut self) -> Option<Bytes> {
+    pub(crate) fn pop_back(&mut self) -> Option<Bytes> {
 	self.frames.pop_back()
     }
 
@@ -41,9 +51,25 @@ impl ZmqMessage {
     }
 }
 
-impl From<Vec<Bytes>> for ZmqMessage {
-    fn from(v: Vec<Bytes>) -> Self {
-	Self { frames: v.into() }
+impl TryFrom<Vec<Bytes>> for ZmqMessage {
+    type Error = ZmqEmptyMessageError;
+    fn try_from(v: Vec<Bytes>) -> Result<Self,Self::Error> {
+	if v.is_empty() {
+	    Err(ZmqEmptyMessageError)
+	} else {
+	    Ok(Self { frames: v.into() })
+	}
+    }
+}
+
+impl TryFrom<VecDeque<Bytes>> for ZmqMessage {
+    type Error = ZmqEmptyMessageError;
+    fn try_from(v: VecDeque<Bytes>) -> Result<Self,Self::Error> {
+	if v.is_empty() {
+	    Err(ZmqEmptyMessageError)
+	} else {
+	    Ok(Self { frames: v })
+	}
     }
 }
 

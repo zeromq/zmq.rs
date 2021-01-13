@@ -50,8 +50,8 @@ async fn run_our_subs(our_subs: Vec<zeromq::SubSocket>, num_to_recv: u32) {
     let join_handles = our_subs.into_iter().map(|mut sub| {
         async_rt::task::spawn(async move {
             for i in 0..num_to_recv {
-                let mut msg = sub.recv().await.expect("Failed to recv");
-                let msg_string = String::from_utf8(msg.pop_front().unwrap().to_vec()).unwrap();
+                let msg = sub.recv().await.expect("Failed to recv");
+                let msg_string = String::from_utf8(msg.get(0).unwrap().to_vec()).unwrap();
                 assert_eq!(msg_string, format!("Their message: {}", i));
             }
         })

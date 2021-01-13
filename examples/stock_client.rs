@@ -21,10 +21,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     socket.subscribe(subscription).await?;
 
     loop {
-        let mut recv = socket.recv().await?;
-        let stock: String = String::from_utf8(recv.pop_front().unwrap().to_vec())?;
+        let recv = socket.recv().await?;
+        let stock: String = String::from_utf8(recv.get(0).unwrap().to_vec())?;
         let price: u32 = u32::from_ne_bytes(
-            recv.pop_front()
+            recv.get(1)
                 .unwrap()
                 .to_vec()
                 .try_into()
@@ -32,5 +32,4 @@ async fn main() -> Result<(), Box<dyn Error>> {
         );
         println!("{}: {}", stock, price);
     }
-    Ok(())
 }

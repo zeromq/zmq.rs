@@ -11,10 +11,10 @@ async fn run_rep_server(mut rep_socket: RepSocket) -> Result<(), Box<dyn Error>>
     println!("Started rep server on tcp://127.0.0.1:5557");
 
     for i in 0..10i32 {
-        let mut mess = rep_socket.recv().await?;
-	let m = format!("{} Rep - {}", str::from_utf8(mess.pop_front().unwrap().as_ref()).unwrap(),i);
-	mess.push_back(m.into());
-        rep_socket.send(mess).await?;
+        let mess = rep_socket.recv().await?;
+	let m = format!("{} Rep - {}", str::from_utf8(mess.get(0).unwrap().as_ref()).unwrap(),i);
+	let repl = ZmqMessage::from(m);
+        rep_socket.send(repl).await?;
     }
     // yield for a moment to ensure that server has some time to flush socket
     let errs = rep_socket.close().await;
@@ -44,8 +44,8 @@ async fn test_req_rep_sockets() -> Result<(), Box<dyn Error>> {
 	let ms: String = format!("Req - {}", i);
 	let m = ZmqMessage::from(ms);
         req_socket.send(m).await?;
-        let mut repl = req_socket.recv().await?;
-        assert_eq!(format!("Req - {} Rep - {}", i, i), String::from_utf8(repl.pop_front().unwrap().to_vec()).unwrap())
+        let repl = req_socket.recv().await?;
+        assert_eq!(format!("Req - {} Rep - {}", i, i), String::from_utf8(repl.get(0).unwrap().to_vec()).unwrap())
     }
     req_socket.close().await;
     let events: Vec<_> = monitor.collect().await;
@@ -73,18 +73,21 @@ async fn test_many_req_rep_sockets() -> Result<(), Box<dyn Error>> {
 		let ms: String = format!("Socket {} Req - {}", i, j);
 		let m = ZmqMessage::from(ms);
                 req_socket.send(m).await.unwrap();
-                let mut repl = req_socket.recv().await.unwrap();
-                assert_eq!(format!("Socket {} Req - {} Rep", i, j), String::from_utf8(repl.pop_front().unwrap().to_vec()).unwrap());
+                let repl = req_socket.recv().await.unwrap();
+                assert_eq!(format!("Socket {} Req - {} Rep", i, j), String::from_utf8(repl.get(0).unwrap().to_vec()).unwrap());
             }
             drop(req_socket);
         });
     }
 
     for _ in 0..10000i32 {
-        let mut mess = rep_socket.recv().await?;
-	let payload = String::from_utf8(mess.pop_front().unwrap().to_vec()).unwrap();
-	mess.push_front(format!("{} Rep", payload).into());
-        rep_socket.send(mess).await?;
+        let mess = rep_socket.recv().await?;
+	let mut payload = String::from_utf8(mess.get(0).unwrap().to_vec()).unwrap();
+	println!("{}",payload);
+	payload.push_str(" Rep");
+	println!("{}",payload);
+	let repl = ZmqMessage::from(payload);
+        rep_socket.send(repl).await?;
     }
     Ok(())
 }

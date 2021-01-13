@@ -112,7 +112,10 @@ impl Decoder for ZmqCodec {
 		    self.decode(src)
 		} else if let Some(mut v) = self.buffered_message.take() {
 		    v.push(data.freeze());
-		    Ok(Some(Message::Message(ZmqMessage::from(v))))
+		    match ZmqMessage::try_from(v) {
+			Ok(m) => Ok(Some(Message::Message(m))),
+			Err(_) => Err(CodecError::Other("Can't encode an empty message")),
+		    }
 		} else {
 		    panic!("Corrupted decoder state");
 		}
