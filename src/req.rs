@@ -7,13 +7,13 @@ use crate::*;
 use crate::{SocketType, ZmqResult};
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
-use bytes::Bytes;
-    
+
 struct ReqSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, Peer>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
@@ -77,12 +77,12 @@ impl BlockingRecv for ReqSocket {
             Some(peer_id) => {
                 if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
                     let message = peer.recv_queue.next().await;
-		    match message {
-			Some(Ok(Message::Message(mut m))) => {
-			    assert!(m.pop_front().unwrap().is_empty()); // Ensure that we have delimeter as first part
-			    Ok(m)
-			},
-			Some(_) => todo!(),
+                    match message {
+                        Some(Ok(Message::Message(mut m))) => {
+                            assert!(m.pop_front().unwrap().is_empty()); // Ensure that we have delimeter as first part
+                            Ok(m)
+                        }
+                        Some(_) => todo!(),
                         None => Err(ZmqError::NoMessage),
                     }
                 } else {

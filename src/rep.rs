@@ -6,13 +6,13 @@ use crate::transport::AcceptStopHandle;
 use crate::*;
 use crate::{SocketType, ZmqResult};
 use async_trait::async_trait;
+use bytes::Bytes;
 use dashmap::DashMap;
 use futures::SinkExt;
 use futures::StreamExt;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use bytes::Bytes;
 
 struct RepPeer {
     pub(crate) _identity: PeerIdentity,
@@ -113,7 +113,7 @@ impl BlockingSend for RepSocket {
         match self.current_request.take() {
             Some(peer_id) => {
                 if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
-		    message.push_front(Bytes::from(""));
+                    message.push_front(Bytes::from(""));
                     peer.send_queue.send(Message::Message(message)).await?;
                     Ok(())
                 } else {
@@ -137,15 +137,15 @@ impl BlockingRecv for RepSocket {
         loop {
             match self.fair_queue.next().await {
                 Some((peer_id, Ok(message))) => {
-		    match message {
-			Message::Message(mut m) => {
-			    assert!(m.pop_front().unwrap().is_empty()); // Ensure that we have delimeter as first part
-			    self.current_request = Some(peer_id);
-			    return Ok(m);
-			},
-			_ => todo!()
-		    }
-		}
+                    match message {
+                        Message::Message(mut m) => {
+                            assert!(m.pop_front().unwrap().is_empty()); // Ensure that we have delimeter as first part
+                            self.current_request = Some(peer_id);
+                            return Ok(m);
+                        }
+                        _ => todo!(),
+                    }
+                }
                 Some((_peer_id, _)) => todo!(),
                 None => return Err(ZmqError::NoMessage),
             };

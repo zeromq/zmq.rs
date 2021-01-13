@@ -1,10 +1,10 @@
 mod compliance;
 use compliance::{get_monitor_event, setup_monitor};
 
+use std::convert::TryInto;
 use zeromq::__async_rt as async_rt;
 use zeromq::prelude::*;
 use zeromq::ZmqMessage;
-use std::convert::TryInto;
 
 /// Returns (socket, bound_endpoint, monitor)
 fn setup_their_rep(bind_endpoint: &str) -> (zmq::Socket, String, zmq::Socket) {
@@ -45,8 +45,8 @@ fn run_their_rep(their_rep: zmq::Socket, num_req: u32) -> std::thread::JoinHandl
 
 async fn run_our_req(our_req: &mut zeromq::ReqSocket, num_req: u32) {
     for i in 0..num_req {
-	let ms: String = format!("Request: {}", i);
-	let message = ZmqMessage::from(ms);
+        let ms: String = format!("Request: {}", i);
+        let message = ZmqMessage::from(ms);
         our_req.send(message).await.expect("Failed to send");
         let reply = our_req.recv().await.expect("Failed to recv");
 

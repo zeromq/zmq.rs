@@ -1,7 +1,7 @@
 mod async_helpers;
 
-use zeromq::*;
 use std::convert::TryInto;
+use zeromq::*;
 
 #[async_helpers::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -12,7 +12,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let mut repl: String = socket.recv().await?.try_into()?;
         dbg!(&repl);
-	repl.push_str(" Reply");
-	socket.send(repl.into()).await?;
+        repl.push_str(" Reply");
+        socket.send(repl.into()).await?;
     }
 }

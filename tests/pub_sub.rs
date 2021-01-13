@@ -35,8 +35,8 @@ async fn test_pub_sub_sockets() {
                     break;
                 }
 
-		let s: String = cloned_payload.clone();
-		let m = ZmqMessage::from(s);
+                let s: String = cloned_payload.clone();
+                let m = ZmqMessage::from(s);
                 pub_socket.send(m).await.expect("Failed to send");
                 async_rt::task::sleep(Duration::from_millis(1)).await;
             }
@@ -72,7 +72,8 @@ async fn test_pub_sub_sockets() {
 
                 for _ in 0..10 {
                     let recv_message = sub_socket.recv().await.unwrap();
-		    let recv_payload = String::from_utf8(recv_message.get(0).unwrap().to_vec()).unwrap();
+                    let recv_payload =
+                        String::from_utf8(recv_message.get(0).unwrap().to_vec()).unwrap();
                     assert_eq!(cloned_payload, recv_payload);
                     cloned_sub_sender.send(()).await.unwrap();
                 }

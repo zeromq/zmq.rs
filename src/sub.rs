@@ -33,7 +33,7 @@ impl SubSocket {
         buf.put_u8(1);
         buf.extend_from_slice(subscription.as_bytes());
         // let message = format!("\0x1{}", subscription);
-	let message: ZmqMessage = ZmqMessage::from(buf.freeze());
+        let message: ZmqMessage = ZmqMessage::from(buf.freeze());
         for mut peer in self.backend.peers.iter_mut() {
             peer.send_queue
                 .send(Message::Message(message.clone()))
@@ -46,7 +46,7 @@ impl SubSocket {
         let mut buf = BytesMut::with_capacity(subscription.len() + 1);
         buf.put_u8(0);
         buf.extend_from_slice(subscription.as_bytes());
-	let  message = ZmqMessage::from(buf.freeze());
+        let message = ZmqMessage::from(buf.freeze());
         for mut peer in self.backend.peers.iter_mut() {
             peer.send_queue
                 .send(Message::Message(message.clone()))
