@@ -49,6 +49,14 @@ impl ZmqMessage {
     pub fn get(&self, index: usize) -> Option<&Bytes> {
 	self.frames.get(index)
     }
+
+    pub fn to_vec(&self) -> Vec<Bytes> {
+	Vec::from(self.frames.clone())
+    }
+
+    pub fn to_vecdeque(&self) -> VecDeque<Bytes> {
+	self.frames.clone()
+    }
 }
 
 impl TryFrom<Vec<Bytes>> for ZmqMessage {
