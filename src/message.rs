@@ -34,10 +34,6 @@ impl ZmqMessage {
 	self.frames.pop_front()
     }
 
-    pub(crate) fn pop_back(&mut self) -> Option<Bytes> {
-	self.frames.pop_back()
-    }
-
     pub fn len(&self) -> usize {
 	self.frames.len()
     }
