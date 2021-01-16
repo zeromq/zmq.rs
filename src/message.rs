@@ -46,11 +46,11 @@ impl ZmqMessage {
         self.frames.get(index)
     }
 
-    pub fn to_vec(self) -> Vec<Bytes> {
+    pub fn into_vec(self) -> Vec<Bytes> {
         Vec::from(self.frames)
     }
 
-    pub fn to_vecdeque(self) -> VecDeque<Bytes> {
+    pub fn into_vecdeque(self) -> VecDeque<Bytes> {
         self.frames
     }
 }
