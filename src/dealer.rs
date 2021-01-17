@@ -4,8 +4,8 @@ use crate::fair_queue::FairQueue;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
-    Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketType, ZmqMessage,
-    ZmqResult,
+    Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketRecv, SocketSend,
+    SocketType, ZmqMessage, ZmqResult,
 };
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -55,8 +55,9 @@ impl Socket for DealerSocket {
     }
 }
 
-impl DealerSocket {
-    pub async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
+#[async_trait]
+impl SocketRecv for DealerSocket {
+    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {
                 Some((_peer_id, Ok(Message::Message(message)))) => {
@@ -67,8 +68,11 @@ impl DealerSocket {
             };
         }
     }
+}
 
-    pub async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+#[async_trait]
+impl SocketSend for DealerSocket {
+    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         self.backend
             .send_round_robin(Message::Message(message))
             .await?;

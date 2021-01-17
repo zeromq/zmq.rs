@@ -12,7 +12,7 @@ use crate::fair_queue::FairQueue;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{MultiPeerBackend, SocketEvent, SocketType};
+use crate::{MultiPeerBackend, SocketEvent, SocketRecv, SocketSend, SocketType};
 use crate::{Socket, SocketBackend};
 use futures::channel::mpsc;
 use futures::SinkExt;
@@ -58,8 +58,9 @@ impl Socket for RouterSocket {
     }
 }
 
-impl RouterSocket {
-    pub async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
+#[async_trait]
+impl SocketRecv for RouterSocket {
+    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {
                 Some((peer_id, Ok(Message::Message(mut message)))) => {
@@ -71,8 +72,11 @@ impl RouterSocket {
             };
         }
     }
+}
 
-    pub async fn send(&mut self, mut message: ZmqMessage) -> ZmqResult<()> {
+#[async_trait]
+impl SocketSend for RouterSocket {
+    async fn send(&mut self, mut message: ZmqMessage) -> ZmqResult<()> {
         assert!(message.len() > 1);
         let peer_id: PeerIdentity = message.pop_front().unwrap().to_vec().try_into()?;
         match self.backend.peers.get_mut(&peer_id) {
