@@ -2,7 +2,7 @@ mod async_helpers;
 
 use std::error::Error;
 use zeromq::Socket;
-use zeromq::{BlockingRecv, BlockingSend};
+use zeromq::{SocketRecv, SocketSend};
 
 #[async_helpers::main]
 async fn main() -> Result<(), Box<dyn Error>> {

@@ -139,21 +139,13 @@ pub trait SocketBackend: Send + Sync {
 }
 
 #[async_trait]
-pub trait BlockingRecv {
+pub trait SocketRecv {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage>;
 }
 
 #[async_trait]
-pub trait BlockingSend {
+pub trait SocketSend {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()>;
-}
-
-pub trait NonBlockingSend {
-    fn send(&mut self, message: ZmqMessage) -> ZmqResult<()>;
-}
-
-pub trait NonBlockingRecv {
-    fn recv(&mut self) -> ZmqResult<ZmqMessage>;
 }
 
 #[async_trait]
@@ -296,7 +288,5 @@ pub trait Socket: Sized + Send {
 pub mod prelude {
     //! Re-exports important traits. Consider glob-importing.
 
-    pub use crate::{
-        BlockingRecv, BlockingSend, NonBlockingRecv, NonBlockingSend, Socket, TryIntoEndpoint,
-    };
+    pub use crate::{Socket, SocketRecv, SocketSend, TryIntoEndpoint};
 }

@@ -3,7 +3,7 @@ mod async_helpers;
 use std::convert::TryInto;
 use std::env;
 use std::error::Error;
-use zeromq::{BlockingRecv, Socket};
+use zeromq::{Socket, SocketRecv};
 
 #[async_helpers::main]
 async fn main() -> Result<(), Box<dyn Error>> {
