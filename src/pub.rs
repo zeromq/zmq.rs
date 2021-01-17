@@ -6,7 +6,7 @@ use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
-    BlockingSend, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketType, ZmqError,
+    MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketSend, SocketType, ZmqError,
 };
 
 use async_trait::async_trait;
@@ -155,7 +155,7 @@ impl Drop for PubSocket {
 }
 
 #[async_trait]
-impl BlockingSend for PubSocket {
+impl SocketSend for PubSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         let mut dead_peers = Vec::new();
         for mut subscriber in self.backend.subscribers.iter_mut() {

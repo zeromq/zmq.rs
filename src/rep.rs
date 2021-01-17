@@ -108,7 +108,7 @@ impl SocketBackend for RepSocketBackend {
 }
 
 #[async_trait]
-impl BlockingSend for RepSocket {
+impl SocketSend for RepSocket {
     async fn send(&mut self, mut message: ZmqMessage) -> ZmqResult<()> {
         match self.current_request.take() {
             Some(peer_id) => {
@@ -132,7 +132,7 @@ impl BlockingSend for RepSocket {
 }
 
 #[async_trait]
-impl BlockingRecv for RepSocket {
+impl SocketRecv for RepSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {

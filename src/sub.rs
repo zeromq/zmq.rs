@@ -4,7 +4,7 @@ use crate::error::ZmqResult;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{BlockingRecv, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketType};
+use crate::{MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketRecv, SocketType};
 
 use crate::backend::GenericSocketBackend;
 use crate::fair_queue::FairQueue;
@@ -86,7 +86,7 @@ impl Socket for SubSocket {
 }
 
 #[async_trait]
-impl BlockingRecv for SubSocket {
+impl SocketRecv for SubSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {

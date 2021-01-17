@@ -33,7 +33,7 @@ impl Drop for ReqSocket {
 }
 
 #[async_trait]
-impl BlockingSend for ReqSocket {
+impl SocketSend for ReqSocket {
     async fn send(&mut self, mut message: ZmqMessage) -> ZmqResult<()> {
         if self.current_request.is_some() {
             return Err(ZmqError::ReturnToSender {
@@ -71,7 +71,7 @@ impl BlockingSend for ReqSocket {
 }
 
 #[async_trait]
-impl BlockingRecv for ReqSocket {
+impl SocketRecv for ReqSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         match self.current_request.take() {
             Some(peer_id) => {
