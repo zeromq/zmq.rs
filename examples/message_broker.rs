@@ -20,22 +20,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .expect("Failed to bind");
     loop {
         select! {
-            router_mess = frontend.recv_multipart().fuse() => {
+            router_mess = frontend.recv().fuse() => {
                 dbg!(&router_mess);
                 match router_mess {
                     Ok(message) => {
-                        backend.send_multipart(message).await?;
+                        backend.send(message).await?;
                     }
                     Err(_) => {
                         todo!()
                     }
                 }
             },
-            dealer_mess = backend.recv_multipart().fuse() => {
+            dealer_mess = backend.recv().fuse() => {
                 dbg!(&dealer_mess);
                 match dealer_mess {
                     Ok(message) => {
-                        frontend.send_multipart(message).await?;
+                        frontend.send(message).await?;
                     }
                     Err(_) => {
                         todo!()

@@ -59,12 +59,12 @@ impl Socket for RouterSocket {
 }
 
 impl RouterSocket {
-    pub async fn recv_multipart(&mut self) -> ZmqResult<Vec<ZmqMessage>> {
+    pub async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {
-                Some((peer_id, Ok(Message::Multipart(mut messages)))) => {
-                    messages.insert(0, peer_id.into());
-                    return Ok(messages);
+                Some((peer_id, Ok(Message::Message(mut message)))) => {
+                    message.push_front(peer_id.into());
+                    return Ok(message);
                 }
                 Some((_peer_id, _)) => todo!(),
                 None => todo!(),
@@ -72,13 +72,11 @@ impl RouterSocket {
         }
     }
 
-    pub async fn send_multipart(&mut self, messages: Vec<ZmqMessage>) -> ZmqResult<()> {
-        let peer_id: PeerIdentity = messages[0].data.to_vec().try_into()?;
+    pub async fn send(&mut self, mut message: ZmqMessage) -> ZmqResult<()> {
+        let peer_id: PeerIdentity = message.pop_front().unwrap().to_vec().try_into()?;
         match self.backend.peers.get_mut(&peer_id) {
             Some(mut peer) => {
-                peer.send_queue
-                    .send(Message::Multipart(messages[1..].to_vec()))
-                    .await?;
+                peer.send_queue.send(Message::Message(message)).await?;
                 Ok(())
             }
             None => Err(ZmqError::Other("Destination client not found by identity")),

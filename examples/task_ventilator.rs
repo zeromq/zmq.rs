@@ -4,8 +4,7 @@ use rand::Rng;
 use std::error::Error;
 use std::io::Read;
 
-use zeromq::BlockingSend;
-use zeromq::Socket;
+use zeromq::{BlockingSend, Socket};
 
 #[async_helpers::main]
 async fn main() -> Result<(), Box<dyn Error>> {

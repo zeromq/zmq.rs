@@ -17,8 +17,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let zipcode = rng.gen_range(10000, 10010);
         let temperature = rng.gen_range(-80, 135);
         let relhumidity = rng.gen_range(10, 60);
-        let message = format!("{} {} {}", zipcode, temperature, relhumidity);
-        socket.send(message.into()).await?;
+        socket
+            .send(format!("{} {} {}", zipcode, temperature, relhumidity).into())
+            .await?;
         async_helpers::sleep(Duration::from_millis(100)).await;
     }
 }

@@ -4,7 +4,7 @@ use super::greeting::ZmqGreeting;
 use super::Message;
 use crate::ZmqMessage;
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use futures_codec::{Decoder, Encoder};
 use std::convert::TryFrom;
 
@@ -30,7 +30,7 @@ pub struct ZmqCodec {
     // Needed to store incoming multipart message
     // This allows to incapsulate it's processing inside codec and not expose
     // internal details to higher levels
-    buffered_message: Option<Message>,
+    buffered_message: Option<Vec<Bytes>>,
 }
 
 impl ZmqCodec {
@@ -75,8 +75,9 @@ impl Decoder for ZmqCodec {
                 let long = (flags & 0b0000_0010) != 0;
                 let more = (flags & 0b0000_0001) != 0;
 
-                if more && self.buffered_message.is_none() {
-                    self.buffered_message = Some(Message::Multipart(Vec::new()));
+                if self.buffered_message.is_none() {
+                    let v: Vec<Bytes> = Vec::new();
+                    self.buffered_message = Some(v);
                 }
                 let frame = Frame {
                     command,
@@ -105,15 +106,18 @@ impl Decoder for ZmqCodec {
                 } else if frame.more {
                     // cache incoming multipart message
                     match &mut self.buffered_message {
-                        Some(Message::Multipart(message)) => message.push(data.into()),
+                        Some(v) => v.push(data.freeze()),
                         _ => panic!("Corrupted decoder state"),
                     }
                     self.decode(src)
-                } else if let Some(Message::Multipart(mut message)) = self.buffered_message.take() {
-                    message.push(data.into());
-                    Ok(Some(Message::Multipart(message)))
+                } else if let Some(mut v) = self.buffered_message.take() {
+                    v.push(data.freeze());
+                    match ZmqMessage::try_from(v) {
+                        Ok(m) => Ok(Some(Message::Message(m))),
+                        Err(_) => Err(CodecError::Other("Can't encode an empty message")),
+                    }
                 } else {
-                    Ok(Some(Message::Message(data.into())))
+                    panic!("Corrupted decoder state");
                 }
             }
         }
@@ -121,12 +125,12 @@ impl Decoder for ZmqCodec {
 }
 
 impl ZmqCodec {
-    fn _encode_message(&mut self, message: ZmqMessage, dst: &mut BytesMut, more: bool) {
+    fn _encode_frame(&mut self, frame: &Bytes, dst: &mut BytesMut, more: bool) {
         let mut flags: u8 = 0;
         if more {
             flags |= 0b0000_0001;
         }
-        let len = message.data.len();
+        let len = frame.len();
         if len > 255 {
             flags |= 0b0000_0010;
             dst.reserve(len + 9);
@@ -139,7 +143,7 @@ impl ZmqCodec {
         } else {
             dst.put_u8(len as u8);
         }
-        dst.extend_from_slice(message.data.as_ref());
+        dst.extend_from_slice(frame.as_ref());
     }
 }
 
@@ -150,12 +154,11 @@ impl Encoder for ZmqCodec {
     fn encode(&mut self, message: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
         match message {
             Message::Greeting(payload) => dst.unsplit(payload.into()),
-            Message::Message(message) => self._encode_message(message, dst, false),
             Message::Command(command) => dst.unsplit(command.into()),
-            Message::Multipart(parts) => {
-                let last_element = parts.len() - 1;
-                for (idx, part) in parts.into_iter().enumerate() {
-                    self._encode_message(part, dst, idx != last_element);
+            Message::Message(message) => {
+                let last_element = message.len() - 1;
+                for (idx, part) in message.iter().enumerate() {
+                    self._encode_frame(part, dst, idx != last_element);
                 }
             }
         }

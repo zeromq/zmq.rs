@@ -1,6 +1,5 @@
 mod async_helpers;
 
-use std::convert::TryInto;
 use std::error::Error;
 use zeromq::Socket;
 use zeromq::{BlockingRecv, BlockingSend};
@@ -14,11 +13,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .expect("Failed to connect");
 
     socket.send("Hello".into()).await?;
-    let repl: String = socket.recv().await?.try_into()?;
+    let repl = socket.recv().await?;
     dbg!(repl);
 
-    socket.send("NewHello".into()).await?;
-    let repl: String = socket.recv().await?.try_into()?;
+    socket.send("Hello".into()).await?;
+    let repl = socket.recv().await?;
     dbg!(repl);
     Ok(())
 }

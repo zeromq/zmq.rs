@@ -32,11 +32,11 @@ pub(crate) struct PubSocketBackend {
 
 impl PubSocketBackend {
     fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
-        let message = match message {
+        let mut message = match message {
             Message::Message(m) => m,
             _ => return,
         };
-        let data: Vec<u8> = message.into();
+        let data: Vec<u8> = message.pop_front().unwrap().to_vec();
         if data.is_empty() {
             return;
         }
@@ -159,7 +159,7 @@ impl BlockingSend for PubSocket {
         let mut dead_peers = Vec::new();
         for mut subscriber in self.backend.subscribers.iter_mut() {
             for sub_filter in &subscriber.subscriptions {
-                if sub_filter.as_slice() == &message.data[0..sub_filter.len()] {
+                if sub_filter.as_slice() == &message.get(0).unwrap()[0..sub_filter.len()] {
                     let res = subscriber
                         .send_queue
                         .as_mut()

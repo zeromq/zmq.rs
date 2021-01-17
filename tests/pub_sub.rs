@@ -1,10 +1,10 @@
 use zeromq::prelude::*;
 use zeromq::Endpoint;
+use zeromq::ZmqMessage;
 use zeromq::__async_rt as async_rt;
 
 use futures::channel::{mpsc, oneshot};
 use futures::{SinkExt, StreamExt};
-use std::convert::TryInto;
 use std::time::Duration;
 
 #[async_rt::test]
@@ -35,10 +35,9 @@ async fn test_pub_sub_sockets() {
                     break;
                 }
 
-                pub_socket
-                    .send(cloned_payload.clone().into())
-                    .await
-                    .expect("Failed to send");
+                let s: String = cloned_payload.clone();
+                let m = ZmqMessage::from(s);
+                pub_socket.send(m).await.expect("Failed to send");
                 async_rt::task::sleep(Duration::from_millis(1)).await;
             }
 
@@ -72,12 +71,9 @@ async fn test_pub_sub_sockets() {
                 async_rt::task::sleep(std::time::Duration::from_millis(500)).await;
 
                 for _ in 0..10 {
-                    let recv_payload: String = sub_socket
-                        .recv()
-                        .await
-                        .expect("Failed to recv")
-                        .try_into()
-                        .expect("Malformed string");
+                    let recv_message = sub_socket.recv().await.unwrap();
+                    let recv_payload =
+                        String::from_utf8(recv_message.get(0).unwrap().to_vec()).unwrap();
                     assert_eq!(cloned_payload, recv_payload);
                     cloned_sub_sender.send(()).await.unwrap();
                 }
