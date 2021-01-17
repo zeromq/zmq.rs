@@ -30,7 +30,7 @@ pub struct ZmqCodec {
     // Needed to store incoming multipart message
     // This allows to incapsulate it's processing inside codec and not expose
     // internal details to higher levels
-    buffered_message: Option<Vec<Bytes>>,
+    buffered_message: Option<ZmqMessage>,
 }
 
 impl ZmqCodec {
@@ -71,18 +71,11 @@ impl Decoder for ZmqCodec {
             }
             DecoderState::FrameHeader => {
                 let flags = src.get_u8();
-                let command = (flags & 0b0000_0100) != 0;
-                let long = (flags & 0b0000_0010) != 0;
-                let more = (flags & 0b0000_0001) != 0;
 
-                if self.buffered_message.is_none() {
-                    let v: Vec<Bytes> = Vec::new();
-                    self.buffered_message = Some(v);
-                }
                 let frame = Frame {
-                    command,
-                    long,
-                    more,
+                    command: (flags & 0b0000_0100) != 0,
+                    long: (flags & 0b0000_0010) != 0,
+                    more: (flags & 0b0000_0001) != 0,
                 };
                 self.state = DecoderState::FrameLen(frame);
                 self.waiting_for = if frame.long { 8 } else { 1 };
@@ -102,22 +95,24 @@ impl Decoder for ZmqCodec {
                 self.state = DecoderState::FrameHeader;
                 self.waiting_for = 1;
                 if frame.command {
-                    Ok(Some(Message::Command(ZmqCommand::try_from(data)?)))
-                } else if frame.more {
-                    // cache incoming multipart message
-                    match &mut self.buffered_message {
-                        Some(v) => v.push(data.freeze()),
-                        _ => panic!("Corrupted decoder state"),
-                    }
+                    return Ok(Some(Message::Command(ZmqCommand::try_from(data)?)));
+                }
+
+                // process incoming message frame
+                match &mut self.buffered_message {
+                    Some(v) => v.push_back(data.freeze()),
+                    None => self.buffered_message = Some(ZmqMessage::from(data.freeze())),
+                }
+
+                if frame.more {
                     self.decode(src)
-                } else if let Some(mut v) = self.buffered_message.take() {
-                    v.push(data.freeze());
-                    match ZmqMessage::try_from(v) {
-                        Ok(m) => Ok(Some(Message::Message(m))),
-                        Err(_) => Err(CodecError::Other("Can't encode an empty message")),
-                    }
                 } else {
-                    panic!("Corrupted decoder state");
+                    // Quoth the Raven “Nevermore.”
+                    Ok(Some(Message::Message(
+                        self.buffered_message
+                            .take()
+                            .expect("Corrupted decoder state"),
+                    )))
                 }
             }
         }
