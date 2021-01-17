@@ -79,6 +79,7 @@ impl BlockingRecv for ReqSocket {
                     let message = peer.recv_queue.next().await;
                     match message {
                         Some(Ok(Message::Message(mut m))) => {
+                            assert!(m.len() > 1);
                             assert!(m.pop_front().unwrap().is_empty()); // Ensure that we have delimeter as first part
                             Ok(m)
                         }
