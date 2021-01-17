@@ -73,6 +73,7 @@ impl RouterSocket {
     }
 
     pub async fn send(&mut self, mut message: ZmqMessage) -> ZmqResult<()> {
+        assert!(message.len() > 1);
         let peer_id: PeerIdentity = message.pop_front().unwrap().to_vec().try_into()?;
         match self.backend.peers.get_mut(&peer_id) {
             Some(mut peer) => {

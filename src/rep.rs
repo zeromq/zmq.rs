@@ -139,6 +139,7 @@ impl BlockingRecv for RepSocket {
                 Some((peer_id, Ok(message))) => {
                     match message {
                         Message::Message(mut m) => {
+                            assert!(m.len() > 1);
                             assert!(m.pop_front().unwrap().is_empty()); // Ensure that we have delimeter as first part
                             self.current_request = Some(peer_id);
                             return Ok(m);

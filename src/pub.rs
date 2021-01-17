@@ -32,11 +32,12 @@ pub(crate) struct PubSocketBackend {
 
 impl PubSocketBackend {
     fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
-        let mut message = match message {
+        let message = match message {
             Message::Message(m) => m,
             _ => return,
         };
-        let data: Vec<u8> = message.pop_front().unwrap().to_vec();
+        assert_eq!(message.len(), 1);
+        let data: Vec<u8> = message.into_vec().pop().unwrap().to_vec();
         if data.is_empty() {
             return;
         }

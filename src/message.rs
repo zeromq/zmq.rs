@@ -101,11 +101,11 @@ impl From<&str> for ZmqMessage {
 impl TryFrom<ZmqMessage> for String {
     type Error = &'static str;
 
-    fn try_from(mut z: ZmqMessage) -> Result<Self, Self::Error> {
+    fn try_from(z: ZmqMessage) -> Result<Self, Self::Error> {
         if z.len() != 1 {
             return Err("Message must have only 1 frame to convert to String");
         }
-        match String::from_utf8(z.pop_front().unwrap().to_vec()) {
+        match String::from_utf8(z.into_vecdeque().pop_front().unwrap().to_vec()) {
             Ok(s) => Ok(s),
             Err(_) => Err("Could not parse string from message"),
         }
