@@ -22,7 +22,12 @@ We plan to support most of the basic ZMQ messaging patterns. The current list is
 See the [examples](examples) for some ways to get up and running quickly. You can also generate the documentation by doing `cargo doc --open` on the source code.
 
 ### Choosing your async runtime
-The project currently supports both [`tokio`](tokio.rs) and [`async-std`](async.rs), controllable via feature flags. `tokio` is used by default. See the section about feature flags for more info.
+The project currently supports both [`tokio`](tokio.rs) and [`async-std`](async.rs), controllable via feature flags. `tokio` is used by default. If you want to use `async-std`, you would disable the default features, and then select the `async-std-runtime` feature. For example in your `Cargo.toml`, you might specify the dependency as follows:
+```toml
+zeromq = { version = "*", default-features = false, features = ["async-std-runtime", "all-transport"] }
+```
+
+See the section about feature flags for more info.
 
 ### Feature Flags
 Feature flags provide a way to customize the functionality provided by this library. Refer to [the cargo guide](https://doc.rust-lang.org/cargo/reference/features.html) for more info.
