@@ -149,6 +149,10 @@ pub trait SocketSend {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()>;
 }
 
+/// Marker trait that express the fact that only certain types of sockets might be used
+/// in [proxy] function as a capture parameter
+pub trait CaptureSocket: SocketSend {}
+
 #[async_trait]
 pub trait Socket: Sized + Send {
     fn new() -> Self;
@@ -289,7 +293,7 @@ pub trait Socket: Sized + Send {
 pub async fn proxy<Frontend: SocketSend + SocketRecv, Backend: SocketSend + SocketRecv>(
     mut frontend: Frontend,
     mut backend: Backend,
-    mut capture: Option<Box<dyn SocketSend>>,
+    mut capture: Option<Box<dyn CaptureSocket>>,
 ) -> ZmqResult<()> {
     loop {
         futures::select! {

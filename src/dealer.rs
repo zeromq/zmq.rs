@@ -4,8 +4,8 @@ use crate::fair_queue::FairQueue;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
-    Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketRecv, SocketSend,
-    SocketType, ZmqMessage, ZmqResult,
+    CaptureSocket, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketRecv,
+    SocketSend, SocketType, ZmqMessage, ZmqResult,
 };
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -79,3 +79,5 @@ impl SocketSend for DealerSocket {
         Ok(())
     }
 }
+
+impl CaptureSocket for DealerSocket {}
