@@ -46,6 +46,7 @@ extern crate enum_primitive_derive;
 
 use async_trait::async_trait;
 use futures::channel::mpsc;
+use futures::FutureExt;
 use futures_codec::FramedWrite;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
@@ -147,6 +148,10 @@ pub trait SocketRecv {
 pub trait SocketSend {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()>;
 }
+
+/// Marker trait that express the fact that only certain types of sockets might be used
+/// in [proxy] function as a capture parameter
+pub trait CaptureSocket: SocketSend {}
 
 #[async_trait]
 pub trait Socket: Sized + Send {
@@ -282,6 +287,43 @@ pub trait Socket: Sized + Send {
     async fn close(mut self) -> Vec<ZmqError> {
         // self.disconnect_all().await?;
         self.unbind_all().await
+    }
+}
+
+pub async fn proxy<Frontend: SocketSend + SocketRecv, Backend: SocketSend + SocketRecv>(
+    mut frontend: Frontend,
+    mut backend: Backend,
+    mut capture: Option<Box<dyn CaptureSocket>>,
+) -> ZmqResult<()> {
+    loop {
+        futures::select! {
+            frontend_mess = frontend.recv().fuse() => {
+                match frontend_mess {
+                    Ok(message) => {
+                        if let Some(capture) = &mut capture {
+                            capture.send(message.clone()).await?;
+                        }
+                        backend.send(message).await?;
+                    }
+                    Err(_) => {
+                        todo!()
+                    }
+                }
+            },
+            backend_mess = backend.recv().fuse() => {
+                match backend_mess {
+                    Ok(message) => {
+                        if let Some(capture) = &mut capture {
+                            capture.send(message.clone()).await?;
+                        }
+                        frontend.send(message).await?;
+                    }
+                    Err(_) => {
+                        todo!()
+                    }
+                }
+            }
+        };
     }
 }
 

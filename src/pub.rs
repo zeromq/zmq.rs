@@ -1,10 +1,10 @@
-use crate::async_rt;
 use crate::codec::*;
 use crate::endpoint::Endpoint;
 use crate::error::ZmqResult;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
+use crate::{async_rt, CaptureSocket};
 use crate::{
     MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketSend, SocketType, ZmqError,
 };
@@ -189,6 +189,8 @@ impl SocketSend for PubSocket {
         Ok(())
     }
 }
+
+impl CaptureSocket for PubSocket {}
 
 #[async_trait]
 impl Socket for PubSocket {

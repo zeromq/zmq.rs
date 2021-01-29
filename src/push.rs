@@ -2,8 +2,8 @@ use crate::backend::GenericSocketBackend;
 use crate::codec::Message;
 use crate::transport::AcceptStopHandle;
 use crate::{
-    Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketSend, SocketType,
-    ZmqMessage, ZmqResult,
+    CaptureSocket, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketSend,
+    SocketType, ZmqMessage, ZmqResult,
 };
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -55,3 +55,5 @@ impl SocketSend for PushSocket {
         Ok(())
     }
 }
+
+impl CaptureSocket for PushSocket {}
