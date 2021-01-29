@@ -34,7 +34,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Install libzmq
         run: sudo apt update && sudo apt install libzmq3-dev
