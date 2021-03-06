@@ -4,7 +4,7 @@ use crate::error::ZmqResult;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{async_rt, CaptureSocket};
+use crate::{async_rt, CaptureSocket, SocketOptions};
 use crate::{
     MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketSend, SocketType, ZmqError,
 };
@@ -28,6 +28,7 @@ pub(crate) struct Subscriber {
 pub(crate) struct PubSocketBackend {
     subscribers: DashMap<PeerIdentity, Subscriber>,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
+    socket_options: SocketOptions,
 }
 
 impl PubSocketBackend {
@@ -83,6 +84,10 @@ impl PubSocketBackend {
 impl SocketBackend for PubSocketBackend {
     fn socket_type(&self) -> SocketType {
         SocketType::PUB
+    }
+
+    fn socket_options(&self) -> &SocketOptions {
+        &self.socket_options
     }
 
     fn shutdown(&self) {
@@ -194,11 +199,12 @@ impl CaptureSocket for PubSocket {}
 
 #[async_trait]
 impl Socket for PubSocket {
-    fn new() -> Self {
+    fn with_options(options: SocketOptions) -> Self {
         Self {
             backend: Arc::new(PubSocketBackend {
                 subscribers: DashMap::new(),
                 socket_monitor: Mutex::new(None),
+                socket_options: options,
             }),
             binds: HashMap::new(),
         }

@@ -2,8 +2,8 @@ use crate::backend::GenericSocketBackend;
 use crate::codec::Message;
 use crate::transport::AcceptStopHandle;
 use crate::{
-    CaptureSocket, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketSend,
-    SocketType, ZmqMessage, ZmqResult,
+    CaptureSocket, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketOptions,
+    SocketSend, SocketType, ZmqMessage, ZmqResult,
 };
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -24,9 +24,13 @@ impl Drop for PushSocket {
 
 #[async_trait]
 impl Socket for PushSocket {
-    fn new() -> Self {
+    fn with_options(options: SocketOptions) -> Self {
         Self {
-            backend: Arc::new(GenericSocketBackend::new(None, SocketType::PUSH)),
+            backend: Arc::new(GenericSocketBackend::with_options(
+                None,
+                SocketType::PUSH,
+                options,
+            )),
             binds: HashMap::new(),
         }
     }

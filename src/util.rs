@@ -134,8 +134,12 @@ pub(crate) async fn greet_exchange(raw_socket: &mut FramedIo) -> ZmqResult<ZmtpV
 pub(crate) async fn ready_exchange(
     raw_socket: &mut FramedIo,
     socket_type: SocketType,
+    props: Option<HashMap<String, Bytes>>,
 ) -> ZmqResult<PeerIdentity> {
-    let ready = ZmqCommand::ready(socket_type);
+    let mut ready = ZmqCommand::ready(socket_type);
+    if let Some(props) = props {
+        ready.add_properties(props);
+    }
     raw_socket.write_half.send(Message::Command(ready)).await?;
 
     let ready_repl: Option<CodecResult<Message>> = raw_socket.read_half.next().await;
@@ -145,14 +149,16 @@ pub(crate) async fn ready_exchange(
                 let other_sock_type = command
                     .properties
                     .get("Socket-Type")
-                    .map(|x| SocketType::try_from(x.as_str()))
+                    .map(|x| {
+                        SocketType::try_from(std::str::from_utf8(x).expect("Invalid socket type"))
+                    })
                     .unwrap_or(Err(ZmqError::Other("Failed to parse other socket type")))?;
 
                 let peer_id = command
                     .properties
                     .get("Identity")
                     .map_or_else(PeerIdentity::new, |x| {
-                        x.clone().into_bytes().try_into().unwrap()
+                        Vec::from(x.as_ref()).try_into().unwrap()
                     });
 
                 if sockets_compatible(socket_type, other_sock_type) {
@@ -175,7 +181,13 @@ pub(crate) async fn peer_connected(
     backend: Arc<dyn MultiPeerBackend>,
 ) -> ZmqResult<PeerIdentity> {
     greet_exchange(&mut raw_socket).await?;
-    let peer_id = ready_exchange(&mut raw_socket, backend.socket_type()).await?;
+    let mut props = None;
+    if let Some(identity) = &backend.socket_options().peer_id {
+        let mut connect_ops = HashMap::new();
+        connect_ops.insert("Identity".to_string(), identity.clone().into());
+        props = Some(connect_ops);
+    }
+    let peer_id = ready_exchange(&mut raw_socket, backend.socket_type(), props).await?;
     backend.peer_connected(&peer_id, raw_socket);
     Ok(peer_id)
 }

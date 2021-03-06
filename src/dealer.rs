@@ -4,8 +4,8 @@ use crate::fair_queue::FairQueue;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
-    CaptureSocket, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketRecv,
-    SocketSend, SocketType, ZmqMessage, ZmqResult,
+    CaptureSocket, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketOptions,
+    SocketRecv, SocketSend, SocketType, ZmqMessage, ZmqResult,
 };
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -28,12 +28,13 @@ impl Drop for DealerSocket {
 
 #[async_trait]
 impl Socket for DealerSocket {
-    fn new() -> Self {
+    fn with_options(options: SocketOptions) -> Self {
         let fair_queue = FairQueue::new(true);
         Self {
-            backend: Arc::new(GenericSocketBackend::new(
+            backend: Arc::new(GenericSocketBackend::with_options(
                 Some(fair_queue.inner()),
                 SocketType::DEALER,
+                options,
             )),
             fair_queue,
             binds: HashMap::new(),
