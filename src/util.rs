@@ -94,11 +94,11 @@ pub fn sockets_compatible(one: SocketType, another: SocketType) -> bool {
 /// Given the result of the greetings exchange, determines the version of the
 /// ZMTP protocol that should be used for communication with the peer according
 /// to https://rfc.zeromq.org/spec/23/#version-negotiation.
-fn negotiate_version(greeting: Option<CodecResult<Message>>) -> ZmqResult<ZmtpVersion> {
+fn negotiate_version(greeting: Message) -> ZmqResult<ZmtpVersion> {
     let my_version = ZmqGreeting::default().version;
 
     match greeting {
-        Some(Ok(Message::Greeting(peer))) => {
+        Message::Greeting(peer) => {
             if peer.version >= my_version {
                 // A peer MUST accept higher protocol versions as valid. That is,
                 // a ZMTP peer MUST accept protocol versions greater or equal to 3.0.
@@ -127,7 +127,10 @@ pub(crate) async fn greet_exchange(raw_socket: &mut FramedIo) -> ZmqResult<ZmtpV
         .send(Message::Greeting(ZmqGreeting::default()))
         .await?;
 
-    let greeting: Option<CodecResult<Message>> = raw_socket.read_half.next().await;
+    let greeting = match raw_socket.read_half.next().await {
+        Some(message) => message?,
+        None => return Err(ZmqError::Other("Failed Greeting exchange")),
+    };
     negotiate_version(greeting)
 }
 
@@ -276,12 +279,12 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    fn new_greeting(version: ZmtpVersion) -> CodecResult<Message> {
-        Ok(Message::Greeting(ZmqGreeting {
+    fn new_greeting(version: ZmtpVersion) -> Message {
+        Message::Greeting(ZmqGreeting {
             version,
             mechanism: ZmqMechanism::PLAIN,
             as_server: false,
-        }))
+        })
     }
 
     #[test]
@@ -289,7 +292,7 @@ pub(crate) mod tests {
         // if both peers are using the same protocol version, negotiation is trivial
         let peer_version = ZmqGreeting::default().version;
         let expected = ZmqGreeting::default().version;
-        let actual = negotiate_version(Some(new_greeting(peer_version))).unwrap();
+        let actual = negotiate_version(new_greeting(peer_version)).unwrap();
         assert_eq!(actual, expected);
     }
 
@@ -298,7 +301,7 @@ pub(crate) mod tests {
         // if the other end is using a newer protocol version, they should adjust to us
         let peer_version = (3, 1);
         let expected = ZmqGreeting::default().version;
-        let actual = negotiate_version(Some(new_greeting(peer_version))).unwrap();
+        let actual = negotiate_version(new_greeting(peer_version)).unwrap();
         assert_eq!(actual, expected);
     }
 
@@ -308,7 +311,7 @@ pub(crate) mod tests {
         // them, but interoperability with older peers is not implemented at the
         // moment, so we just give up immediately, which is allowed by the spec
         let peer_version = (2, 1);
-        let actual = negotiate_version(Some(new_greeting(peer_version)));
+        let actual = negotiate_version(new_greeting(peer_version));
         match actual {
             Err(ZmqError::UnsupportedVersion(version)) => assert_eq!(version, peer_version),
             _ => panic!("Unexpected result"),
@@ -317,16 +320,9 @@ pub(crate) mod tests {
 
     #[test]
     fn negotiate_version_invalid_greeting() {
-        // could not read the greeting message
-        let actual = negotiate_version(None);
-        match actual {
-            Err(ZmqError::Other(_)) => {}
-            _ => panic!("Unexpected result"),
-        }
-
         // unexpected message during greetings exchange
-        let message = Ok(Message::Message(ZmqMessage::from("")));
-        let actual = negotiate_version(Some(message));
+        let message = Message::Message(ZmqMessage::from(""));
+        let actual = negotiate_version(message);
         match actual {
             Err(ZmqError::Other(_)) => {}
             _ => panic!("Unexpected result"),
