@@ -4,7 +4,8 @@ use crate::fair_queue::FairQueue;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
-    Endpoint, MultiPeerBackend, Socket, SocketEvent, SocketRecv, SocketType, ZmqMessage, ZmqResult,
+    Endpoint, MultiPeerBackend, Socket, SocketEvent, SocketOptions, SocketRecv, SocketType,
+    ZmqMessage, ZmqResult,
 };
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -21,12 +22,13 @@ pub struct PullSocket {
 
 #[async_trait]
 impl Socket for PullSocket {
-    fn new() -> Self {
+    fn with_options(options: SocketOptions) -> Self {
         let fair_queue = FairQueue::new(true);
         Self {
-            backend: Arc::new(GenericSocketBackend::new(
+            backend: Arc::new(GenericSocketBackend::with_options(
                 Some(fair_queue.inner()),
                 SocketType::PULL,
+                options,
             )),
             fair_queue,
             binds: HashMap::new(),

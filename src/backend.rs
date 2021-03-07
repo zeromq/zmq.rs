@@ -1,7 +1,9 @@
 use crate::codec::{FramedIo, Message, ZmqFramedRead, ZmqFramedWrite};
 use crate::fair_queue::QueueInner;
 use crate::util::PeerIdentity;
-use crate::{MultiPeerBackend, SocketBackend, SocketEvent, SocketType, ZmqError, ZmqResult};
+use crate::{
+    MultiPeerBackend, SocketBackend, SocketEvent, SocketOptions, SocketType, ZmqError, ZmqResult,
+};
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use futures::channel::mpsc;
@@ -18,19 +20,22 @@ pub(crate) struct GenericSocketBackend {
     fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
     socket_type: SocketType,
+    socket_options: SocketOptions,
     pub(crate) socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
 }
 
 impl GenericSocketBackend {
-    pub(crate) fn new(
+    pub(crate) fn with_options(
         fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
         socket_type: SocketType,
+        options: SocketOptions,
     ) -> Self {
         Self {
             peers: DashMap::new(),
             fair_queue_inner,
             round_robin: SegQueue::new(),
             socket_type,
+            socket_options: options,
             socket_monitor: Mutex::new(None),
         }
     }
@@ -77,6 +82,10 @@ impl GenericSocketBackend {
 impl SocketBackend for GenericSocketBackend {
     fn socket_type(&self) -> SocketType {
         self.socket_type
+    }
+
+    fn socket_options(&self) -> &SocketOptions {
+        &self.socket_options
     }
 
     fn shutdown(&self) {

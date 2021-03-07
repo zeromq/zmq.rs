@@ -4,7 +4,9 @@ use crate::error::ZmqResult;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketRecv, SocketType};
+use crate::{
+    MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketOptions, SocketRecv, SocketType,
+};
 
 use crate::backend::GenericSocketBackend;
 use crate::fair_queue::FairQueue;
@@ -58,12 +60,13 @@ impl SubSocket {
 
 #[async_trait]
 impl Socket for SubSocket {
-    fn new() -> Self {
+    fn with_options(options: SocketOptions) -> Self {
         let fair_queue = FairQueue::new(true);
         Self {
-            backend: Arc::new(GenericSocketBackend::new(
+            backend: Arc::new(GenericSocketBackend::with_options(
                 Some(fair_queue.inner()),
                 SocketType::SUB,
+                options,
             )),
             fair_queue,
             binds: HashMap::new(),

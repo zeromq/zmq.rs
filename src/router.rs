@@ -12,7 +12,7 @@ use crate::fair_queue::FairQueue;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::{MultiPeerBackend, SocketEvent, SocketRecv, SocketSend, SocketType};
+use crate::{MultiPeerBackend, SocketEvent, SocketOptions, SocketRecv, SocketSend, SocketType};
 use crate::{Socket, SocketBackend};
 use futures::channel::mpsc;
 use futures::SinkExt;
@@ -31,12 +31,13 @@ impl Drop for RouterSocket {
 
 #[async_trait]
 impl Socket for RouterSocket {
-    fn new() -> Self {
+    fn with_options(options: SocketOptions) -> Self {
         let fair_queue = FairQueue::new(true);
         Self {
-            backend: Arc::new(GenericSocketBackend::new(
+            backend: Arc::new(GenericSocketBackend::with_options(
                 Some(fair_queue.inner()),
                 SocketType::ROUTER,
+                options,
             )),
             binds: HashMap::new(),
             fair_queue,

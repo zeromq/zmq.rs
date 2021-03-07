@@ -23,6 +23,7 @@ struct RepSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, RepPeer>,
     fair_queue_inner: Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
+    socket_options: SocketOptions,
 }
 
 pub struct RepSocket {
@@ -40,13 +41,14 @@ impl Drop for RepSocket {
 
 #[async_trait]
 impl Socket for RepSocket {
-    fn new() -> Self {
+    fn with_options(options: SocketOptions) -> Self {
         let fair_queue = FairQueue::new(true);
         Self {
             backend: Arc::new(RepSocketBackend {
                 peers: DashMap::new(),
                 fair_queue_inner: fair_queue.inner(),
                 socket_monitor: Mutex::new(None),
+                socket_options: options,
             }),
             current_request: None,
             fair_queue,
@@ -96,6 +98,10 @@ impl MultiPeerBackend for RepSocketBackend {
 impl SocketBackend for RepSocketBackend {
     fn socket_type(&self) -> SocketType {
         SocketType::REP
+    }
+
+    fn socket_options(&self) -> &SocketOptions {
+        &self.socket_options
     }
 
     fn shutdown(&self) {

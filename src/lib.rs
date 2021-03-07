@@ -125,6 +125,23 @@ pub enum SocketEvent {
     Disconnected(PeerIdentity),
 }
 
+pub struct SocketOptions {
+    pub(crate) peer_id: Option<PeerIdentity>,
+}
+
+impl SocketOptions {
+    pub fn peer_identity(&mut self, peer_id: PeerIdentity) -> &mut Self {
+        self.peer_id = Some(peer_id);
+        self
+    }
+}
+
+impl Default for SocketOptions {
+    fn default() -> Self {
+        Self { peer_id: None }
+    }
+}
+
 pub trait MultiPeerBackend: SocketBackend {
     /// This should not be public..
     /// Find a better way of doing this
@@ -135,6 +152,7 @@ pub trait MultiPeerBackend: SocketBackend {
 
 pub trait SocketBackend: Send + Sync {
     fn socket_type(&self) -> SocketType;
+    fn socket_options(&self) -> &SocketOptions;
     fn shutdown(&self);
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>>;
 }
@@ -155,7 +173,11 @@ pub trait CaptureSocket: SocketSend {}
 
 #[async_trait]
 pub trait Socket: Sized + Send {
-    fn new() -> Self;
+    fn new() -> Self {
+        Self::with_options(SocketOptions::default())
+    }
+
+    fn with_options(options: SocketOptions) -> Self;
 
     fn backend(&self) -> Arc<dyn MultiPeerBackend>;
 

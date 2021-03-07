@@ -18,6 +18,7 @@ struct ReqSocketBackend {
     pub(crate) peers: DashMap<PeerIdentity, Peer>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
+    socket_options: SocketOptions,
 }
 
 pub struct ReqSocket {
@@ -97,12 +98,13 @@ impl SocketRecv for ReqSocket {
 
 #[async_trait]
 impl Socket for ReqSocket {
-    fn new() -> Self {
+    fn with_options(options: SocketOptions) -> Self {
         Self {
             backend: Arc::new(ReqSocketBackend {
                 peers: DashMap::new(),
                 round_robin: SegQueue::new(),
                 socket_monitor: Mutex::new(None),
+                socket_options: options,
             }),
             current_request: None,
             binds: HashMap::new(),
@@ -146,6 +148,10 @@ impl MultiPeerBackend for ReqSocketBackend {
 impl SocketBackend for ReqSocketBackend {
     fn socket_type(&self) -> SocketType {
         SocketType::REQ
+    }
+
+    fn socket_options(&self) -> &SocketOptions {
+        &self.socket_options
     }
 
     fn shutdown(&self) {

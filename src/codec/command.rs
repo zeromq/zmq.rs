@@ -1,7 +1,7 @@
 use super::error::CodecError;
 use crate::SocketType;
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
@@ -21,17 +21,27 @@ impl From<ZmqCommandName> for String {
 #[derive(Debug, Clone)]
 pub struct ZmqCommand {
     pub name: ZmqCommandName,
-    pub properties: HashMap<String, String>,
+    pub properties: HashMap<String, Bytes>,
 }
 
 impl ZmqCommand {
     pub fn ready(socket: SocketType) -> Self {
         let mut properties = HashMap::new();
-        properties.insert("Socket-Type".into(), format!("{}", socket));
+        properties.insert("Socket-Type".into(), format!("{}", socket).into());
         Self {
             name: ZmqCommandName::READY,
             properties,
         }
+    }
+
+    pub fn add_prop(&mut self, name: String, value: Bytes) -> &mut Self {
+        self.properties.insert(name, value);
+        self
+    }
+
+    pub fn add_properties(&mut self, map: HashMap<String, Bytes>) -> &mut Self {
+        self.properties.extend(map);
+        self
     }
 }
 
@@ -55,8 +65,7 @@ impl TryFrom<BytesMut> for ZmqCommand {
             let property = unsafe { String::from_utf8_unchecked(buf.split_to(prop_len).to_vec()) };
 
             let prop_val_len = buf.get_u32() as usize;
-            let prop_value =
-                unsafe { String::from_utf8_unchecked(buf.split_to(prop_val_len).to_vec()) };
+            let prop_value = buf.split_to(prop_val_len).freeze();
             properties.insert(property, prop_value);
         }
         Ok(Self {
