@@ -16,6 +16,7 @@ use futures::{select, FutureExt};
 
 pub(crate) async fn connect(host: &Host, port: Port) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = TcpStream::connect((host.to_string().as_str(), port)).await?;
+    raw_socket.set_nodelay(true)?;
     let peer_addr = raw_socket.peer_addr()?;
 
     Ok((make_framed(raw_socket), Endpoint::from_tcp_addr(peer_addr)))
@@ -37,7 +38,11 @@ where
         loop {
             select! {
                 incoming = listener.accept().fuse() => {
-                    let maybe_accepted: Result<_, _> = incoming.map(|(raw_socket, remote_addr)| {
+                    let maybe_accepted: Result<_, _> = incoming.and_then(|(raw_socket, remote_addr)|{
+                        raw_socket.set_nodelay(true).map(|_| {
+                            (raw_socket, remote_addr)
+                        })
+                    }).map(|(raw_socket, remote_addr)| {
                         (make_framed(raw_socket), Endpoint::from_tcp_addr(remote_addr))
                     }).map_err(|err| err.into());
                     async_rt::task::spawn(cback(maybe_accepted));
