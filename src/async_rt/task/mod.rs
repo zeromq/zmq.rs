@@ -55,3 +55,18 @@ pub async fn sleep(duration: std::time::Duration) {
     #[cfg(feature = "async-std-runtime")]
     ::async_std::task::sleep(duration).await
 }
+
+pub async fn timeout<F, T>(
+    duration: std::time::Duration,
+    f: F,
+) -> std::result::Result<T, Box<dyn std::error::Error>>
+where
+    F: Future<Output = T>,
+{
+    #[cfg(feature = "tokio-runtime")]
+    let result = ::tokio::time::timeout(duration, f).await?;
+    #[cfg(feature = "async-std-runtime")]
+    let result = ::async_std::future::timeout(duration, f).await?;
+
+    Ok(result)
+}
