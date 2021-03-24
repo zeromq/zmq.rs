@@ -4,8 +4,8 @@ use super::greeting::ZmqGreeting;
 use super::Message;
 use crate::ZmqMessage;
 
+use asynchronous_codec::{Decoder, Encoder};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use futures_codec::{Decoder, Encoder};
 use std::convert::TryFrom;
 
 #[derive(Debug, Clone, Copy)]
