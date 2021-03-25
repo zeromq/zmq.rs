@@ -6,7 +6,6 @@ use crate::transport::AcceptStopHandle;
 use crate::*;
 use crate::{SocketType, ZmqResult};
 use async_trait::async_trait;
-use bytes::Bytes;
 use dashmap::DashMap;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -28,6 +27,7 @@ struct RepSocketBackend {
 
 pub struct RepSocket {
     backend: Arc<RepSocketBackend>,
+    envelope: Option<ZmqMessage>,
     current_request: Option<PeerIdentity>,
     fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
@@ -50,6 +50,7 @@ impl Socket for RepSocket {
                 socket_monitor: Mutex::new(None),
                 socket_options: options,
             }),
+            envelope: None,
             current_request: None,
             fair_queue,
             binds: HashMap::new(),
@@ -119,7 +120,9 @@ impl SocketSend for RepSocket {
         match self.current_request.take() {
             Some(peer_id) => {
                 if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
-                    message.push_front(Bytes::from(""));
+                    if let Some(envelope) = self.envelope.take() {
+                        message.prepend(&envelope);
+                    }
                     peer.send_queue.send(Message::Message(message)).await?;
                     Ok(())
                 } else {
@@ -142,17 +145,25 @@ impl SocketRecv for RepSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {
-                Some((peer_id, Ok(message))) => {
-                    match message {
-                        Message::Message(mut m) => {
-                            assert!(m.len() > 1);
-                            assert!(m.pop_front().unwrap().is_empty()); // Ensure that we have delimeter as first part
-                            self.current_request = Some(peer_id);
-                            return Ok(m);
+                Some((peer_id, Ok(message))) => match message {
+                    Message::Message(m) => {
+                        let mut mid = 1;
+                        for (index, frame) in m.iter().enumerate() {
+                            if frame.is_empty() {
+                                // Include delimiter in envelope.
+                                mid = index + 1;
+                                break;
+                            }
                         }
-                        _ => todo!(),
+                        let (envelope, data) = m.split_at(mid);
+                        if !envelope.is_empty() {
+                            self.envelope = Some(envelope);
+                        }
+                        self.current_request = Some(peer_id);
+                        return Ok(data);
                     }
-                }
+                    _ => todo!(),
+                },
                 Some((_peer_id, _)) => todo!(),
                 None => return Err(ZmqError::NoMessage),
             };
