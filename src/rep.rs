@@ -12,7 +12,6 @@ use futures::SinkExt;
 use futures::StreamExt;
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::convert::TryInto;
 use std::sync::Arc;
 
 struct RepPeer {
@@ -28,7 +27,7 @@ struct RepSocketBackend {
 
 pub struct RepSocket {
     backend: Arc<RepSocketBackend>,
-    connection_id: Option<PeerIdentity>,
+    envelope: Option<ZmqMessage>,
     current_request: Option<PeerIdentity>,
     fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
@@ -50,7 +49,7 @@ impl Socket for RepSocket {
                 fair_queue_inner: fair_queue.inner(),
                 socket_monitor: Mutex::new(None),
             }),
-            connection_id: None,
+            envelope: None,
             current_request: None,
             fair_queue,
             binds: HashMap::new(),
@@ -117,8 +116,8 @@ impl SocketSend for RepSocket {
             Some(peer_id) => {
                 if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
                     message.push_front(Bytes::from(""));
-                    if let Some(connection_id) = self.connection_id.take() {
-                        message.push_front(connection_id.into());
+                    if let Some(envelope) = self.envelope.take() {
+                        message.prepend(&envelope);
                     }
                     peer.send_queue.send(Message::Message(message)).await?;
                     Ok(())
@@ -142,21 +141,26 @@ impl SocketRecv for RepSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {
-                Some((peer_id, Ok(message))) => {
-                    match message {
-                        Message::Message(mut m) => {
-                            assert!(m.len() > 1);
-                            if m.len() > 2 {
-                                self.connection_id =
-                                    Some(m.pop_front().unwrap().to_vec().try_into()?);
+                Some((peer_id, Ok(message))) => match message {
+                    Message::Message(m) => {
+                        let mut mid = 0;
+                        for (index, frame) in m.iter().enumerate() {
+                            if frame.is_empty() {
+                                // Delimiter
+                                mid = index;
+                                break;
                             }
-                            assert!(m.pop_front().unwrap().is_empty()); // Ensure that we have delimeter as first part
-                            self.current_request = Some(peer_id);
-                            return Ok(m);
                         }
-                        _ => todo!(),
+                        let (envelope, mut data) = m.split_at(mid);
+                        if !envelope.is_empty() {
+                            self.envelope = Some(envelope);
+                        }
+                        assert!(data.pop_front().unwrap().is_empty()); // Delimiter
+                        self.current_request = Some(peer_id);
+                        return Ok(data);
                     }
-                }
+                    _ => todo!(),
+                },
                 Some((_peer_id, _)) => todo!(),
                 None => return Err(ZmqError::NoMessage),
             };
