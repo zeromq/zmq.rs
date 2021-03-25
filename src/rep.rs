@@ -6,7 +6,6 @@ use crate::transport::AcceptStopHandle;
 use crate::*;
 use crate::{SocketType, ZmqResult};
 use async_trait::async_trait;
-use bytes::Bytes;
 use dashmap::DashMap;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -115,7 +114,6 @@ impl SocketSend for RepSocket {
         match self.current_request.take() {
             Some(peer_id) => {
                 if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
-                    message.push_front(Bytes::from(""));
                     if let Some(envelope) = self.envelope.take() {
                         message.prepend(&envelope);
                     }
@@ -143,19 +141,18 @@ impl SocketRecv for RepSocket {
             match self.fair_queue.next().await {
                 Some((peer_id, Ok(message))) => match message {
                     Message::Message(m) => {
-                        let mut mid = 0;
+                        let mut mid = 1;
                         for (index, frame) in m.iter().enumerate() {
                             if frame.is_empty() {
-                                // Delimiter
-                                mid = index;
+                                // Include delimiter in envelope.
+                                mid = index + 1;
                                 break;
                             }
                         }
-                        let (envelope, mut data) = m.split_at(mid);
+                        let (envelope, data) = m.split_at(mid);
                         if !envelope.is_empty() {
                             self.envelope = Some(envelope);
                         }
-                        assert!(data.pop_front().unwrap().is_empty()); // Delimiter
                         self.current_request = Some(peer_id);
                         return Ok(data);
                     }

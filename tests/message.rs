@@ -12,27 +12,27 @@ fn test_split_at() {
     frames.push_back(Bytes::from("data1"));
     frames.push_back(Bytes::from("data2"));
     let m = ZmqMessage::try_from(frames).unwrap();
-    let (envelope, data) = m.split_at(2);
-    assert_eq!(envelope.len(), 2);
+    let (envelope, data) = m.split_at(3);
+    assert_eq!(envelope.len(), 3);
     assert_eq!(envelope.get(0), Some(&Bytes::from("id1")));
     assert_eq!(envelope.get(1), Some(&Bytes::from("id2")));
-    assert_eq!(data.len(), 3);
-    assert_eq!(data.get(0), Some(&Bytes::from("")));
-    assert_eq!(data.get(1), Some(&Bytes::from("data1")));
-    assert_eq!(data.get(2), Some(&Bytes::from("data2")));
+    assert_eq!(envelope.get(2), Some(&Bytes::from("")));
+    assert_eq!(data.len(), 2);
+    assert_eq!(data.get(0), Some(&Bytes::from("data1")));
+    assert_eq!(data.get(1), Some(&Bytes::from("data2")));
 }
 
 #[test]
 fn test_prepend() {
-    let mut frames = VecDeque::with_capacity(3);
-    frames.push_back(Bytes::from(""));
+    let mut frames = VecDeque::with_capacity(2);
     frames.push_back(Bytes::from("data1"));
     frames.push_back(Bytes::from("data2"));
     let mut m = ZmqMessage::try_from(frames).unwrap();
 
-    let mut envelope_frames = VecDeque::with_capacity(2);
+    let mut envelope_frames = VecDeque::with_capacity(3);
     envelope_frames.push_back(Bytes::from("id1"));
     envelope_frames.push_back(Bytes::from("id2"));
+    envelope_frames.push_back(Bytes::from(""));
     let envelope = ZmqMessage::try_from(envelope_frames).unwrap();
 
     m.prepend(&envelope);
