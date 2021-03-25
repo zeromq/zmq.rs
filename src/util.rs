@@ -1,10 +1,10 @@
 use crate::codec::{CodecResult, FramedIo};
 use crate::*;
 
+use asynchronous_codec::FramedRead;
 use bytes::Bytes;
 use futures::stream::StreamExt;
 use futures::SinkExt;
-use futures_codec::FramedRead;
 use num_traits::Pow;
 use rand::Rng;
 use std::convert::{TryFrom, TryInto};

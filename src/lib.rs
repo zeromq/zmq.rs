@@ -45,9 +45,9 @@ use util::PeerIdentity;
 extern crate enum_primitive_derive;
 
 use async_trait::async_trait;
+use asynchronous_codec::FramedWrite;
 use futures::channel::mpsc;
 use futures::FutureExt;
-use futures_codec::FramedWrite;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use std::collections::HashMap;

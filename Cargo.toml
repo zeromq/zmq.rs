@@ -22,7 +22,7 @@ futures-util = "0.3"
 async-trait = "0.1"
 parking_lot = "0.11"
 rand = "0.7"
-bytes = "0.5"
+bytes = "1"
 tokio = { version = "1", features = ["full"], optional = true }
 tokio-util = { version = "0.6", features = ["compat"], optional = true }
 num-traits = "0.2"
@@ -33,7 +33,7 @@ uuid = { version = "0.8", features = ["v4"] }
 regex = "1"
 lazy_static = "1"
 log = "0.4"
-futures_codec = "0.4"
+asynchronous-codec = "0.6"
 async-std = { version = "1", features = ["attributes"], optional = true }
 
 [dev-dependencies]
