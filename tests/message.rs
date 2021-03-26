@@ -4,19 +4,19 @@ use std::convert::TryFrom;
 use zeromq::ZmqMessage;
 
 #[test]
-fn test_split_at() {
+fn test_split_off() {
     let mut frames = VecDeque::with_capacity(5);
     frames.push_back(Bytes::from("id1"));
     frames.push_back(Bytes::from("id2"));
     frames.push_back(Bytes::from(""));
     frames.push_back(Bytes::from("data1"));
     frames.push_back(Bytes::from("data2"));
-    let m = ZmqMessage::try_from(frames).unwrap();
-    let (envelope, data) = m.split_at(3);
-    assert_eq!(envelope.len(), 3);
-    assert_eq!(envelope.get(0), Some(&Bytes::from("id1")));
-    assert_eq!(envelope.get(1), Some(&Bytes::from("id2")));
-    assert_eq!(envelope.get(2), Some(&Bytes::from("")));
+    let mut m = ZmqMessage::try_from(frames).unwrap();
+    let data = m.split_off(3);
+    assert_eq!(m.len(), 3);
+    assert_eq!(m.get(0), Some(&Bytes::from("id1")));
+    assert_eq!(m.get(1), Some(&Bytes::from("id2")));
+    assert_eq!(m.get(2), Some(&Bytes::from("")));
     assert_eq!(data.len(), 2);
     assert_eq!(data.get(0), Some(&Bytes::from("data1")));
     assert_eq!(data.get(1), Some(&Bytes::from("data2")));

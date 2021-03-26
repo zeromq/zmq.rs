@@ -146,19 +146,18 @@ impl SocketRecv for RepSocket {
         loop {
             match self.fair_queue.next().await {
                 Some((peer_id, Ok(message))) => match message {
-                    Message::Message(m) => {
-                        let mut mid = 1;
+                    Message::Message(mut m) => {
+                        assert!(m.len() > 1);
+                        let mut at = 1;
                         for (index, frame) in m.iter().enumerate() {
                             if frame.is_empty() {
                                 // Include delimiter in envelope.
-                                mid = index + 1;
+                                at = index + 1;
                                 break;
                             }
                         }
-                        let (envelope, data) = m.split_at(mid);
-                        if !envelope.is_empty() {
-                            self.envelope = Some(envelope);
-                        }
+                        let data = m.split_off(at);
+                        self.envelope = Some(m);
                         self.current_request = Some(peer_id);
                         return Ok(data);
                     }

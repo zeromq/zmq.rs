@@ -60,24 +60,9 @@ impl ZmqMessage {
         }
     }
 
-    pub fn split_at(&self, mid: usize) -> (ZmqMessage, ZmqMessage) {
-        let mut frames_left = VecDeque::with_capacity(mid);
-        let mut frames_right = VecDeque::with_capacity(self.len() - mid);
-        for (index, frame) in self.iter().enumerate() {
-            if index < mid {
-                frames_left.push_back(frame.clone());
-            } else {
-                frames_right.push_back(frame.clone());
-            }
-        }
-        (
-            ZmqMessage {
-                frames: frames_left,
-            },
-            ZmqMessage {
-                frames: frames_right,
-            },
-        )
+    pub fn split_off(&mut self, at: usize) -> ZmqMessage {
+        let frames = self.frames.split_off(at);
+        ZmqMessage { frames }
     }
 }
 
