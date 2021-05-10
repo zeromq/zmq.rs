@@ -55,6 +55,7 @@ use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 use std::sync::Arc;
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug, PartialEq, Primitive)]
 pub enum SocketType {
     PAIR = 0,
