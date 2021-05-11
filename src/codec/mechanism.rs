@@ -3,6 +3,7 @@ use super::error::CodecError;
 use std::convert::TryFrom;
 use std::fmt::Display;
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Copy, Clone)]
 pub enum ZmqMechanism {
     NULL,
