@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     println!(
         "\nTotal elapsed time: {} msec",
-        tstart.elapsed().as_micros()
+        tstart.elapsed().as_millis()
     );
 
     // Send kill signal to workers
