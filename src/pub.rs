@@ -165,6 +165,7 @@ impl SocketSend for PubSocket {
         let mut dead_peers = Vec::new();
         for mut subscriber in self.backend.subscribers.iter_mut() {
             for sub_filter in &subscriber.subscriptions {
+                if sub_filter.len() <= message.get(0).unwrap().len(){
                 if sub_filter.as_slice() == &message.get(0).unwrap()[0..sub_filter.len()] {
                     let res = subscriber
                         .send_queue
@@ -185,6 +186,7 @@ impl SocketSend for PubSocket {
                         }
                     }
                     break;
+                }
                 }
             }
         }
