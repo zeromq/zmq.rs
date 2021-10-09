@@ -46,7 +46,7 @@ impl PubSocketBackend {
             1 => {
                 // Subscribe
                 self.subscribers
-                    .get_mut(&peer_id)
+                    .get_mut(peer_id)
                     .unwrap()
                     .subscriptions
                     .push(Vec::from(&data[1..]));
@@ -57,7 +57,7 @@ impl PubSocketBackend {
                 let sub = Vec::from(&data[1..]);
                 for (idx, subscription) in self
                     .subscribers
-                    .get(&peer_id)
+                    .get(peer_id)
                     .unwrap()
                     .subscriptions
                     .iter()
@@ -70,7 +70,7 @@ impl PubSocketBackend {
                 }
                 if let Some(index) = del_index {
                     self.subscribers
-                        .get_mut(&peer_id)
+                        .get_mut(peer_id)
                         .unwrap()
                         .subscriptions
                         .remove(index);
@@ -165,8 +165,9 @@ impl SocketSend for PubSocket {
         let mut dead_peers = Vec::new();
         for mut subscriber in self.backend.subscribers.iter_mut() {
             for sub_filter in &subscriber.subscriptions {
-                if sub_filter.len() <= message.get(0).unwrap().len(){
-                if sub_filter.as_slice() == &message.get(0).unwrap()[0..sub_filter.len()] {
+                if sub_filter.len() <= message.get(0).unwrap().len()
+                    && sub_filter.as_slice() == &message.get(0).unwrap()[0..sub_filter.len()]
+                {
                     let res = subscriber
                         .send_queue
                         .as_mut()
@@ -186,7 +187,6 @@ impl SocketSend for PubSocket {
                         }
                     }
                     break;
-                }
                 }
             }
         }
