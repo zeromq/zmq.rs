@@ -88,6 +88,12 @@ impl TryFrom<VecDeque<Bytes>> for ZmqMessage {
     }
 }
 
+impl From<Vec<u8>> for ZmqMessage {
+    fn from(v: Vec<u8>) -> Self {
+        ZmqMessage::from(Bytes::from(v))
+    }
+}
+
 impl From<Bytes> for ZmqMessage {
     fn from(b: Bytes) -> Self {
         Self {
