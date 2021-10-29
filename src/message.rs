@@ -115,6 +115,17 @@ impl From<&str> for ZmqMessage {
     }
 }
 
+impl TryFrom<ZmqMessage> for Vec<u8> {
+    type Error = &'static str;
+
+    fn try_from(z: ZmqMessage) -> Result<Self, Self::Error> {
+        if z.len() != 1 {
+            return Err("Message must have only 1 frame to convert to Vec<u8>");
+        }
+        Ok(z.into_vecdeque().pop_front().unwrap().to_vec())
+    }
+}
+
 impl TryFrom<ZmqMessage> for String {
     type Error = &'static str;
 
