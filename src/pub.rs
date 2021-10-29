@@ -181,6 +181,11 @@ impl SocketSend for PubSocket {
                                 dbg!(e);
                             }
                         }
+                        Err(ZmqError::BufferFull(_)) => {
+                            // ignore silently. https://rfc.zeromq.org/spec/29/ says:
+                            // For processing outgoing messages:
+                            //   SHALL silently drop the message if the queue for a subscriber is full.
+                        }
                         Err(e) => {
                             dbg!(e);
                             todo!()
