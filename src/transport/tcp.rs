@@ -16,6 +16,9 @@ use futures::{select, FutureExt};
 
 pub(crate) async fn connect(host: &Host, port: Port) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = TcpStream::connect((host.to_string().as_str(), port)).await?;
+    // For some reason set_nodelay doesn't work on windows. See
+    // https://github.com/zeromq/zmq.rs/issues/148 for details
+    #[cfg(not(windows))]
     raw_socket.set_nodelay(true)?;
     let peer_addr = raw_socket.peer_addr()?;
 
