@@ -10,6 +10,7 @@ use futures::channel::mpsc;
 use futures::SinkExt;
 use parking_lot::Mutex;
 use std::sync::Arc;
+use async_trait::async_trait;
 
 pub(crate) struct Peer {
     pub(crate) send_queue: ZmqFramedWrite,
@@ -97,8 +98,9 @@ impl SocketBackend for GenericSocketBackend {
     }
 }
 
+#[async_trait]
 impl MultiPeerBackend for GenericSocketBackend {
-    fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, send_queue) = io.into_parts();
         self.peers.insert(peer_id.clone(), Peer { send_queue });
         self.round_robin.push(peer_id.clone());

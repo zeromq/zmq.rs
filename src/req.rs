@@ -126,8 +126,9 @@ impl Socket for ReqSocket {
     }
 }
 
+#[async_trait]
 impl MultiPeerBackend for ReqSocketBackend {
-    fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, send_queue) = io.into_parts();
         self.peers.insert(
             peer_id.clone(),

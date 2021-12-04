@@ -5,7 +5,7 @@ use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
-    MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketOptions, SocketRecv, SocketType
+    MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketOptions, SocketRecv, SocketType,
 };
 
 use crate::backend::Peer;
@@ -28,6 +28,7 @@ pub(crate) struct SubSocketBackend {
     socket_type: SocketType,
     socket_options: SocketOptions,
     pub(crate) socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
+    subs: Mutex<HashSet<String>>,
 }
 
 impl SubSocketBackend {
@@ -43,6 +44,7 @@ impl SubSocketBackend {
             socket_type,
             socket_options: options,
             socket_monitor: Mutex::new(None),
+	    subs: Mutex::new(HashSet::new()),
         }
     }
 }
@@ -65,8 +67,10 @@ impl SocketBackend for SubSocketBackend {
     }
 }
 
+#[async_trait]
 impl MultiPeerBackend for SubSocketBackend {
-    fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+	println!("Connect peer");
         let (recv_queue, send_queue) = io.into_parts();
         self.peers.insert(peer_id.clone(), Peer { send_queue });
         self.round_robin.push(peer_id.clone());
@@ -76,6 +80,21 @@ impl MultiPeerBackend for SubSocketBackend {
                 inner.lock().insert(peer_id.clone(), recv_queue);
             }
         };
+
+	let subs = (|| { (*self.subs.lock()).clone() })();
+
+	for sub in subs.iter() {
+	    let mut buf = BytesMut::with_capacity(sub.len() + 1);
+	    buf.put_u8(1);
+	    buf.extend_from_slice(sub.as_bytes());
+
+	    let message: ZmqMessage = ZmqMessage::from(buf.freeze());
+	    let mut peer = self.peers.get_mut(&peer_id).unwrap();
+
+	    peer.send_queue
+		.send(Message::Message(message.clone()))
+		.await.unwrap();
+	}
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
@@ -87,7 +106,6 @@ pub struct SubSocket {
     backend: Arc<SubSocketBackend>,
     fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
-    subs: HashSet<String>,
 }
 
 impl Drop for SubSocket {
@@ -98,6 +116,7 @@ impl Drop for SubSocket {
 
 impl SubSocket {
     pub async fn subscribe(&mut self, subscription: &str) -> ZmqResult<()> {
+	println!("subscribe");
         let mut buf = BytesMut::with_capacity(subscription.len() + 1);
         buf.put_u8(1);
         buf.extend_from_slice(subscription.as_bytes());
@@ -108,12 +127,12 @@ impl SubSocket {
                 .send(Message::Message(message.clone()))
                 .await?;
         }
-	self.subs.insert(subscription.to_string());
+	self.backend.subs.lock().insert(subscription.to_string());
         Ok(())
     }
 
     pub async fn unsubscribe(&mut self, subscription: &str) -> ZmqResult<()> {
-	self.subs.insert(subscription.to_string());
+	self.backend.subs.lock().remove(subscription);
         let mut buf = BytesMut::with_capacity(subscription.len() + 1);
         buf.put_u8(0);
         buf.extend_from_slice(subscription.as_bytes());
@@ -140,12 +159,11 @@ impl Socket for SubSocket {
             )),
             fair_queue,
             binds: HashMap::new(),
-	    subs: HashSet::new(),
         }
     }
 
     fn backend(&self) -> Arc<dyn MultiPeerBackend> {
-        self.backend.clone()
+	self.backend.clone()
     }
 
     fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle> {
