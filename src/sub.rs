@@ -92,9 +92,9 @@ impl MultiPeerBackend for SubSocketBackend {
             .map(|x| SubSocketBackend::create_subs_message(x, SubBackendMsgType::SUBSCRIBE))
             .collect();
 
-        for message in subs_msgs.iter() {
+        for message in subs_msgs {
             send_queue
-                .send(Message::Message(message.clone()))
+                .send(Message::Message(message))
                 .await
                 .unwrap();
         }
