@@ -14,11 +14,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     frontend.subscribe("").await?;
 
     let forward = async move {
-	loop {
-	    let message = frontend.recv().await.unwrap();
-	    println!("passing message: {:?}", message);
-	    backend.send(message).await.unwrap();
-	}
+        loop {
+            let message = frontend.recv().await.unwrap();
+            println!("passing message: {:?}", message);
+            backend.send(message).await.unwrap();
+        }
     };
 
     forward.await;

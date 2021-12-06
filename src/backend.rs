@@ -4,13 +4,13 @@ use crate::util::PeerIdentity;
 use crate::{
     MultiPeerBackend, SocketBackend, SocketEvent, SocketOptions, SocketType, ZmqError, ZmqResult,
 };
+use async_trait::async_trait;
 use crossbeam::queue::SegQueue;
 use dashmap::DashMap;
 use futures::channel::mpsc;
 use futures::SinkExt;
 use parking_lot::Mutex;
 use std::sync::Arc;
-use async_trait::async_trait;
 
 pub(crate) struct Peer {
     pub(crate) send_queue: ZmqFramedWrite,

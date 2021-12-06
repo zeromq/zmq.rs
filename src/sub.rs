@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 pub enum SubBackendMsgType {
     UNSUBSCRIBE = 0,
-    SUBSCRIBE = 1
+    SUBSCRIBE = 1,
 }
 
 pub(crate) struct SubSocketBackend {
@@ -58,7 +58,7 @@ impl SubSocketBackend {
         buf.put_u8(msg_type as u8);
         buf.extend_from_slice(subscription.as_bytes());
 
-	buf.freeze().into()
+        buf.freeze().into()
     }
 }
 
@@ -85,9 +85,12 @@ impl MultiPeerBackend for SubSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, mut send_queue) = io.into_parts();
 
-	let subs_msgs: Vec<ZmqMessage> = self.subs.lock().iter().map(
-	    |x| SubSocketBackend::create_subs_message(
-		x, SubBackendMsgType::SUBSCRIBE)).collect();
+        let subs_msgs: Vec<ZmqMessage> = self
+            .subs
+            .lock()
+            .iter()
+            .map(|x| SubSocketBackend::create_subs_message(x, SubBackendMsgType::SUBSCRIBE))
+            .collect();
 
         for message in subs_msgs.iter() {
             send_queue
@@ -125,25 +128,30 @@ impl Drop for SubSocket {
 
 impl SubSocket {
     pub async fn subscribe(&mut self, subscription: &str) -> ZmqResult<()> {
-	self.backend.subs.lock().insert(subscription.to_string());
-	self.process_subs(subscription, SubBackendMsgType::SUBSCRIBE).await
+        self.backend.subs.lock().insert(subscription.to_string());
+        self.process_subs(subscription, SubBackendMsgType::SUBSCRIBE)
+            .await
     }
 
     pub async fn unsubscribe(&mut self, subscription: &str) -> ZmqResult<()> {
-	self.backend.subs.lock().remove(subscription);
-	self.process_subs(subscription, SubBackendMsgType::UNSUBSCRIBE).await
+        self.backend.subs.lock().remove(subscription);
+        self.process_subs(subscription, SubBackendMsgType::UNSUBSCRIBE)
+            .await
     }
 
-    async fn process_subs(&mut self, subscription: &str, msg_type: SubBackendMsgType) -> ZmqResult<()> {
-        let message: ZmqMessage = SubSocketBackend::create_subs_message(
-	    subscription, msg_type);
+    async fn process_subs(
+        &mut self,
+        subscription: &str,
+        msg_type: SubBackendMsgType,
+    ) -> ZmqResult<()> {
+        let message: ZmqMessage = SubSocketBackend::create_subs_message(subscription, msg_type);
 
         for mut peer in self.backend.peers.iter_mut() {
             peer.send_queue
                 .send(Message::Message(message.clone()))
                 .await?;
         }
-	Ok(())
+        Ok(())
     }
 }
 
