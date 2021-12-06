@@ -126,6 +126,7 @@ pub enum SocketEvent {
     Disconnected(PeerIdentity),
 }
 
+#[derive(Default)]
 pub struct SocketOptions {
     pub(crate) peer_id: Option<PeerIdentity>,
 }
@@ -134,12 +135,6 @@ impl SocketOptions {
     pub fn peer_identity(&mut self, peer_id: PeerIdentity) -> &mut Self {
         self.peer_id = Some(peer_id);
         self
-    }
-}
-
-impl Default for SocketOptions {
-    fn default() -> Self {
-        Self { peer_id: None }
     }
 }
 
