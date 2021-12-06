@@ -143,11 +143,12 @@ impl Default for SocketOptions {
     }
 }
 
+#[async_trait]
 pub trait MultiPeerBackend: SocketBackend {
     /// This should not be public..
     /// Find a better way of doing this
 
-    fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo);
+    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo);
     fn peer_disconnected(&self, peer_id: &PeerIdentity);
 }
 

@@ -191,7 +191,7 @@ pub(crate) async fn peer_connected(
         props = Some(connect_ops);
     }
     let peer_id = ready_exchange(&mut raw_socket, backend.socket_type(), props).await?;
-    backend.peer_connected(&peer_id, raw_socket);
+    backend.peer_connected(&peer_id, raw_socket).await;
     Ok(peer_id)
 }
 
