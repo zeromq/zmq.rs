@@ -68,7 +68,10 @@ impl SocketRecv for RouterSocket {
                     message.push_front(peer_id.into());
                     return Ok(message);
                 }
-                Some((_peer_id, _)) => todo!(),
+                Some((_peer_id, Ok(msg))) => todo!("Unimplemented message: {:?}", msg),
+                Some((peer_id, Err(_))) => {
+                    self.backend.peer_disconnected(&peer_id);
+                }
                 None => todo!(),
             };
         }

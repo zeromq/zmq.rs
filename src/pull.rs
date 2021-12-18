@@ -58,7 +58,10 @@ impl SocketRecv for PullSocket {
                 Some((_peer_id, Ok(Message::Message(message)))) => {
                     return Ok(message);
                 }
-                Some((_peer_id, _)) => todo!(),
+                Some((_peer_id, Ok(msg))) => todo!("Unimplemented message: {:?}", msg),
+                Some((peer_id, Err(_))) => {
+                    self.backend.peer_disconnected(&peer_id);
+                }
                 None => todo!(),
             };
         }
