@@ -114,5 +114,11 @@ impl MultiPeerBackend for GenericSocketBackend {
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         self.peers.remove(peer_id);
+        match &self.fair_queue_inner {
+            None => {}
+            Some(inner) => {
+                inner.lock().remove(peer_id);
+            }
+        };
     }
 }

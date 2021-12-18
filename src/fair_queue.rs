@@ -27,6 +27,10 @@ impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
             None => (),
         };
     }
+
+    pub fn remove(&mut self, k: &K) {
+        self.streams.remove(k);
+    }
 }
 
 pub struct FairQueue<S, K: Clone> {
