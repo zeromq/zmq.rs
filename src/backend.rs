@@ -69,8 +69,9 @@ impl GenericSocketBackend {
                             self.round_robin.push(next_peer_id.clone());
                             return Ok(next_peer_id);
                         }
-                        Err(_) => {
-                            panic!("Don't know how to handle this now");
+                        Err(e) => {
+                            self.peer_disconnected(&next_peer_id);
+                            return Err(e.into());
                         }
                     };
                 }
