@@ -93,10 +93,7 @@ impl MultiPeerBackend for SubSocketBackend {
             .collect();
 
         for message in subs_msgs {
-            send_queue
-                .send(Message::Message(message))
-                .await
-                .unwrap();
+            send_queue.send(Message::Message(message)).await.unwrap();
         }
 
         self.peers.insert(peer_id.clone(), Peer { send_queue });
