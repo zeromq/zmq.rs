@@ -61,22 +61,20 @@ impl GenericSocketBackend {
                     }
                 },
             };
-            match self.peers.get_mut(&next_peer_id) {
-                Some(mut peer) => {
-                    let send_result = peer.send_queue.send(message).await;
-                    match send_result {
-                        Ok(()) => {
-                            self.round_robin.push(next_peer_id.clone());
-                            return Ok(next_peer_id);
-                        }
-                        Err(e) => {
-                            self.peer_disconnected(&next_peer_id);
-                            return Err(e.into());
-                        }
-                    };
-                }
+            let send_result = match self.peers.get_mut(&next_peer_id) {
+                Some(mut peer) => peer.send_queue.send(message).await,
                 None => continue,
-            }
+            };
+            return match send_result {
+                Ok(()) => {
+                    self.round_robin.push(next_peer_id.clone());
+                    Ok(next_peer_id)
+                }
+                Err(e) => {
+                    self.peer_disconnected(&next_peer_id);
+                    Err(e.into())
+                }
+            };
         }
     }
 }
