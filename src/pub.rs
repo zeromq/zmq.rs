@@ -101,7 +101,12 @@ impl SocketBackend for PubSocketBackend {
 
 #[async_trait]
 impl MultiPeerBackend for PubSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(
+        self: Arc<Self>,
+        peer_id: &PeerIdentity,
+        io: FramedIo,
+        endpoint: Option<Endpoint>,
+    ) {
         let (mut recv_queue, send_queue) = io.into_parts();
         // TODO provide handling for recv_queue
         let (sender, stop_receiver) = oneshot::channel();
@@ -143,7 +148,7 @@ impl MultiPeerBackend for PubSocketBackend {
         });
     }
 
-    fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+    fn peer_disconnected(self: Arc<Self>, peer_id: &PeerIdentity) {
         log::info!("Client disconnected {:?}", peer_id);
         self.subscribers.remove(peer_id);
     }
@@ -197,7 +202,7 @@ impl SocketSend for PubSocket {
             }
         }
         for peer in dead_peers {
-            self.backend.peer_disconnected(&peer);
+            self.backend.clone().peer_disconnected(&peer);
         }
         Ok(())
     }

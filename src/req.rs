@@ -128,7 +128,12 @@ impl Socket for ReqSocket {
 
 #[async_trait]
 impl MultiPeerBackend for ReqSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(
+        self: Arc<Self>,
+        peer_id: &PeerIdentity,
+        io: FramedIo,
+        endpoint: Option<Endpoint>,
+    ) {
         let (recv_queue, send_queue) = io.into_parts();
         self.peers.insert(
             peer_id.clone(),
@@ -141,7 +146,7 @@ impl MultiPeerBackend for ReqSocketBackend {
         self.round_robin.push(peer_id.clone());
     }
 
-    fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+    fn peer_disconnected(self: Arc<Self>, peer_id: &PeerIdentity) {
         self.peers.remove(peer_id);
     }
 }

@@ -1,8 +1,9 @@
 use crate::codec::{FramedIo, Message, ZmqFramedRead, ZmqFramedWrite};
 use crate::fair_queue::QueueInner;
-use crate::util::PeerIdentity;
+use crate::util::{self, PeerIdentity};
 use crate::{
-    MultiPeerBackend, SocketBackend, SocketEvent, SocketOptions, SocketType, ZmqError, ZmqResult,
+    async_rt, Endpoint, MultiPeerBackend, SocketBackend, SocketEvent, SocketOptions, SocketType,
+    ZmqError, ZmqResult,
 };
 use async_trait::async_trait;
 use crossbeam::queue::SegQueue;
@@ -23,6 +24,7 @@ pub(crate) struct GenericSocketBackend {
     socket_type: SocketType,
     socket_options: SocketOptions,
     pub(crate) socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
+    connect_endpoints: DashMap<PeerIdentity, Endpoint>,
 }
 
 impl GenericSocketBackend {
@@ -38,10 +40,14 @@ impl GenericSocketBackend {
             socket_type,
             socket_options: options,
             socket_monitor: Mutex::new(None),
+            connect_endpoints: DashMap::new(),
         }
     }
 
-    pub(crate) async fn send_round_robin(&self, message: Message) -> ZmqResult<PeerIdentity> {
+    pub(crate) async fn send_round_robin(
+        self: &Arc<Self>,
+        message: Message,
+    ) -> ZmqResult<PeerIdentity> {
         // In normal scenario this will always be only 1 iteration
         // There can be special case when peer has disconnected and his id is still in
         // RR queue This happens because SegQueue don't have an api to delete
@@ -71,7 +77,7 @@ impl GenericSocketBackend {
                     Ok(next_peer_id)
                 }
                 Err(e) => {
-                    self.peer_disconnected(&next_peer_id);
+                    self.clone().peer_disconnected(&next_peer_id);
                     Err(e.into())
                 }
             };
@@ -99,25 +105,51 @@ impl SocketBackend for GenericSocketBackend {
 
 #[async_trait]
 impl MultiPeerBackend for GenericSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(
+        self: Arc<Self>,
+        peer_id: &PeerIdentity,
+        io: FramedIo,
+        endpoint: Option<Endpoint>,
+    ) {
         let (recv_queue, send_queue) = io.into_parts();
         self.peers.insert(peer_id.clone(), Peer { send_queue });
         self.round_robin.push(peer_id.clone());
-        match &self.fair_queue_inner {
-            None => {}
-            Some(inner) => {
-                inner.lock().insert(peer_id.clone(), recv_queue);
-            }
-        };
+
+        if let Some(queue_inner) = &self.fair_queue_inner {
+            queue_inner.lock().insert(peer_id.clone(), recv_queue);
+        }
+
+        if let Some(e) = endpoint {
+            self.connect_endpoints.insert(peer_id.clone(), e);
+        }
     }
 
-    fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+    fn peer_disconnected(self: Arc<Self>, peer_id: &PeerIdentity) {
+        if let Some(monitor) = self.monitor().lock().as_mut() {
+            let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
+        }
+
         self.peers.remove(peer_id);
-        match &self.fair_queue_inner {
-            None => {}
-            Some(inner) => {
-                inner.lock().remove(peer_id);
-            }
+        if let Some(inner) = &self.fair_queue_inner {
+            inner.lock().remove(peer_id);
+        }
+
+        let endpoint = match self.connect_endpoints.remove(peer_id) {
+            Some((_, e)) => e,
+            None => return,
         };
+        let backend = self;
+
+        async_rt::task::spawn(async move {
+            let (socket, endpoint) = util::connect_forever(endpoint)
+                .await
+                .expect("Failed to connect");
+            let peer_id = util::peer_connected(socket, backend.clone(), Some(endpoint.clone()))
+                .await
+                .expect("Failed to handshake");
+            if let Some(monitor) = backend.monitor().lock().as_mut() {
+                let _ = monitor.try_send(SocketEvent::Connected(endpoint, peer_id));
+            }
+        });
     }
 }

@@ -74,7 +74,12 @@ impl Socket for RepSocket {
 
 #[async_trait]
 impl MultiPeerBackend for RepSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(
+        self: Arc<Self>,
+        peer_id: &PeerIdentity,
+        io: FramedIo,
+        endpoint: Option<Endpoint>,
+    ) {
         let (recv_queue, send_queue) = io.into_parts();
 
         self.peers.insert(
@@ -89,7 +94,7 @@ impl MultiPeerBackend for RepSocketBackend {
             .insert(peer_id.clone(), recv_queue);
     }
 
-    fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+    fn peer_disconnected(self: Arc<Self>, peer_id: &PeerIdentity) {
         if let Some(monitor) = self.monitor().lock().as_mut() {
             let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
         }

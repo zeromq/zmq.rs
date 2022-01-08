@@ -1,4 +1,5 @@
 // Helper functions to be runtime agnostic
+use futures::Future;
 
 #[cfg(feature = "tokio-runtime")]
 extern crate tokio;
@@ -19,4 +20,24 @@ pub async fn sleep(duration: std::time::Duration) {
 #[cfg(feature = "async-std-runtime")]
 pub async fn sleep(duration: std::time::Duration) {
     async_std::task::sleep(duration).await
+}
+
+#[allow(unused)]
+#[cfg(feature = "tokio-runtime")]
+pub fn spawn<T>(future: T)
+where
+    T: Future + Send + 'static,
+    T::Output: Send + 'static,
+{
+    tokio::spawn(future);
+}
+
+#[allow(unused)]
+#[cfg(feature = "async-std-runtime")]
+pub fn spawn<T>(future: T)
+where
+    T: Future + Send + 'static,
+    T::Output: Send + 'static,
+{
+    async_std::spawn(future);
 }
