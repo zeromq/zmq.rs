@@ -39,7 +39,7 @@ pub use message::*;
 
 use crate::codec::*;
 use crate::transport::AcceptStopHandle;
-use util::PeerIdentity;
+use util::{PeerIdentity, TcpKeepalive};
 
 #[macro_use]
 extern crate enum_primitive_derive;
@@ -129,11 +129,17 @@ pub enum SocketEvent {
 #[derive(Default)]
 pub struct SocketOptions {
     pub(crate) peer_id: Option<PeerIdentity>,
+    pub(crate) tcp_keepalive: Option<TcpKeepalive>,
 }
 
 impl SocketOptions {
     pub fn peer_identity(&mut self, peer_id: PeerIdentity) -> &mut Self {
         self.peer_id = Some(peer_id);
+        self
+    }
+
+    pub fn tcp_keepalive(&mut self, tcp_keepalive_opt: TcpKeepalive) -> &mut Self {
+        self.tcp_keepalive = Some(tcp_keepalive_opt);
         self
     }
 }

@@ -216,6 +216,31 @@ pub(crate) async fn connect_forever(endpoint: Endpoint) -> ZmqResult<(FramedIo, 
     }
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Clone)]
+pub struct TcpKeepalive {
+    pub keepalive: i64,
+    pub idle: i64,
+    pub count: i64,
+    pub interval: i64,
+}
+
+impl TcpKeepalive {
+    pub fn new() -> Self {
+        TcpKeepalive {
+            keepalive: -1,
+            idle: -1,
+            count: -1,
+            interval: -1,
+        }
+    }
+}
+
+impl Default for TcpKeepalive {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
