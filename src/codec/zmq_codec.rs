@@ -164,7 +164,6 @@ impl Encoder for ZmqCodec {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use hex;
 
     #[test]
     pub fn test_message_decode_1() {
