@@ -29,17 +29,24 @@ num-traits = "0.2"
 enum-primitive-derive = "0.2"
 dashmap = "3.11"
 crossbeam = "0.7"
-uuid = { version = "0.8", features = ["v4"] }
 regex = "1"
 lazy_static = "1"
 log = "0.4"
 asynchronous-codec = "0.6"
 async-std = { version = "1", features = ["attributes"], optional = true }
+uuid = { version = "0.8", features = ["v4"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { version = "0.8", features = ["v4", "wasm-bindgen"] }
+async-std = { version = "1", features = ["attributes", "unstable"], optional = true }
+
 
 [dev-dependencies]
 chrono = "0.4"
 criterion = "0.3"
 pretty_env_logger = "0.4"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 zmq = "0.9"
 hex = "0.4.3"
 
