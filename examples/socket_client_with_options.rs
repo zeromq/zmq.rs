@@ -10,12 +10,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut options = SocketOptions::default();
     options
         .peer_identity(PeerIdentity::try_from(Vec::from("SomeCustomId")).unwrap())
-        .tcp_keepalive(TcpKeepalive {
-            keepalive: 1,
-            count: 5,
-            idle: 1,
-            interval: 10,
-        });
+        .tcp_keepalive(
+            TcpKeepalive::default()
+                .set_idle(1)
+                .set_count(5)
+                .set_interval(10),
+        );
 
     let mut socket = zeromq::ReqSocket::with_options(options);
     socket
