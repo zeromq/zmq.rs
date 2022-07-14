@@ -11,29 +11,40 @@ pub enum ZmqMechanism {
     CURVE,
 }
 
-impl Display for ZmqMechanism {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Default for ZmqMechanism {
+    fn default() -> Self {
+        ZmqMechanism::NULL
+    }
+}
+
+impl ZmqMechanism {
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            ZmqMechanism::NULL => write!(f, "NULL"),
-            ZmqMechanism::PLAIN => write!(f, "PLAIN"),
-            ZmqMechanism::CURVE => write!(f, "CURVE"),
+            ZmqMechanism::NULL => "NULL",
+            ZmqMechanism::PLAIN => "PLAIN",
+            ZmqMechanism::CURVE => "CURVE",
         }
     }
 }
 
-impl TryFrom<Vec<u8>> for ZmqMechanism {
+impl Display for ZmqMechanism {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl TryFrom<&[u8]> for ZmqMechanism {
     type Error = CodecError;
 
-    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        let mech = value.split(|x| *x == 0x0).next().unwrap_or(b"");
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let mech = value.split(|x| *x == 0x0).next().unwrap_or_default();
         // mechanism-char = "A"-"Z" | DIGIT
         //                  | "-" | "_" | "." | "+" | %x0
         // according to https://rfc.zeromq.org/spec:23/ZMTP/
-        let mechanism = unsafe { String::from_utf8_unchecked(mech.to_vec()) };
-        match mechanism.as_str() {
-            "NULL" => Ok(ZmqMechanism::NULL),
-            "PLAIN" => Ok(ZmqMechanism::PLAIN),
-            "CURVE" => Ok(ZmqMechanism::CURVE),
+        match mech {
+            b"NULL" => Ok(ZmqMechanism::NULL),
+            b"PLAIN" => Ok(ZmqMechanism::PLAIN),
+            b"CURVE" => Ok(ZmqMechanism::CURVE),
             _ => Err(CodecError::Mechanism("Failed to parse ZmqMechanism")),
         }
     }

@@ -13,6 +13,15 @@ pub enum Transport {
     Ipc,
 }
 
+impl Transport {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Transport::Tcp => "tcp",
+            Transport::Ipc => "ipc",
+        }
+    }
+}
+
 impl FromStr for Transport {
     type Err = EndpointError;
 
@@ -25,6 +34,7 @@ impl FromStr for Transport {
         Ok(result)
     }
 }
+
 impl TryFrom<&str> for Transport {
     type Error = EndpointError;
 
@@ -35,10 +45,6 @@ impl TryFrom<&str> for Transport {
 
 impl fmt::Display for Transport {
     fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
-        let s = match self {
-            Transport::Tcp => "tcp",
-            Transport::Ipc => "ipc",
-        };
-        write!(f, "{}", s)
+        f.write_str(self.as_str())
     }
 }

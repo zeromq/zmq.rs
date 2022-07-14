@@ -72,6 +72,25 @@ pub enum SocketType {
     STREAM = 11,
 }
 
+impl SocketType {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            SocketType::PAIR => "PAIR",
+            SocketType::PUB => "PUB",
+            SocketType::SUB => "SUB",
+            SocketType::REQ => "REQ",
+            SocketType::REP => "REP",
+            SocketType::DEALER => "DEALER",
+            SocketType::ROUTER => "ROUTER",
+            SocketType::PULL => "PULL",
+            SocketType::PUSH => "PUSH",
+            SocketType::XPUB => "XPUB",
+            SocketType::XSUB => "XSUB",
+            SocketType::STREAM => "STREAM",
+        }
+    }
+}
+
 impl TryFrom<&str> for SocketType {
     type Error = ZmqError;
 
@@ -96,20 +115,7 @@ impl TryFrom<&str> for SocketType {
 
 impl Display for SocketType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SocketType::PAIR => write!(f, "PAIR"),
-            SocketType::PUB => write!(f, "PUB"),
-            SocketType::SUB => write!(f, "SUB"),
-            SocketType::REQ => write!(f, "REQ"),
-            SocketType::REP => write!(f, "REP"),
-            SocketType::DEALER => write!(f, "DEALER"),
-            SocketType::ROUTER => write!(f, "ROUTER"),
-            SocketType::PULL => write!(f, "PULL"),
-            SocketType::PUSH => write!(f, "PUSH"),
-            SocketType::XPUB => write!(f, "XPUB"),
-            SocketType::XSUB => write!(f, "XSUB"),
-            SocketType::STREAM => write!(f, "STREAM"),
-        }
+        f.write_str(self.as_str())
     }
 }
 

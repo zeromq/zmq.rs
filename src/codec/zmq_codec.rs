@@ -28,7 +28,7 @@ pub struct ZmqCodec {
     state: DecoderState,
     waiting_for: usize, // Number of bytes needed to decode frame
     // Needed to store incoming multipart message
-    // This allows to incapsulate it's processing inside codec and not expose
+    // This allows to encapsulate its processing inside codec and not expose
     // internal details to higher levels
     buffered_message: Option<ZmqMessage>,
 }
@@ -37,7 +37,7 @@ impl ZmqCodec {
     pub fn new() -> Self {
         Self {
             state: DecoderState::Greeting,
-            waiting_for: 64, // len of the greeting frame,
+            waiting_for: 64, // len of the greeting frame
             buffered_message: None,
         }
     }
@@ -95,7 +95,7 @@ impl Decoder for ZmqCodec {
                 self.state = DecoderState::FrameHeader;
                 self.waiting_for = 1;
                 if frame.command {
-                    return Ok(Some(Message::Command(ZmqCommand::try_from(data)?)));
+                    return Ok(Some(Message::Command(ZmqCommand::try_from(data.freeze())?)));
                 }
 
                 // process incoming message frame
