@@ -21,6 +21,7 @@ async fn setup(endpoint: &str) -> (ReqSocket, RepSocket) {
     (req_socket, rep_socket)
 }
 
+#[allow(clippy::let_unit_value)]
 fn criterion_benchmark(c: &mut Criterion) {
     #[cfg(feature = "tokio-runtime")]
     type Runtime = tokio::runtime::Runtime;

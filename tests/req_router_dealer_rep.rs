@@ -44,7 +44,7 @@ async fn test_req_router_dealer_rep_sockets() -> Result<(), Box<dyn Error>> {
             .unwrap();
     });
 
-    let _ = helpers::run_proxy(router_socket, dealer_socket, 100).await;
+    helpers::run_proxy(router_socket, dealer_socket, 100).await;
 
     req_task.await.unwrap();
 
@@ -97,7 +97,7 @@ async fn test_many_req_router_dealer_rep_sockets() -> Result<(), Box<dyn Error>>
         req_tasks.push(req_task);
     }
 
-    let _ = helpers::run_proxy(router_socket, dealer_socket, 5000).await;
+    helpers::run_proxy(router_socket, dealer_socket, 5000).await;
 
     for req_task in req_tasks {
         req_task.await.unwrap();
