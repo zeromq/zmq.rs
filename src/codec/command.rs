@@ -4,6 +4,7 @@ use crate::SocketType;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::fmt::Display;
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Copy, Clone)]
@@ -11,11 +12,17 @@ pub enum ZmqCommandName {
     READY,
 }
 
-impl From<ZmqCommandName> for String {
-    fn from(c_name: ZmqCommandName) -> Self {
-        match c_name {
-            ZmqCommandName::READY => "READY".into(),
+impl ZmqCommandName {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            ZmqCommandName::READY => "READY",
         }
+    }
+}
+
+impl Display for ZmqCommandName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -28,7 +35,7 @@ pub struct ZmqCommand {
 impl ZmqCommand {
     pub fn ready(socket: SocketType) -> Self {
         let mut properties = HashMap::new();
-        properties.insert("Socket-Type".into(), format!("{}", socket).into());
+        properties.insert("Socket-Type".into(), socket.as_str().into());
         Self {
             name: ZmqCommandName::READY,
             properties,
@@ -46,27 +53,29 @@ impl ZmqCommand {
     }
 }
 
-impl TryFrom<BytesMut> for ZmqCommand {
+impl TryFrom<Bytes> for ZmqCommand {
     type Error = CodecError;
 
-    fn try_from(mut buf: BytesMut) -> Result<Self, Self::Error> {
+    fn try_from(mut buf: Bytes) -> Result<Self, Self::Error> {
         let command_len = buf.get_u8() as usize;
         // command-name-char = ALPHA according to https://rfc.zeromq.org/spec:23/ZMTP/
-        let command_name =
-            unsafe { String::from_utf8_unchecked(buf.split_to(command_len).to_vec()) };
-        let command = match command_name.as_str() {
-            "READY" => ZmqCommandName::READY,
-            _ => return Err(CodecError::Command("Uknown command received")),
+        let command = match &buf[..command_len] {
+            b"READY" => ZmqCommandName::READY,
+            _ => return Err(CodecError::Command("Unknown command received")),
         };
+        buf.advance(command_len);
         let mut properties = HashMap::new();
 
         while !buf.is_empty() {
             // Collect command properties
             let prop_len = buf.get_u8() as usize;
-            let property = unsafe { String::from_utf8_unchecked(buf.split_to(prop_len).to_vec()) };
+            let property = match String::from_utf8(buf.split_to(prop_len).to_vec()) {
+                Ok(p) => p,
+                Err(_) => return Err(CodecError::Decode("Invalid property identifier")),
+            };
 
             let prop_val_len = buf.get_u32() as usize;
-            let prop_value = buf.split_to(prop_val_len).freeze();
+            let prop_value = buf.split_to(prop_val_len);
             properties.insert(property, prop_value);
         }
         Ok(Self {
@@ -80,7 +89,7 @@ impl From<ZmqCommand> for BytesMut {
     fn from(command: ZmqCommand) -> Self {
         let mut message_len = 0;
 
-        let command_name: String = command.name.into();
+        let command_name = command.name.as_str();
         message_len += command_name.len() + 1;
         for (prop, val) in command.properties.iter() {
             message_len += prop.len() + 1;
