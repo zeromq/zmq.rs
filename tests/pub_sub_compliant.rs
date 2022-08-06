@@ -33,7 +33,10 @@ async fn setup_our_subs(bind_endpoint: &str, n_subs: u8) -> Vec<zeromq::SubSocke
     our_subs
 }
 
-fn run_their_pub(their_pub: zmq2::Socket, num_to_send: u32) -> std::thread::JoinHandle<zmq2::Socket> {
+fn run_their_pub(
+    their_pub: zmq2::Socket,
+    num_to_send: u32,
+) -> std::thread::JoinHandle<zmq2::Socket> {
     assert_eq!(their_pub.get_socket_type().unwrap(), zmq2::PUB);
     std::thread::spawn(move || {
         for i in 0..num_to_send {
