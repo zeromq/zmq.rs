@@ -7,9 +7,9 @@ use zeromq::prelude::*;
 use zeromq::ZmqMessage;
 
 /// Returns (socket, bound_endpoint, monitor)
-fn setup_their_rep(bind_endpoint: &str) -> (zmq::Socket, String, zmq::Socket) {
-    let ctx = zmq::Context::new();
-    let their_rep = ctx.socket(zmq::REP).expect("Couldn't make rep socket");
+fn setup_their_rep(bind_endpoint: &str) -> (zmq2::Socket, String, zmq2::Socket) {
+    let ctx = zmq2::Context::new();
+    let their_rep = ctx.socket(zmq2::REP).expect("Couldn't make rep socket");
     their_rep.bind(bind_endpoint).expect("Failed to bind");
 
     let resolved_bind = their_rep.get_last_endpoint().unwrap().unwrap();
@@ -28,8 +28,8 @@ async fn setup_our_req(bind_endpoint: &str) -> zeromq::ReqSocket {
     our_req
 }
 
-fn run_their_rep(their_rep: zmq::Socket, num_req: u32) -> std::thread::JoinHandle<zmq::Socket> {
-    assert_eq!(their_rep.get_socket_type().unwrap(), zmq::REP);
+fn run_their_rep(their_rep: zmq2::Socket, num_req: u32) -> std::thread::JoinHandle<zmq2::Socket> {
+    assert_eq!(their_rep.get_socket_type().unwrap(), zmq2::REP);
     std::thread::spawn(move || {
         for i in 0..num_req {
             let request = their_rep.recv_msg(0).expect("Failed to recv");
@@ -63,11 +63,11 @@ async fn test_their_rep_our_req() {
 
     let mut our_req = setup_our_req(&bind_endpoint).await;
     assert_eq!(
-        zmq::SocketEvent::ACCEPTED,
+        zmq2::SocketEvent::ACCEPTED,
         get_monitor_event(&their_monitor).0
     );
     assert_eq!(
-        zmq::SocketEvent::HANDSHAKE_SUCCEEDED,
+        zmq2::SocketEvent::HANDSHAKE_SUCCEEDED,
         get_monitor_event(&their_monitor).0
     );
     println!("Setup done");
