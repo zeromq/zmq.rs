@@ -6,9 +6,9 @@ use zeromq::prelude::*;
 
 use std::time::Duration;
 
-fn setup_their_pub(bind_endpoint: &str) -> (zmq::Socket, String, zmq::Socket) {
-    let ctx = zmq::Context::new();
-    let their_pub = ctx.socket(zmq::PUB).expect("Couldn't make pub socket");
+fn setup_their_pub(bind_endpoint: &str) -> (zmq2::Socket, String, zmq2::Socket) {
+    let ctx = zmq2::Context::new();
+    let their_pub = ctx.socket(zmq2::PUB).expect("Couldn't make pub socket");
     their_pub.set_ipv6(true).expect("Failed to enable IPV6"); // IPV6 off by default
     their_pub.bind(bind_endpoint).expect("Failed to bind");
 
@@ -33,8 +33,11 @@ async fn setup_our_subs(bind_endpoint: &str, n_subs: u8) -> Vec<zeromq::SubSocke
     our_subs
 }
 
-fn run_their_pub(their_pub: zmq::Socket, num_to_send: u32) -> std::thread::JoinHandle<zmq::Socket> {
-    assert_eq!(their_pub.get_socket_type().unwrap(), zmq::PUB);
+fn run_their_pub(
+    their_pub: zmq2::Socket,
+    num_to_send: u32,
+) -> std::thread::JoinHandle<zmq2::Socket> {
+    assert_eq!(their_pub.get_socket_type().unwrap(), zmq2::PUB);
     std::thread::spawn(move || {
         for i in 0..num_to_send {
             their_pub
@@ -73,11 +76,11 @@ async fn test_their_pub_our_sub() {
         let our_subs = setup_our_subs(&bind_endpoint, N_SUBS).await;
         for _ in 0..N_SUBS {
             assert_eq!(
-                zmq::SocketEvent::ACCEPTED,
+                zmq2::SocketEvent::ACCEPTED,
                 get_monitor_event(&their_monitor).0
             );
             assert_eq!(
-                zmq::SocketEvent::HANDSHAKE_SUCCEEDED,
+                zmq2::SocketEvent::HANDSHAKE_SUCCEEDED,
                 get_monitor_event(&their_monitor).0
             );
         }
@@ -96,14 +99,14 @@ async fn test_their_pub_our_sub() {
         for _ in 0..N_SUBS {
             assert_eq!(
                 get_monitor_event(&their_monitor).0,
-                zmq::SocketEvent::DISCONNECTED
+                zmq2::SocketEvent::DISCONNECTED
             );
         }
 
         drop(their_pub);
         assert_eq!(
             get_monitor_event(&their_monitor).0,
-            zmq::SocketEvent::CLOSED
+            zmq2::SocketEvent::CLOSED
         );
     }
 
