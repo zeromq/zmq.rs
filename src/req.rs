@@ -8,7 +8,7 @@ use crate::{SocketType, ZmqResult};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use crossbeam::queue::SegQueue;
+use crossbeam_queue::SegQueue;
 use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
@@ -49,8 +49,8 @@ impl SocketSend for ReqSocket {
         // we don't have a matching peer in peers map
         loop {
             let next_peer_id = match self.backend.round_robin.pop() {
-                Ok(peer) => peer,
-                Err(_) => {
+                Some(peer) => peer,
+                None => {
                     return Err(ZmqError::ReturnToSender {
                         reason: "Not connected to peers. Unable to send messages",
                         message,
