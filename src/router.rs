@@ -82,7 +82,7 @@ impl SocketRecv for RouterSocket {
 impl SocketSend for RouterSocket {
     async fn send(&mut self, mut message: ZmqMessage) -> ZmqResult<()> {
         assert!(message.len() > 1);
-        let peer_id: PeerIdentity = message.pop_front().unwrap().to_vec().try_into()?;
+        let peer_id: PeerIdentity = message.pop_front().unwrap().try_into()?;
         match self.backend.peers.get_mut(&peer_id) {
             Some(mut peer) => {
                 peer.send_queue.send(Message::Message(message)).await?;
