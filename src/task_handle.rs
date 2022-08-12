@@ -1,6 +1,7 @@
 use crate::async_rt;
 use crate::error::{ZmqError, ZmqResult};
 
+use futures_channel::oneshot;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -25,13 +26,13 @@ impl From<async_rt::task::JoinError> for TaskError {
 
 pub struct TaskHandle<T> {
     // Using options to allow us to move resource without consuming `self`
-    stop_channel: futures::channel::oneshot::Sender<()>,
+    stop_channel: oneshot::Sender<()>,
     join_handle: async_rt::task::JoinHandle<ZmqResult<T>>,
 }
 impl<T> TaskHandle<T> {
     #[allow(unused)]
     pub(crate) fn new(
-        stop_channel: futures::channel::oneshot::Sender<()>,
+        stop_channel: oneshot::Sender<()>,
         join_handle: async_rt::task::JoinHandle<ZmqResult<T>>,
     ) -> Self {
         Self {

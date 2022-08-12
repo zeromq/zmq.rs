@@ -1,8 +1,8 @@
 mod join_handle;
 
-use std::any::Any;
-
 pub use join_handle::JoinHandle;
+
+use std::any::Any;
 use std::future::Future;
 
 pub fn spawn<T>(task: T) -> JoinHandle<T::Output>

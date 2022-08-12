@@ -1,9 +1,3 @@
-use async_trait::async_trait;
-use futures::stream::StreamExt;
-use std::collections::HashMap;
-use std::convert::TryInto;
-use std::sync::Arc;
-
 use crate::backend::GenericSocketBackend;
 use crate::codec::*;
 use crate::endpoint::Endpoint;
@@ -14,8 +8,14 @@ use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{MultiPeerBackend, SocketEvent, SocketOptions, SocketRecv, SocketSend, SocketType};
 use crate::{Socket, SocketBackend};
-use futures::channel::mpsc;
-use futures::SinkExt;
+
+use async_trait::async_trait;
+use futures_channel::mpsc;
+use futures_util::{SinkExt, StreamExt};
+
+use std::collections::HashMap;
+use std::convert::TryInto;
+use std::sync::Arc;
 
 pub struct RouterSocket {
     backend: Arc<GenericSocketBackend>,

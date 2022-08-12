@@ -2,17 +2,17 @@ mod error;
 mod host;
 mod transport;
 
-pub use host::Host;
-pub use transport::Transport;
-
 use once_cell::sync::Lazy;
 use regex::Regex;
+
 use std::fmt;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 
 pub use error::EndpointError;
+pub use host::Host;
+pub use transport::Transport;
 
 pub type Port = u16;
 

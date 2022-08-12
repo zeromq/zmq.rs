@@ -3,11 +3,11 @@ use async_std::task as rt_task;
 #[cfg(feature = "tokio-runtime")]
 use tokio::task as rt_task;
 
+use super::JoinError;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-
-use super::JoinError;
 
 pub struct JoinHandle<T>(rt_task::JoinHandle<T>);
 impl<T> Future for JoinHandle<T> {

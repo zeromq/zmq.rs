@@ -16,9 +16,12 @@ pub(crate) use zmq_codec::ZmqCodec;
 
 use crate::message::ZmqMessage;
 use crate::{ZmqError, ZmqResult};
-use futures::task::Poll;
-use futures::Sink;
+
+use futures_task::noop_waker;
+use futures_util::Sink;
+
 use std::pin::Pin;
+use std::task::{Context, Poll};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -33,8 +36,8 @@ pub(crate) trait TrySend {
 
 impl TrySend for ZmqFramedWrite {
     fn try_send(mut self: Pin<&mut Self>, item: Message) -> ZmqResult<()> {
-        let waker = futures::task::noop_waker();
-        let mut cx = futures::task::Context::from_waker(&waker);
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
         match self.as_mut().poll_ready(&mut cx) {
             Poll::Ready(Ok(())) => {
                 self.as_mut().start_send(item)?;

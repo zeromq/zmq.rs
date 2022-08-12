@@ -3,7 +3,7 @@ mod helpers;
 use zeromq::__async_rt as async_rt;
 use zeromq::prelude::*;
 
-use futures::StreamExt;
+use futures_util::StreamExt;
 use std::error::Error;
 use std::time::Duration;
 

@@ -1,10 +1,10 @@
+use super::EndpointError;
+use crate::ZmqError;
+
 use std::convert::TryFrom;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
-
-use super::EndpointError;
-use crate::ZmqError;
 
 /// Represents a host address. Does not include the port, and may be either an
 /// ip address or a domain name

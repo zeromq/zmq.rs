@@ -28,6 +28,7 @@ pub mod __async_rt {
 pub use crate::dealer::*;
 pub use crate::endpoint::{Endpoint, Host, Transport, TryIntoEndpoint};
 pub use crate::error::{ZmqError, ZmqResult};
+pub use crate::message::*;
 pub use crate::pull::*;
 pub use crate::push::*;
 pub use crate::r#pub::*;
@@ -35,7 +36,6 @@ pub use crate::rep::*;
 pub use crate::req::*;
 pub use crate::router::*;
 pub use crate::sub::*;
-pub use message::*;
 
 use crate::codec::*;
 use crate::transport::AcceptStopHandle;
@@ -46,10 +46,11 @@ extern crate enum_primitive_derive;
 
 use async_trait::async_trait;
 use asynchronous_codec::FramedWrite;
-use futures::channel::mpsc;
-use futures::FutureExt;
+use futures_channel::mpsc;
+use futures_util::{select, FutureExt};
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
+
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
@@ -321,7 +322,7 @@ pub async fn proxy<Frontend: SocketSend + SocketRecv, Backend: SocketSend + Sock
     mut capture: Option<Box<dyn CaptureSocket>>,
 ) -> ZmqResult<()> {
     loop {
-        futures::select! {
+        select! {
             frontend_mess = frontend.recv().fuse() => {
                 match frontend_mess {
                     Ok(message) => {

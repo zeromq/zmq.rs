@@ -1,8 +1,8 @@
+use super::EndpointError;
+
 use std::convert::TryFrom;
 use std::fmt;
 use std::str::FromStr;
-
-use super::EndpointError;
 
 /// The type of transport used by a given endpoint
 #[derive(Debug, Clone, Hash, Copy, PartialEq, Eq)]

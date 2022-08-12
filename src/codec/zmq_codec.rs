@@ -6,6 +6,7 @@ use crate::ZmqMessage;
 
 use asynchronous_codec::{Decoder, Encoder};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+
 use std::convert::TryFrom;
 
 #[derive(Debug, Clone, Copy)]

@@ -1,23 +1,24 @@
-use crate::codec::*;
+use crate::backend::Peer;
+use crate::codec::{FramedIo, Message, ZmqFramedRead};
 use crate::endpoint::Endpoint;
 use crate::error::ZmqResult;
-use crate::message::*;
+use crate::fair_queue::FairQueue;
+use crate::fair_queue::QueueInner;
+use crate::message::ZmqMessage;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
     MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketOptions, SocketRecv, SocketType,
 };
 
-use crate::backend::Peer;
-use crate::fair_queue::FairQueue;
-use crate::fair_queue::QueueInner;
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use crossbeam_queue::SegQueue;
 use dashmap::DashMap;
-use futures::channel::mpsc;
-use futures::{SinkExt, StreamExt};
+use futures_channel::mpsc;
+use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 

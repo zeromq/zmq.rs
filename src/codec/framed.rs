@@ -1,11 +1,13 @@
 use crate::codec::ZmqCodec;
+
 use asynchronous_codec::{FramedRead, FramedWrite};
+use futures_io::{AsyncRead, AsyncWrite};
 
 // Enables us to have multiple bounds on the dyn trait in `InnerFramed`
-pub trait FrameableRead: futures::AsyncRead + Unpin + Send + Sync {}
-impl<T> FrameableRead for T where T: futures::AsyncRead + Unpin + Send + Sync {}
-pub trait FrameableWrite: futures::AsyncWrite + Unpin + Send + Sync {}
-impl<T> FrameableWrite for T where T: futures::AsyncWrite + Unpin + Send + Sync {}
+pub trait FrameableRead: AsyncRead + Unpin + Send + Sync {}
+impl<T> FrameableRead for T where T: AsyncRead + Unpin + Send + Sync {}
+pub trait FrameableWrite: AsyncWrite + Unpin + Send + Sync {}
+impl<T> FrameableWrite for T where T: AsyncWrite + Unpin + Send + Sync {}
 
 pub(crate) type ZmqFramedRead = asynchronous_codec::FramedRead<Box<dyn FrameableRead>, ZmqCodec>;
 pub(crate) type ZmqFramedWrite = asynchronous_codec::FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>;

@@ -12,7 +12,7 @@ use crate::endpoint::{Endpoint, Host, Port};
 use crate::task_handle::TaskHandle;
 use crate::ZmqResult;
 
-use futures::{select, FutureExt};
+use futures_util::{select, FutureExt};
 
 pub(crate) async fn connect(host: &Host, port: Port) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = TcpStream::connect((host.to_string().as_str(), port)).await?;
@@ -35,21 +35,27 @@ where
 {
     let listener = TcpListener::bind((host.to_string().as_str(), port)).await?;
     let resolved_addr = listener.local_addr()?;
-    let (stop_channel, stop_callback) = futures::channel::oneshot::channel::<()>();
+    let (stop_channel, stop_callback) = futures_channel::oneshot::channel::<()>();
     let task_handle = async_rt::task::spawn(async move {
         let mut stop_callback = stop_callback.fuse();
         loop {
             select! {
                 incoming = listener.accept().fuse() => {
-                    let maybe_accepted: Result<_, _> = incoming.and_then(|(raw_socket, remote_addr)|{
-                        raw_socket.set_nodelay(true).map(|_| {
-                            (raw_socket, remote_addr)
+                    let maybe_accepted: Result<_, _> = incoming
+                        .and_then(|(raw_socket, remote_addr)| {
+                            raw_socket
+                                .set_nodelay(true)
+                                .map(|_| (raw_socket, remote_addr))
                         })
-                    }).map(|(raw_socket, remote_addr)| {
-                        (make_framed(raw_socket), Endpoint::from_tcp_addr(remote_addr))
-                    }).map_err(|err| err.into());
+                        .map(|(raw_socket, remote_addr)| {
+                            (
+                                make_framed(raw_socket),
+                                Endpoint::from_tcp_addr(remote_addr),
+                            )
+                        })
+                        .map_err(|err| err.into());
                     async_rt::task::spawn(cback(maybe_accepted));
-                },
+                }
                 _ = stop_callback => {
                     break
                 }
