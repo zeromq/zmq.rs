@@ -25,8 +25,6 @@ rand = "0.8"
 bytes = "1"
 tokio = { version = "1", features = ["full"], optional = true }
 tokio-util = { version = "0.6", features = ["compat"], optional = true }
-num-traits = "0.2"
-enum-primitive-derive = "0.2"
 dashmap = "3.11"
 crossbeam = "0.7"
 uuid = { version = "0.8", features = ["v4"] }
