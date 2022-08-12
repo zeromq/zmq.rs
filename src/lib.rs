@@ -56,7 +56,7 @@ use std::fmt::{Debug, Display};
 use std::sync::Arc;
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Copy, Debug, PartialEq, Primitive)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Primitive)]
 pub enum SocketType {
     PAIR = 0,
     PUB = 1,
