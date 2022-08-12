@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Start sending loop");
     loop {
         for stock in &stocks {
-            let price: u32 = rng.gen_range(1, 100);
+            let price: u32 = rng.gen_range(1..100);
             let mut m: ZmqMessage = ZmqMessage::from(*stock);
             m.push_back(price.to_ne_bytes().to_vec().into());
             dbg!(m.clone());
