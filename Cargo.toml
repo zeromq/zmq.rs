@@ -21,7 +21,7 @@ futures = "0.3"
 futures-util = "0.3"
 async-trait = "0.1"
 parking_lot = "0.11"
-rand = "0.7"
+rand = "0.8"
 bytes = "1"
 tokio = { version = "1", features = ["full"], optional = true }
 tokio-util = { version = "0.6", features = ["compat"], optional = true }
@@ -40,7 +40,7 @@ async-std = { version = "1", features = ["attributes"], optional = true }
 chrono = "0.4"
 criterion = "0.3"
 pretty_env_logger = "0.4"
-zmq2= "0.5.0"
+zmq2 = "0.5.0"
 hex = "0.4.3"
 
 
