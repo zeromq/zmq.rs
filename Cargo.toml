@@ -31,7 +31,7 @@ dashmap = "3.11"
 crossbeam = "0.7"
 uuid = { version = "0.8", features = ["v4"] }
 regex = "1"
-lazy_static = "1"
+once_cell = "1"
 log = "0.4"
 asynchronous-codec = "0.6"
 async-std = { version = "1", features = ["attributes"], optional = true }

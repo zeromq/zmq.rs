@@ -5,7 +5,7 @@ mod transport;
 pub use host::Host;
 pub use transport::Transport;
 
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use std::fmt;
 use std::net::SocketAddr;
@@ -15,6 +15,9 @@ use std::str::FromStr;
 pub use error::EndpointError;
 
 pub type Port = u16;
+
+static TRANSPORT_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^([[:lower:]]+)://(.+)$").unwrap());
+static HOST_PORT_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(.+):(\d+)$").unwrap());
 
 /// Represents a ZMQ Endpoint.
 ///
@@ -58,11 +61,6 @@ impl FromStr for Endpoint {
     type Err = EndpointError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        lazy_static! {
-            static ref TRANSPORT_REGEX: Regex = Regex::new(r"^([[:lower:]]+)://(.+)$").unwrap();
-            static ref HOST_PORT_REGEX: Regex = Regex::new(r"^(.+):(\d+)$").unwrap();
-        }
-
         let caps = TRANSPORT_REGEX
             .captures(s)
             .ok_or(EndpointError::Syntax("Could not parse transport"))?;
@@ -149,21 +147,20 @@ mod private {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lazy_static::lazy_static;
 
-    lazy_static! {
-        static ref PAIRS: Vec<(Endpoint, &'static str)> = vec![
+    static PAIRS: Lazy<Vec<(Endpoint, &'static str)>> = Lazy::new(|| {
+        vec![
             (
                 Endpoint::Ipc(Some(PathBuf::from("/tmp/asdf"))),
-                "ipc:///tmp/asdf"
+                "ipc:///tmp/asdf",
             ),
             (
                 Endpoint::Ipc(Some(PathBuf::from("my/dir_1/dir-2"))),
-                "ipc://my/dir_1/dir-2"
+                "ipc://my/dir_1/dir-2",
             ),
             (
                 Endpoint::Ipc(Some(PathBuf::from("@abstract/namespace"))),
-                "ipc://@abstract/namespace"
+                "ipc://@abstract/namespace",
             ),
             (
                 Endpoint::Tcp(Host::Domain("www.example.com".to_string()), 1234),
@@ -183,22 +180,22 @@ mod tests {
             ),
             (
                 Endpoint::Tcp(Host::Domain("i❤.ws".to_string()), 80),
-                "tcp://i❤.ws:80"
+                "tcp://i❤.ws:80",
             ),
             (
                 Endpoint::Tcp(Host::Domain("xn--i-7iq.ws".to_string()), 80),
-                "tcp://xn--i-7iq.ws:80"
+                "tcp://xn--i-7iq.ws:80",
             ),
             (
                 Endpoint::Tcp(Host::Ipv4("127.0.0.1".parse().unwrap()), 65535),
-                "tcp://127.0.0.1:65535"
+                "tcp://127.0.0.1:65535",
             ),
             (
                 Endpoint::Tcp(Host::Ipv4("127.0.0.1".parse().unwrap()), 0),
-                "tcp://127.0.0.1:0"
-            )
-        ];
-    }
+                "tcp://127.0.0.1:0",
+            ),
+        ]
+    });
 
     #[test]
     fn test_endpoint_display() {
