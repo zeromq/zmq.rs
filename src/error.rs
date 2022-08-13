@@ -42,6 +42,8 @@ pub enum ZmqError {
     Other(&'static str),
     #[error("No message received")]
     NoMessage,
+    #[error("Invalid peer identity: must be less than 256 bytes in length")]
+    PeerIdentity,
     #[error("Unsupported ZMTP version")]
     UnsupportedVersion(ZmtpVersion),
 }

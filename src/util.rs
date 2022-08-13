@@ -7,17 +7,36 @@ use futures::stream::StreamExt;
 use futures::SinkExt;
 use num_traits::Pow;
 use rand::Rng;
+
 use std::convert::{TryFrom, TryInto};
+use std::ops::Deref;
+use std::str::FromStr;
 use std::sync::Arc;
 use uuid::Uuid;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Clone)]
-pub struct PeerIdentity(Vec<u8>);
+pub struct PeerIdentity(Bytes);
 
 impl PeerIdentity {
+    pub const MAX_LENGTH: usize = 255;
+
     pub fn new() -> Self {
         let id = Uuid::new_v4();
-        Self(id.as_bytes().to_vec())
+        Self(Bytes::copy_from_slice(id.as_bytes()))
+    }
+}
+
+impl AsRef<[u8]> for PeerIdentity {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl Deref for PeerIdentity {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        self.0.as_ref()
     }
 }
 
@@ -27,31 +46,53 @@ impl Default for PeerIdentity {
     }
 }
 
-impl TryFrom<Vec<u8>> for PeerIdentity {
+impl FromStr for PeerIdentity {
+    type Err = ZmqError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_from(s.as_bytes())
+    }
+}
+
+impl TryFrom<Bytes> for PeerIdentity {
     type Error = ZmqError;
 
-    fn try_from(data: Vec<u8>) -> Result<Self, ZmqError> {
+    fn try_from(data: Bytes) -> Result<Self, ZmqError> {
         if data.is_empty() {
-            Ok(PeerIdentity::new())
-        } else if data.len() > 255 {
-            Err(ZmqError::Other(
-                "ZMQ_IDENTITY should not be more than 255 bytes long",
-            ))
+            Ok(Self::new())
+        } else if data.len() > Self::MAX_LENGTH {
+            Err(ZmqError::PeerIdentity)
         } else {
             Ok(Self(data))
         }
     }
 }
 
-impl From<PeerIdentity> for Vec<u8> {
-    fn from(p_id: PeerIdentity) -> Self {
-        p_id.0
+impl TryFrom<&[u8]> for PeerIdentity {
+    type Error = ZmqError;
+
+    fn try_from(data: &[u8]) -> Result<Self, ZmqError> {
+        Self::try_from(Bytes::copy_from_slice(data))
+    }
+}
+
+impl TryFrom<Vec<u8>> for PeerIdentity {
+    type Error = ZmqError;
+
+    fn try_from(data: Vec<u8>) -> Result<Self, ZmqError> {
+        Self::try_from(Bytes::from(data))
     }
 }
 
 impl From<PeerIdentity> for Bytes {
     fn from(p_id: PeerIdentity) -> Self {
-        Bytes::from(p_id.0)
+        p_id.0
+    }
+}
+
+impl From<PeerIdentity> for Vec<u8> {
+    fn from(p_id: PeerIdentity) -> Self {
+        p_id.0.to_vec()
     }
 }
 
@@ -160,9 +201,9 @@ pub(crate) async fn ready_exchange(
                 let peer_id = command
                     .properties
                     .get("Identity")
-                    .map_or_else(PeerIdentity::new, |x| {
-                        Vec::from(x.as_ref()).try_into().unwrap()
-                    });
+                    .map(|x| x.clone().try_into())
+                    .transpose()?
+                    .unwrap_or_default();
 
                 if sockets_compatible(socket_type, other_sock_type) {
                     Ok(peer_id)
