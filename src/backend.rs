@@ -5,7 +5,7 @@ use crate::{
     MultiPeerBackend, SocketBackend, SocketEvent, SocketOptions, SocketType, ZmqError, ZmqResult,
 };
 use async_trait::async_trait;
-use crossbeam::queue::SegQueue;
+use crossbeam_queue::SegQueue;
 use dashmap::DashMap;
 use futures::channel::mpsc;
 use futures::SinkExt;
@@ -49,8 +49,8 @@ impl GenericSocketBackend {
         // we don't have a matching peer in peers map
         loop {
             let next_peer_id = match self.round_robin.pop() {
-                Ok(peer) => peer,
-                Err(_) => match message {
+                Some(peer) => peer,
+                None => match message {
                     Message::Greeting(_) => panic!("Sending greeting is not supported"),
                     Message::Command(_) => panic!("Sending commands is not supported"),
                     Message::Message(m) => {
