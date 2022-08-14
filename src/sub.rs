@@ -13,7 +13,7 @@ use crate::fair_queue::FairQueue;
 use crate::fair_queue::QueueInner;
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
-use crossbeam::queue::SegQueue;
+use crossbeam_queue::SegQueue;
 use dashmap::DashMap;
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
