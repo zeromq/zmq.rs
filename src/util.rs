@@ -247,7 +247,7 @@ pub(crate) async fn connect_forever(endpoint: Endpoint) -> ZmqResult<(FramedIo, 
                 }
                 let delay = {
                     let mut rng = rand::thread_rng();
-                    std::f64::consts::E.pow(try_num as f64 / 3.0) + rng.gen_range(0.0f64, 0.1f64)
+                    std::f64::consts::E.pow(try_num as f64 / 3.0) + rng.gen_range(0.0f64..0.1f64)
                 };
                 async_rt::task::sleep(std::time::Duration::from_secs_f64(delay)).await;
                 continue;
