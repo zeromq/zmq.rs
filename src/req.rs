@@ -84,7 +84,8 @@ impl SocketRecv for ReqSocket {
                             assert!(m.pop_front().unwrap().is_empty()); // Ensure that we have delimeter as first part
                             Ok(m)
                         }
-                        Some(_) => todo!(),
+                        Some(Ok(_)) => todo!(),
+                        Some(Err(error)) => Err(error.into()),
                         None => Err(ZmqError::NoMessage),
                     }
                 } else {
