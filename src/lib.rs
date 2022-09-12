@@ -41,22 +41,36 @@ use crate::codec::*;
 use crate::transport::AcceptStopHandle;
 use util::PeerIdentity;
 
-#[macro_use]
-extern crate enum_primitive_derive;
-
 use async_trait::async_trait;
 use asynchronous_codec::FramedWrite;
 use futures::channel::mpsc;
 use futures::FutureExt;
-use num_traits::ToPrimitive;
 use parking_lot::Mutex;
+
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
+use std::str::FromStr;
 use std::sync::Arc;
 
+const COMPATIBILITY_MATRIX: [u8; 121] = [
+    // PAIR, PUB, SUB, REQ, REP, DEALER, ROUTER, PULL, PUSH, XPUB, XSUB
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // PAIR
+    0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, // PUB
+    0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, // SUB
+    0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, // REQ
+    0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, // REP
+    0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, // DEALER
+    0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, // ROUTER
+    0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, // PULL
+    0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, // PUSH
+    0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, // XPUB
+    0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, // XSUB
+];
+
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Primitive)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr(usize)]
 pub enum SocketType {
     PAIR = 0,
     PUB = 1,
@@ -89,25 +103,48 @@ impl SocketType {
             SocketType::STREAM => "STREAM",
         }
     }
+
+    /// Checks if two sockets are compatible with each other
+    /// ```
+    /// use zeromq::SocketType;
+    /// assert!(SocketType::PUB.compatible(SocketType::SUB));
+    /// assert!(SocketType::REQ.compatible(SocketType::REP));
+    /// assert!(SocketType::DEALER.compatible(SocketType::ROUTER));
+    /// assert!(!SocketType::PUB.compatible(SocketType::REP));
+    /// ```
+    pub fn compatible(&self, other: SocketType) -> bool {
+        let row_index = *self as usize;
+        let col_index = other as usize;
+        COMPATIBILITY_MATRIX[row_index * 11 + col_index] != 0
+    }
 }
 
-impl TryFrom<&str> for SocketType {
+impl FromStr for SocketType {
+    type Err = ZmqError;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, ZmqError> {
+        Self::try_from(s.as_bytes())
+    }
+}
+
+impl TryFrom<&[u8]> for SocketType {
     type Error = ZmqError;
 
-    fn try_from(s: &str) -> Result<Self, ZmqError> {
+    fn try_from(s: &[u8]) -> Result<Self, ZmqError> {
         Ok(match s {
-            "PAIR" => SocketType::PAIR,
-            "PUB" => SocketType::PUB,
-            "SUB" => SocketType::SUB,
-            "REQ" => SocketType::REQ,
-            "REP" => SocketType::REP,
-            "DEALER" => SocketType::DEALER,
-            "ROUTER" => SocketType::ROUTER,
-            "PULL" => SocketType::PULL,
-            "PUSH" => SocketType::PUSH,
-            "XPUB" => SocketType::XPUB,
-            "XSUB" => SocketType::XSUB,
-            "STREAM" => SocketType::STREAM,
+            b"PAIR" => SocketType::PAIR,
+            b"PUB" => SocketType::PUB,
+            b"SUB" => SocketType::SUB,
+            b"REQ" => SocketType::REQ,
+            b"REP" => SocketType::REP,
+            b"DEALER" => SocketType::DEALER,
+            b"ROUTER" => SocketType::ROUTER,
+            b"PULL" => SocketType::PULL,
+            b"PUSH" => SocketType::PUSH,
+            b"XPUB" => SocketType::XPUB,
+            b"XSUB" => SocketType::XSUB,
+            b"STREAM" => SocketType::STREAM,
             _ => return Err(ZmqError::Other("Unknown socket type")),
         })
     }
