@@ -2,6 +2,7 @@ use super::error::CodecError;
 use super::mechanism::ZmqMechanism;
 
 use bytes::{Bytes, BytesMut};
+
 use std::convert::TryFrom;
 
 pub type ZmtpVersion = (u8, u8);

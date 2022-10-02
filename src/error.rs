@@ -4,6 +4,7 @@ use crate::endpoint::EndpointError;
 use crate::task_handle::TaskError;
 use crate::ZmqMessage;
 
+use futures_channel::mpsc;
 use thiserror::Error;
 
 pub type ZmqResult<T> = Result<T, ZmqError>;
@@ -48,14 +49,14 @@ pub enum ZmqError {
     UnsupportedVersion(ZmtpVersion),
 }
 
-impl From<futures::channel::mpsc::TrySendError<Message>> for ZmqError {
-    fn from(_: futures::channel::mpsc::TrySendError<Message>) -> Self {
+impl From<mpsc::TrySendError<Message>> for ZmqError {
+    fn from(_: mpsc::TrySendError<Message>) -> Self {
         ZmqError::BufferFull("Failed to send message. Send queue full/broken")
     }
 }
 
-impl From<futures::channel::mpsc::SendError> for ZmqError {
-    fn from(_: futures::channel::mpsc::SendError) -> Self {
+impl From<mpsc::SendError> for ZmqError {
+    fn from(_: mpsc::SendError) -> Self {
         ZmqError::BufferFull("Failed to send message. Send queue full/broken")
     }
 }

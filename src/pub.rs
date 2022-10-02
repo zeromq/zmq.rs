@@ -11,9 +11,10 @@ use crate::{
 
 use async_trait::async_trait;
 use dashmap::DashMap;
-use futures::channel::{mpsc, oneshot};
-use futures::FutureExt;
+use futures_channel::{mpsc, oneshot};
+use futures_util::{select, FutureExt, StreamExt};
 use parking_lot::Mutex;
+
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::pin::Pin;
@@ -116,10 +117,9 @@ impl MultiPeerBackend for PubSocketBackend {
         let backend = self;
         let peer_id = peer_id.clone();
         async_rt::task::spawn(async move {
-            use futures::StreamExt;
             let mut stop_receiver = stop_receiver.fuse();
             loop {
-                futures::select! {
+                select! {
                      _ = stop_receiver => {
                          break;
                      },

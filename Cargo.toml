@@ -17,14 +17,17 @@ tcp-transport = []
 
 [dependencies]
 thiserror = "1"
-futures = "0.3"
-futures-util = "0.3"
+futures-channel = { version = "0.3", features = ["sink"] }
+futures-io = "0.3"
+futures-task = "0.3"
+futures-util = { version = "0.3", features = ["sink"] }
 async-trait = "0.1"
 parking_lot = "0.12"
 rand = "0.8"
 bytes = "1"
 tokio = { version = "1", features = ["full"], optional = true }
 tokio-util = { version = "0.7", features = ["compat"], optional = true }
+num-traits = "0.2"
 dashmap = "5"
 crossbeam-queue = "0.3"
 uuid = { version = "1", features = ["v4"] }
@@ -38,9 +41,8 @@ async-std = { version = "1", features = ["attributes"], optional = true }
 chrono = "0.4"
 criterion = "0.3"
 pretty_env_logger = "0.4"
-zmq2 = "0.5.0"
+zmq2 = "0.5"
 hex = "0.4"
-
 
 [lib]
 bench = false

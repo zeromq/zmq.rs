@@ -1,6 +1,6 @@
 mod async_helpers;
 
-use futures::FutureExt;
+use futures_util::{select, FutureExt};
 use std::io::Write;
 use std::{error::Error, time::Duration};
 use zeromq::{Socket, SocketRecv, SocketSend};
@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Process messages from receiver and controller
     loop {
-        futures::select! {
+        select! {
             message = receiver.recv().fuse() => {
                 // Process task
                 let message = message.unwrap();

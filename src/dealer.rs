@@ -7,9 +7,11 @@ use crate::{
     CaptureSocket, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketOptions,
     SocketRecv, SocketSend, SocketType, ZmqMessage, ZmqResult,
 };
+
 use async_trait::async_trait;
-use futures::channel::mpsc;
-use futures::StreamExt;
+use futures_channel::mpsc;
+use futures_util::StreamExt;
+
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;

@@ -4,12 +4,14 @@ use crate::util::PeerIdentity;
 use crate::{
     MultiPeerBackend, SocketBackend, SocketEvent, SocketOptions, SocketType, ZmqError, ZmqResult,
 };
+
 use async_trait::async_trait;
 use crossbeam_queue::SegQueue;
 use dashmap::DashMap;
-use futures::channel::mpsc;
-use futures::SinkExt;
+use futures_channel::mpsc;
+use futures_util::SinkExt;
 use parking_lot::Mutex;
+
 use std::sync::Arc;
 
 pub(crate) struct Peer {

@@ -96,9 +96,9 @@ where
 #[cfg(feature = "async-std-runtime")]
 fn make_framed<T>(stream: T) -> FramedIo
 where
-    T: futures::AsyncRead + futures::AsyncWrite + Send + Sync + 'static,
+    T: futures_io::AsyncRead + futures_io::AsyncWrite + Send + Sync + 'static,
 {
-    use futures::AsyncReadExt;
+    use futures_util::AsyncReadExt;
     let (read, write) = stream.split();
     FramedIo::new(Box::new(read), Box::new(write))
 }

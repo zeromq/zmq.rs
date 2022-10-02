@@ -3,8 +3,7 @@ use crate::*;
 
 use asynchronous_codec::FramedRead;
 use bytes::Bytes;
-use futures::stream::StreamExt;
-use futures::SinkExt;
+use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 
 use std::convert::{TryFrom, TryInto};

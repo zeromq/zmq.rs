@@ -2,6 +2,7 @@ use super::error::CodecError;
 use crate::SocketType;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::Display;

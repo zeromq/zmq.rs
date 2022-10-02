@@ -5,11 +5,12 @@ use crate::fair_queue::{FairQueue, QueueInner};
 use crate::transport::AcceptStopHandle;
 use crate::*;
 use crate::{SocketType, ZmqResult};
+
 use async_trait::async_trait;
 use dashmap::DashMap;
-use futures::SinkExt;
-use futures::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
