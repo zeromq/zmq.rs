@@ -101,36 +101,6 @@ pub(crate) struct Peer {
     pub(crate) recv_queue: FramedRead<Box<dyn FrameableRead>, ZmqCodec>,
 }
 
-const COMPATIBILITY_MATRIX: [u8; 121] = [
-    // PAIR, PUB, SUB, REQ, REP, DEALER, ROUTER, PULL, PUSH, XPUB, XSUB
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // PAIR
-    0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, // PUB
-    0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, // SUB
-    0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, // REQ
-    0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, // REP
-    0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, // DEALER
-    0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, // ROUTER
-    0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, // PULL
-    0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, // PUSH
-    0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, // XPUB
-    0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, // XSUB
-];
-
-/// Checks if two sokets are compatible with each other
-/// ```
-/// use zeromq::util::sockets_compatible;
-/// use zeromq::SocketType;
-/// assert!(sockets_compatible(SocketType::PUB, SocketType::SUB));
-/// assert!(sockets_compatible(SocketType::REQ, SocketType::REP));
-/// assert!(sockets_compatible(SocketType::DEALER, SocketType::ROUTER));
-/// assert!(!sockets_compatible(SocketType::PUB, SocketType::REP));
-/// ```
-pub fn sockets_compatible(one: SocketType, another: SocketType) -> bool {
-    let row_index = one.to_usize().unwrap();
-    let col_index = another.to_usize().unwrap();
-    COMPATIBILITY_MATRIX[row_index * 11 + col_index] != 0
-}
-
 /// Given the result of the greetings exchange, determines the version of the
 /// ZMTP protocol that should be used for communication with the peer according
 /// to https://rfc.zeromq.org/spec/23/#version-negotiation.
@@ -189,13 +159,10 @@ pub(crate) async fn ready_exchange(
     match ready_repl {
         Some(Ok(Message::Command(command))) => match command.name {
             ZmqCommandName::READY => {
-                let other_sock_type = command
-                    .properties
-                    .get("Socket-Type")
-                    .map(|x| {
-                        SocketType::try_from(std::str::from_utf8(x).expect("Invalid socket type"))
-                    })
-                    .unwrap_or(Err(ZmqError::Other("Failed to parse other socket type")))?;
+                let other_sock_type = match command.properties.get("Socket-Type") {
+                    Some(s) => SocketType::try_from(&s[..])?,
+                    None => Err(ZmqError::Other("Failed to parse other socket type"))?,
+                };
 
                 let peer_id = command
                     .properties
@@ -204,7 +171,7 @@ pub(crate) async fn ready_exchange(
                     .transpose()?
                     .unwrap_or_default();
 
-                if sockets_compatible(socket_type, other_sock_type) {
+                if socket_type.compatible(other_sock_type) {
                     Ok(peer_id)
                 } else {
                     Err(ZmqError::Other(
@@ -246,7 +213,7 @@ pub(crate) async fn connect_forever(endpoint: Endpoint) -> ZmqResult<(FramedIo, 
                 }
                 let delay = {
                     let mut rng = rand::thread_rng();
-                    std::f64::consts::E.pow(try_num as f64 / 3.0) + rng.gen_range(0.0f64..0.1f64)
+                    std::f64::consts::E.powf(try_num as f64 / 3.0) + rng.gen_range(0.0f64..0.1f64)
                 };
                 async_rt::task::sleep(std::time::Duration::from_secs_f64(delay)).await;
                 continue;

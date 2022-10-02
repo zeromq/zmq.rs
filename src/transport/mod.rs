@@ -16,7 +16,7 @@ macro_rules! do_if_enabled {
         }
 
         #[cfg(not(feature = $feature))]
-        panic!(format!("feature \"{}\" is not enabled", $feature))
+        panic!("feature \"{}\" is not enabled", $feature)
     }};
 }
 
