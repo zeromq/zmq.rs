@@ -203,6 +203,7 @@ pub(crate) async fn peer_connected(
 
 pub(crate) async fn connect_forever(endpoint: Endpoint) -> ZmqResult<(FramedIo, Endpoint)> {
     let mut try_num: u64 = 0;
+
     loop {
         match transport::connect(&endpoint).await {
             Ok(res) => return Ok(res),

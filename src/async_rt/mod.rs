@@ -1,5 +1,6 @@
 //! General purpose helpers for async runtime cross-compatibility
 
+pub mod block_on_read_till_set;
 pub mod task;
 
 #[cfg(feature = "tokio-runtime")]

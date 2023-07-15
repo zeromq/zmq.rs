@@ -8,6 +8,7 @@ mod endpoint;
 mod error;
 mod fair_queue;
 mod message;
+mod pair;
 mod r#pub;
 mod pull;
 mod push;
@@ -29,6 +30,7 @@ pub use crate::dealer::*;
 pub use crate::endpoint::{Endpoint, Host, Transport, TryIntoEndpoint};
 pub use crate::error::{ZmqError, ZmqResult};
 pub use crate::message::*;
+pub use crate::pair::*;
 pub use crate::pull::*;
 pub use crate::push::*;
 pub use crate::r#pub::*;
@@ -227,6 +229,10 @@ pub trait Socket: Sized + Send {
     /// Returns the endpoint resolved to the exact bound location if applicable
     /// (port # resolved, for example).
     async fn bind(&mut self, endpoint: &str) -> ZmqResult<Endpoint> {
+        self.bind_default(endpoint).await
+    }
+
+    async fn bind_default(&mut self, endpoint: &str) -> ZmqResult<Endpoint> {
         let endpoint = endpoint.try_into()?;
 
         let cloned_backend = self.backend();
@@ -309,6 +315,7 @@ pub trait Socket: Sized + Send {
             },
             Err(e) => Err(e),
         };
+
         match result {
             Ok((endpoint, peer_id)) => {
                 if let Some(monitor) = self.backend().monitor().lock().as_mut() {
