@@ -41,11 +41,13 @@ use futures_util::{SinkExt, StreamExt};
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 
 struct PairSocketBackend {
     pub(crate) peer: BlockOnReadTillSet<Peer>,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
     socket_options: SocketOptions,
+    drop_tx: broadcast::Sender<()>,
 }
 
 pub struct PairSocket {
@@ -53,11 +55,6 @@ pub struct PairSocket {
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
-impl Drop for PairSocket {
-    fn drop(&mut self) {
-        self.backend.shutdown();
-    }
-}
 
 impl SocketBackend for PairSocketBackend {
     fn socket_type(&self) -> SocketType {
@@ -69,7 +66,7 @@ impl SocketBackend for PairSocketBackend {
     }
 
     fn shutdown(&self) {
-        //self.peer.lock().await = None;
+        self.drop_tx.send(()).unwrap();
     }
 
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
@@ -111,15 +108,35 @@ impl SocketRecv for PairSocket {
 #[async_trait]
 impl Socket for PairSocket {
     fn with_options(options: SocketOptions) -> Self {
+        let (drop_tx, _) = broadcast::channel(100);
         Self {
             backend: Arc::new(PairSocketBackend {
                 peer: BlockOnReadTillSet::new(),
                 socket_monitor: Mutex::new(None),
                 socket_options: options,
+                drop_tx,
             }),
             binds: HashMap::new(),
         }
     }
+
+    /// Bind to an endpoint & launch dropper task
+    /// Calls the default bind internally
+    async fn bind(&mut self, endpoint: &str) -> ZmqResult<Endpoint> {
+        // Spawn dropper task
+        let mut drop_rx = self.backend.drop_tx.subscribe();
+        let peer = self.backend.peer.clone();
+        tokio::spawn(async move {
+            let _ = drop_rx.recv().await;
+            peer.unset().await;
+            panic!("Peer disconnected");
+        });
+        let ret = self.bind_default(endpoint).await;
+        ret
+    }
+
+
+
 
     fn backend(&self) -> Arc<dyn MultiPeerBackend> {
         self.backend.clone()
@@ -152,7 +169,6 @@ impl MultiPeerBackend for PairSocketBackend {
     }
 
     fn peer_disconnected(&self, _peer_id: &PeerIdentity) {
-        // *self.peer.lock().await = None;
-        todo!();
+        self.shutdown();
     }
 }

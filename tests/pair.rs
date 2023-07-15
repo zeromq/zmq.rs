@@ -74,8 +74,8 @@ async fn test_pair_sockets() {
         "tcp://localhost:0",
         "tcp://127.0.0.1:0",
         "tcp://[::1]:0",
-        "ipc://asdf.sock",
-        "ipc://anothersocket-asdf",
+        "ipc://asdf-pair.sock",
+        "ipc://anothersocket-pair-asdf",
     ];
     futures_util::future::join_all(addrs.into_iter().map(helper)).await;
 }

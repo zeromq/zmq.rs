@@ -6,11 +6,20 @@ use std::sync::Arc;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::{Mutex, MutexGuard};
 
-#[derive(Clone)]
 pub struct BlockOnReadTillSet<T> {
     value: Arc<Mutex<Option<T>>>,
     sender: Arc<Mutex<Sender<()>>>,
     receiver: Arc<Mutex<Receiver<()>>>,
+}
+
+impl<T> Clone for BlockOnReadTillSet<T> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+            sender: self.sender.clone(),
+            receiver: self.receiver.clone(),
+        }
+    }
 }
 
 impl<T> BlockOnReadTillSet<T> {
@@ -31,6 +40,10 @@ impl<T> BlockOnReadTillSet<T> {
 
     pub async fn is_set(&self) -> bool {
         self.value.lock().await.is_some()
+    }
+
+    pub async fn unset(&self) {
+        *self.value.lock().await = None;
     }
 
     pub async fn get(&self) -> MutexGuard<'_, Option<T>> {
