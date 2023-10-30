@@ -41,7 +41,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     bench(&mut group, "IPC", "ipc://req_rep.sock", &mut rt);
 
     fn bench(group: &mut BenchGroup, bench_name: &str, endpoint: &str, rt: &mut Runtime) {
-        #[allow(unused)]
+        #[allow(unused, clippy::redundant_locals)]
         let rt = rt;
 
         #[cfg(feature = "tokio-runtime")]
