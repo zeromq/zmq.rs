@@ -145,9 +145,9 @@ impl ZmqCodec {
 
 impl Encoder for ZmqCodec {
     type Error = CodecError;
-    type Item = Message;
+    type Item<'a> = Message;
 
-    fn encode(&mut self, message: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
+    fn encode(&mut self, message: Self::Item<'_>, dst: &mut BytesMut) -> Result<(), Self::Error> {
         match message {
             Message::Greeting(payload) => dst.unsplit(payload.into()),
             Message::Command(command) => dst.unsplit(command.into()),
