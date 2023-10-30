@@ -227,7 +227,7 @@ pub trait Socket: Sized + Send {
     /// Returns the endpoint resolved to the exact bound location if applicable
     /// (port # resolved, for example).
     async fn bind(&mut self, endpoint: &str) -> ZmqResult<Endpoint> {
-        let endpoint = endpoint.try_into()?;
+        let endpoint = TryIntoEndpoint::try_into(endpoint)?;
 
         let cloned_backend = self.backend();
         let cback = move |result| {
@@ -300,7 +300,7 @@ pub trait Socket: Sized + Send {
     /// Connects to the given endpoint.
     async fn connect(&mut self, endpoint: &str) -> ZmqResult<()> {
         let backend = self.backend();
-        let endpoint = endpoint.try_into()?;
+        let endpoint = TryIntoEndpoint::try_into(endpoint)?;
 
         let result = match util::connect_forever(endpoint).await {
             Ok((socket, endpoint)) => match util::peer_connected(socket, backend).await {

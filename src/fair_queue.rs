@@ -55,7 +55,7 @@ impl<K: Clone> Eq for ReadyEvent<K> {}
 
 impl<K: Clone> PartialOrd for ReadyEvent<K> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        other.priority.partial_cmp(&self.priority)
+        Some(self.cmp(other))
     }
 }
 impl<K: Clone> Ord for ReadyEvent<K> {
