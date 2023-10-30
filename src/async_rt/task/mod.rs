@@ -5,6 +5,7 @@ pub use join_handle::JoinHandle;
 use std::any::Any;
 use std::future::Future;
 
+#[track_caller]
 pub fn spawn<T>(task: T) -> JoinHandle<T::Output>
 where
     T: Future + Send + 'static,
