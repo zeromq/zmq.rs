@@ -6,6 +6,7 @@ edition = "2018"
 description = "A native Rust implementation of ZeroMQ"
 license = "MIT"
 repository = "https://github.com/zeromq/zmq.rs"
+rust-version = "1.62.0"
 
 [features]
 default = ["tokio-runtime", "all-transport"]

@@ -4,17 +4,12 @@ use std::convert::TryFrom;
 use std::fmt::Display;
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub enum ZmqMechanism {
+    #[default]
     NULL,
     PLAIN,
     CURVE,
-}
-
-impl Default for ZmqMechanism {
-    fn default() -> Self {
-        ZmqMechanism::NULL
-    }
 }
 
 impl ZmqMechanism {
