@@ -1,6 +1,6 @@
 [package]
 name = "zeromq"
-version = "0.3.3"
+version = "0.3.4"
 authors = ["Alexei Kornienko <alexei.kornienko@gmail.com>"]
 edition = "2021"
 description = "A native Rust implementation of ZeroMQ"
