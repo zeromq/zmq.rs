@@ -2,11 +2,13 @@
 
 #[cfg(feature = "tokio-runtime")]
 extern crate tokio;
+#[allow(unused_imports)]
 #[cfg(feature = "tokio-runtime")]
 pub use tokio::{main, test};
 
 #[cfg(feature = "async-std-runtime")]
 extern crate async_std;
+#[allow(unused_imports)]
 #[cfg(feature = "async-std-runtime")]
 pub use async_std::{main, test};
 
