@@ -1,4 +1,4 @@
-#[cfg(feature = "ipc-transport")]
+#[cfg(all(feature = "ipc-transport", target_family = "unix"))]
 mod ipc;
 #[cfg(feature = "tcp-transport")]
 mod tcp;
@@ -29,16 +29,20 @@ pub(crate) async fn connect(endpoint: &Endpoint) -> ZmqResult<(FramedIo, Endpoin
         Endpoint::Tcp(_host, _port) => {
             do_if_enabled!("tcp-transport", tcp::connect(_host, *_port).await)
         }
-        Endpoint::Ipc(_path) => do_if_enabled!(
-            "ipc-transport",
-            if let Some(path) = _path {
-                ipc::connect(path).await
-            } else {
-                Err(crate::error::ZmqError::Socket(
-                    "Cannot connect to an unnamed ipc socket",
-                ))
+        Endpoint::Ipc(_path) => {
+            #[cfg(all(feature = "ipc-transport", target_family = "unix"))]
+            {
+                if let Some(path) = _path {
+                    ipc::connect(path).await
+                } else {
+                    Err(crate::error::ZmqError::Socket(
+                        "Cannot connect to an unnamed ipc socket",
+                    ))
+                }
             }
-        ),
+            #[cfg(not(all(feature = "ipc-transport", target_family = "unix")))]
+            panic!("IPC transport is not available on this platform")
+        }
     }
 }
 
@@ -68,16 +72,20 @@ where
             "tcp-transport",
             tcp::begin_accept(_host, _port, _cback).await
         ),
-        Endpoint::Ipc(_path) => do_if_enabled!(
-            "ipc-transport",
-            if let Some(path) = _path {
-                ipc::begin_accept(&path, _cback).await
-            } else {
-                Err(crate::error::ZmqError::Socket(
-                    "Cannot begin accepting peers at an unnamed ipc socket",
-                ))
+        Endpoint::Ipc(_path) => {
+            #[cfg(all(feature = "ipc-transport", target_family = "unix"))]
+            {
+                if let Some(path) = _path {
+                    ipc::begin_accept(&path, _cback).await
+                } else {
+                    Err(crate::error::ZmqError::Socket(
+                        "Cannot begin accepting peers at an unnamed ipc socket",
+                    ))
+                }
             }
-        ),
+            #[cfg(not(all(feature = "ipc-transport", target_family = "unix")))]
+            panic!("IPC transport is not available on this platform")
+        }
     }
 }
 
