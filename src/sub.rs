@@ -83,7 +83,12 @@ impl SocketBackend for SubSocketBackend {
 
 #[async_trait]
 impl MultiPeerBackend for SubSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(
+        self: Arc<Self>,
+        peer_id: &PeerIdentity,
+        io: FramedIo,
+        endpoint: Option<Endpoint>,
+    ) {
         let (recv_queue, mut send_queue) = io.into_parts();
 
         let subs_msgs: Vec<ZmqMessage> = self
@@ -107,7 +112,7 @@ impl MultiPeerBackend for SubSocketBackend {
         };
     }
 
-    fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+    fn peer_disconnected(self: Arc<Self>, peer_id: &PeerIdentity) {
         self.peers.remove(peer_id);
     }
 }
@@ -193,7 +198,7 @@ impl SocketRecv for SubSocket {
                 }
                 Some((_peer_id, Ok(msg))) => todo!("Unimplemented message: {:?}", msg),
                 Some((peer_id, Err(_))) => {
-                    self.backend.peer_disconnected(&peer_id);
+                    self.backend.clone().peer_disconnected(&peer_id);
                 }
                 None => todo!(),
             }

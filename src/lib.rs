@@ -186,8 +186,13 @@ pub trait MultiPeerBackend: SocketBackend {
     /// This should not be public..
     /// Find a better way of doing this
 
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo);
-    fn peer_disconnected(&self, peer_id: &PeerIdentity);
+    async fn peer_connected(
+        self: Arc<Self>,
+        peer_id: &PeerIdentity,
+        io: FramedIo,
+        endpoint: Option<Endpoint>,
+    );
+    fn peer_disconnected(self: Arc<Self>, peer_id: &PeerIdentity);
 }
 
 pub trait SocketBackend: Send + Sync {
@@ -235,7 +240,7 @@ pub trait Socket: Sized + Send {
             async move {
                 let result = match result {
                     Ok((socket, endpoint)) => {
-                        match util::peer_connected(socket, cloned_backend.clone()).await {
+                        match util::peer_connected(socket, cloned_backend.clone(), None).await {
                             Ok(peer_id) => Ok((endpoint, peer_id)),
                             Err(e) => Err(e),
                         }
@@ -303,10 +308,12 @@ pub trait Socket: Sized + Send {
         let endpoint = TryIntoEndpoint::try_into(endpoint)?;
 
         let result = match util::connect_forever(endpoint).await {
-            Ok((socket, endpoint)) => match util::peer_connected(socket, backend).await {
-                Ok(peer_id) => Ok((endpoint, peer_id)),
-                Err(e) => Err(e),
-            },
+            Ok((socket, endpoint)) => {
+                match util::peer_connected(socket, backend, Some(endpoint.clone())).await {
+                    Ok(peer_id) => Ok((endpoint, peer_id)),
+                    Err(e) => Err(e),
+                }
+            }
             Err(e) => Err(e),
         };
         match result {

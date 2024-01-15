@@ -188,6 +188,7 @@ pub(crate) async fn ready_exchange(
 pub(crate) async fn peer_connected(
     mut raw_socket: FramedIo,
     backend: Arc<dyn MultiPeerBackend>,
+    endpoint: Option<Endpoint>,
 ) -> ZmqResult<PeerIdentity> {
     greet_exchange(&mut raw_socket).await?;
     let mut props = None;
@@ -197,7 +198,7 @@ pub(crate) async fn peer_connected(
         props = Some(connect_ops);
     }
     let peer_id = ready_exchange(&mut raw_socket, backend.socket_type(), props).await?;
-    backend.peer_connected(&peer_id, raw_socket).await;
+    backend.peer_connected(&peer_id, raw_socket, endpoint).await;
     Ok(peer_id)
 }
 
