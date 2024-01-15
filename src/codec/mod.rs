@@ -23,6 +23,7 @@ use futures_util::Sink;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone)]
 pub enum Message {
     Greeting(ZmqGreeting),
