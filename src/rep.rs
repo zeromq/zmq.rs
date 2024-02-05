@@ -43,7 +43,7 @@ impl Drop for RepSocket {
 #[async_trait]
 impl Socket for RepSocket {
     fn with_options(options: SocketOptions) -> Self {
-        let fair_queue = FairQueue::new(true);
+        let fair_queue = FairQueue::new(options.block_on_no_clients);
         Self {
             backend: Arc::new(RepSocketBackend {
                 peers: DashMap::new(),
