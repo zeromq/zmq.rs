@@ -169,14 +169,28 @@ pub enum SocketEvent {
     Disconnected(PeerIdentity),
 }
 
-#[derive(Default)]
+#[derive(Debug, Clone)]
 pub struct SocketOptions {
     pub(crate) peer_id: Option<PeerIdentity>,
+    pub(crate) block_on_no_clients: bool,
+}
+
+impl Default for SocketOptions {
+    fn default() -> Self {
+        Self {
+            peer_id: Default::default(),
+            block_on_no_clients: true,
+        }
+    }
 }
 
 impl SocketOptions {
     pub fn peer_identity(&mut self, peer_id: PeerIdentity) -> &mut Self {
         self.peer_id = Some(peer_id);
+        self
+    }
+    pub fn block_on_no_clients(&mut self, block_on_no_clients: bool) -> &mut Self {
+        self.block_on_no_clients = block_on_no_clients;
         self
     }
 }
