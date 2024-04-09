@@ -9,15 +9,17 @@ repository = "https://github.com/zeromq/zmq.rs"
 rust-version = "1.62.0"
 
 [features]
-default = ["smol-runtime", "all-transport"]
+default = ["smol-runtime", "tcp-transport"]
 tokio-runtime = ["tokio", "tokio-util"]
 async-std-runtime = ["async-std"]
-smol-runtime = ["smol"]
+smol-runtime = ["smol", "async-std", "async-net", "async-io"]
 all-transport = ["ipc-transport", "tcp-transport"]
 ipc-transport = []
 tcp-transport = []
 
 [dependencies]
+async-io = { version = "2.3.2", optional = true }
+async-net = { version = "2.0.0", optional = true }
 thiserror = "1"
 futures-channel = { version = "0.3", features = ["sink"] }
 futures-io = "0.3"

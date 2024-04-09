@@ -27,10 +27,14 @@ fn criterion_benchmark(c: &mut Criterion) {
     type Runtime = tokio::runtime::Runtime;
     #[cfg(feature = "async-std-runtime")]
     type Runtime = ();
+    #[cfg(feature = "smol-runtime")]
+    type Runtime = ();
 
     #[cfg(feature = "tokio-runtime")]
     let mut rt = tokio::runtime::Runtime::new().unwrap();
     #[cfg(feature = "async-std-runtime")]
+    let mut rt = ();
+    #[cfg(feature = "smol-runtime")]
     let mut rt = ();
 
     const N_MSG: u32 = 512;
@@ -48,6 +52,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         let (req, rep) = rt.block_on(setup(endpoint));
         #[cfg(feature = "async-std-runtime")]
         let (req, rep) = async_std::task::block_on(setup(endpoint));
+        #[cfg(feature = "smol-runtime")]
+        let (req, rep) = smol::block_on(setup(endpoint));
 
         let (mut req, mut rep) = (Some(req), Some(rep));
 
@@ -57,6 +63,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rt.block_on(iter_fn(&mut req, &mut rep));
                 #[cfg(feature = "async-std-runtime")]
                 async_std::task::block_on(iter_fn(&mut req, &mut rep));
+                #[cfg(feature = "smol-runtime")]
+                smol::block_on(iter_fn(&mut req, &mut rep));
             })
         });
     }

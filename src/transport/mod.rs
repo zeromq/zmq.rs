@@ -110,3 +110,13 @@ where
     let (read, write) = stream.split();
     FramedIo::new(Box::new(read), Box::new(write))
 }
+
+#[cfg(feature = "smol-runtime")]
+fn make_framed<T>(stream: T) -> FramedIo
+where
+    T: smol::io::AsyncRead + smol::io::AsyncWrite + Send + Sync + 'static,
+{
+    use futures_util::AsyncReadExt;
+    let (read, write) = stream.split();
+    FramedIo::new(Box::new(read), Box::new(write))
+}

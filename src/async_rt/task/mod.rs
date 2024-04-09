@@ -5,6 +5,9 @@ pub use join_handle::JoinHandle;
 use std::any::Any;
 use std::future::Future;
 
+#[cfg(feature = "smol-runtime")]
+use smol::Task;
+
 #[track_caller]
 pub fn spawn<T>(task: T) -> JoinHandle<T::Output>
 where
@@ -15,6 +18,8 @@ where
     let result = tokio::task::spawn(task).into();
     #[cfg(feature = "async-std-runtime")]
     let result = async_std::task::spawn(task).into();
+    #[cfg(feature = "smol-runtime")]
+    let result = JoinHandle::new(Task::spawn(task).into());
 
     result
 }
@@ -54,7 +59,9 @@ pub async fn sleep(duration: std::time::Duration) {
     #[cfg(feature = "tokio-runtime")]
     ::tokio::time::sleep(duration).await;
     #[cfg(feature = "async-std-runtime")]
-    ::async_std::task::sleep(duration).await
+    ::async_std::task::sleep(duration).await;
+    #[cfg(feature = "smol-runtime")]
+    ::async_io::Timer::after(duration).await;
 }
 
 pub async fn timeout<F, T>(
@@ -68,6 +75,8 @@ where
     let result = ::tokio::time::timeout(duration, f).await?;
     #[cfg(feature = "async-std-runtime")]
     let result = ::async_std::future::timeout(duration, f).await?;
+    #[cfg(feature = "smol-runtime")]
+    let result = ::smol::future::timeout(duration, f).await?;
 
     Ok(result)
 }

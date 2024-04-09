@@ -4,6 +4,9 @@ use tokio::net::{TcpListener, TcpStream};
 #[cfg(feature = "async-std-runtime")]
 use async_std::net::{TcpListener, TcpStream};
 
+#[cfg(feature = "smol-runtime")]
+use async_net::{TcpListener, TcpStream};
+
 use super::make_framed;
 use super::AcceptStopHandle;
 use crate::async_rt;

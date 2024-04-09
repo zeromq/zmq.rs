@@ -11,3 +11,8 @@ pub use tokio::{main, test};
 extern crate async_std;
 #[cfg(feature = "async-std-runtime")]
 pub use async_std::{main, test};
+
+#[cfg(feature = "smol-runtime")]
+extern crate smol;
+#[cfg(feature = "smol-runtime")]
+pub use async_std::{main, test};
