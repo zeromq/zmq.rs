@@ -9,7 +9,7 @@ repository = "https://github.com/zeromq/zmq.rs"
 rust-version = "1.62.0"
 
 [features]
-default = ["tokio-runtime", "all-transport"]
+default = ["smol-runtime", "all-transport"]
 tokio-runtime = ["tokio", "tokio-util"]
 async-std-runtime = ["async-std"]
 smol-runtime = ["smol"]
