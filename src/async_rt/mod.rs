@@ -12,5 +12,8 @@ extern crate async_std;
 #[cfg(feature = "async-std-runtime")]
 pub use async_std::{main, test};
 
-#[cfg(feature = "async-dispatcher-runtime")]
+#[cfg(all(
+    feature = "async-dispatcher-runtime",
+    feature = "async-dispatcher-macros"
+))]
 pub use async_dispatcher::{main, test};
