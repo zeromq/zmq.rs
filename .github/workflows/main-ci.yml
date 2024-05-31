@@ -59,6 +59,11 @@ jobs:
         with:
           command: test
           args: --all --no-default-features --features async-std-runtime,all-transport
+      - name: Test Async-dispatcher version
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all --no-default-features --features async-dispatcher-runtime,all-transport
 
   fmt:
     name: Formatting

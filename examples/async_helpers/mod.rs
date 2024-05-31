@@ -22,3 +22,11 @@ pub async fn sleep(duration: std::time::Duration) {
 pub async fn sleep(duration: std::time::Duration) {
     async_std::task::sleep(duration).await
 }
+
+#[allow(unused_imports)]
+#[cfg(feature = "async-dispatcher-runtime")]
+pub use async_dispatcher::{main, test};
+
+#[allow(unused)]
+#[cfg(feature = "async-dispatcher-runtime")]
+pub use async_dispatcher::sleep;

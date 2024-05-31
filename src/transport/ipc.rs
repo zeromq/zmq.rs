@@ -1,7 +1,7 @@
 #[cfg(feature = "tokio-runtime")]
 use tokio::net::{UnixListener, UnixStream};
 
-#[cfg(feature = "async-std-runtime")]
+#[cfg(any(feature = "async-std-runtime", feature = "async-dispatcher-runtime"))]
 use async_std::os::unix::net::{UnixListener, UnixStream};
 
 use super::make_framed;
@@ -39,7 +39,7 @@ where
 
     #[cfg(feature = "tokio-runtime")]
     let listener = UnixListener::bind(path)?;
-    #[cfg(feature = "async-std-runtime")]
+    #[cfg(any(feature = "async-std-runtime", feature = "async-dispatcher-runtime"))]
     let listener = UnixListener::bind(path).await?;
 
     let resolved_addr = listener.local_addr()?;
@@ -65,7 +65,7 @@ where
         }
         drop(listener);
         if let Some(listener_addr) = listener_addr {
-            #[cfg(feature = "async-std-runtime")]
+            #[cfg(any(feature = "async-std-runtime", feature = "async-dispatcher-runtime"))]
             use async_std::fs::remove_file;
             #[cfg(feature = "tokio-runtime")]
             use tokio::fs::remove_file;

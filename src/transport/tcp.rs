@@ -1,7 +1,7 @@
 #[cfg(feature = "tokio-runtime")]
 use tokio::net::{TcpListener, TcpStream};
 
-#[cfg(feature = "async-std-runtime")]
+#[cfg(any(feature = "async-std-runtime", feature = "async-dispatcher-runtime"))]
 use async_std::net::{TcpListener, TcpStream};
 
 use super::make_framed;

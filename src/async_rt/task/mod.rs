@@ -15,6 +15,8 @@ where
     let result = tokio::task::spawn(task).into();
     #[cfg(feature = "async-std-runtime")]
     let result = async_std::task::spawn(task).into();
+    #[cfg(feature = "async-dispatcher-runtime")]
+    let result = async_dispatcher::spawn(task).into();
 
     result
 }
@@ -54,7 +56,9 @@ pub async fn sleep(duration: std::time::Duration) {
     #[cfg(feature = "tokio-runtime")]
     ::tokio::time::sleep(duration).await;
     #[cfg(feature = "async-std-runtime")]
-    ::async_std::task::sleep(duration).await
+    ::async_std::task::sleep(duration).await;
+    #[cfg(feature = "async-dispatcher-runtime")]
+    ::async_dispatcher::sleep(duration).await;
 }
 
 pub async fn timeout<F, T>(
@@ -68,6 +72,8 @@ where
     let result = ::tokio::time::timeout(duration, f).await?;
     #[cfg(feature = "async-std-runtime")]
     let result = ::async_std::future::timeout(duration, f).await?;
+    #[cfg(feature = "async-dispatcher-runtime")]
+    let result = ::async_dispatcher::timeout(duration, f).await?;
 
     Ok(result)
 }

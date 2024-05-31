@@ -11,3 +11,6 @@ pub use tokio::{main, test};
 extern crate async_std;
 #[cfg(feature = "async-std-runtime")]
 pub use async_std::{main, test};
+
+#[cfg(feature = "async-dispatcher-runtime")]
+pub use async_dispatcher::{main, test};
