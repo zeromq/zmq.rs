@@ -25,12 +25,12 @@ async fn setup(endpoint: &str) -> (ReqSocket, RepSocket) {
 fn criterion_benchmark(c: &mut Criterion) {
     #[cfg(feature = "tokio-runtime")]
     type Runtime = tokio::runtime::Runtime;
-    #[cfg(feature = "async-std-runtime")]
+    #[cfg(any(feature = "async-std-runtime", feature = "async-dispatcher-runtime"))]
     type Runtime = ();
 
     #[cfg(feature = "tokio-runtime")]
     let mut rt = tokio::runtime::Runtime::new().unwrap();
-    #[cfg(feature = "async-std-runtime")]
+    #[cfg(any(feature = "async-std-runtime", feature = "async-dispatcher-runtime"))]
     let mut rt = ();
 
     const N_MSG: u32 = 512;
@@ -48,6 +48,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         let (req, rep) = rt.block_on(setup(endpoint));
         #[cfg(feature = "async-std-runtime")]
         let (req, rep) = async_std::task::block_on(setup(endpoint));
+        #[cfg(feature = "async-dispatcher-runtime")]
+        let (req, rep) = async_dispatcher::block_on(setup(endpoint));
 
         let (mut req, mut rep) = (Some(req), Some(rep));
 
@@ -57,6 +59,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                 rt.block_on(iter_fn(&mut req, &mut rep));
                 #[cfg(feature = "async-std-runtime")]
                 async_std::task::block_on(iter_fn(&mut req, &mut rep));
+                #[cfg(feature = "async-dispatcher-runtime")]
+                async_dispatcher::block_on(iter_fn(&mut req, &mut rep));
             })
         });
     }
