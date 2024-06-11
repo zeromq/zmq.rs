@@ -25,7 +25,7 @@ pub struct PullSocket {
 #[async_trait]
 impl Socket for PullSocket {
     fn with_options(options: SocketOptions) -> Self {
-        let fair_queue = FairQueue::new(true);
+        let fair_queue = FairQueue::new(options.block_on_no_clients);
         Self {
             backend: Arc::new(GenericSocketBackend::with_options(
                 Some(fair_queue.inner()),
