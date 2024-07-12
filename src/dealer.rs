@@ -58,6 +58,57 @@ impl Socket for DealerSocket {
     }
 }
 
+impl DealerSocket {
+    fn split(self) -> (DealerSocketRead, DealerSocketWrite) {
+        let read = DealerSocketRead {
+            fair_queue: self.fair_queue,
+        };
+        let write = DealerSocketWrite {
+            backend: self.backend,
+        };
+        (read, write)
+    }
+}
+
+struct DealerSocketRead {
+    fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
+}
+
+struct DealerSocketWrite {
+    backend: Arc<GenericSocketBackend>,
+}
+
+impl Drop for DealerSocketWrite {
+    fn drop(&mut self) {
+        self.backend.shutdown();
+    }
+}
+
+#[async_trait]
+impl SocketRecv for DealerSocketRead {
+    async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
+        loop {
+            match self.fair_queue.next().await {
+                Some((_peer_id, Ok(Message::Message(message)))) => {
+                    return Ok(message);
+                }
+                Some((_peer_id, _)) => todo!(),
+                None => todo!(),
+            };
+        }
+    }
+}
+
+#[async_trait]
+impl SocketSend for DealerSocketWrite {
+    async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+        self.backend
+            .send_round_robin(Message::Message(message))
+            .await?;
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl SocketRecv for DealerSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
