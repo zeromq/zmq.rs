@@ -86,8 +86,8 @@ where
 impl<S, T, K> Stream for FairQueue<S, K>
 where
     T: Send,
-    S: Stream<Item = T> + Send,
-    K: Eq + Hash + Unpin + Clone + Send + Sync,
+    S: Stream<Item = T> + Send + 'static,
+    K: Eq + Hash + Unpin + Clone + Send + Sync + 'static,
 {
     type Item = (K, T);
 
