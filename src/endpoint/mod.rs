@@ -76,7 +76,7 @@ impl FromStr for Endpoint {
             let port = caps.get(2).unwrap().as_str();
             let port: Port = port
                 .parse()
-                .map_err(|_| EndpointError::Syntax("Port must be a u16 but was out of range"))?;
+                .map_err(|_e| EndpointError::Syntax("Port must be a u16 but was out of range"))?;
 
             let host: Host = host.parse()?;
             Ok((host, port))
