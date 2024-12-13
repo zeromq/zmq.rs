@@ -8,8 +8,8 @@ use crate::{
 use async_trait::async_trait;
 use crossbeam_queue::SegQueue;
 use dashmap::DashMap;
-use futures_channel::mpsc;
-use futures_util::SinkExt;
+use futures::channel::mpsc;
+use futures::SinkExt;
 use parking_lot::Mutex;
 
 use std::sync::Arc;

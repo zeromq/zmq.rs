@@ -5,8 +5,8 @@ mod test {
     use zeromq::ZmqMessage;
     use zeromq::__async_rt as async_rt;
 
-    use futures_channel::{mpsc, oneshot};
-    use futures_util::{SinkExt, StreamExt};
+    use futures::channel::{mpsc, oneshot};
+    use futures::{SinkExt, StreamExt};
     use std::time::Duration;
 
     #[async_rt::test]
@@ -102,6 +102,6 @@ mod test {
             "ipc://asdf.sock",
             "ipc://anothersocket-asdf",
         ];
-        futures_util::future::join_all(addrs.into_iter().map(helper)).await;
+        futures::future::join_all(addrs.into_iter().map(helper)).await;
     }
 }

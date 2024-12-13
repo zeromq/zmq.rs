@@ -7,7 +7,7 @@ use crate::{
 };
 
 use async_trait::async_trait;
-use futures_channel::mpsc;
+use futures::channel::mpsc;
 
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;

@@ -1,7 +1,7 @@
 use crate::async_rt;
 use crate::error::{ZmqError, ZmqResult};
 
-use futures_channel::oneshot;
+use futures::channel::oneshot;
 use thiserror::Error;
 
 #[derive(Error, Debug)]

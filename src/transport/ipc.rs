@@ -12,8 +12,8 @@ use crate::endpoint::Endpoint;
 use crate::task_handle::TaskHandle;
 use crate::ZmqResult;
 
-use futures_channel::oneshot;
-use futures_util::{select, FutureExt};
+use futures::channel::oneshot;
+use futures::{select, FutureExt};
 
 use std::path::Path;
 

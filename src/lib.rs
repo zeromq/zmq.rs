@@ -43,8 +43,8 @@ use util::PeerIdentity;
 
 use async_trait::async_trait;
 use asynchronous_codec::FramedWrite;
-use futures_channel::mpsc;
-use futures_util::{select, FutureExt};
+use futures::channel::mpsc;
+use futures::{select, FutureExt};
 use parking_lot::Mutex;
 
 use std::collections::HashMap;

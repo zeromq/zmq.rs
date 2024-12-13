@@ -4,7 +4,7 @@ use crate::endpoint::EndpointError;
 use crate::task_handle::TaskError;
 use crate::ZmqMessage;
 
-use futures_channel::mpsc;
+use futures::channel::mpsc;
 use thiserror::Error;
 
 pub type ZmqResult<T> = Result<T, ZmqError>;
