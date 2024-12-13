@@ -34,17 +34,23 @@ pub(crate) struct PubSocketBackend {
 
 impl PubSocketBackend {
     fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
-        let message = match message {
-            Message::Message(m) => m,
+        let data = match message {
+            Message::Message(m) => {
+                if m.len() != 1 {
+                    log::warn!("Received message with unexpected length: {}", m.len());
+                    return;
+                }
+                m.into_vec().pop().unwrap_or_default()
+            }
             _ => return,
         };
-        assert_eq!(message.len(), 1);
-        let data: Vec<u8> = message.into_vec().pop().unwrap().to_vec();
+
         if data.is_empty() {
             return;
         }
-        match data[0] {
-            1 => {
+
+        match data.first() {
+            Some(1) => {
                 // Subscribe
                 self.subscribers
                     .get_mut(peer_id)
@@ -52,7 +58,7 @@ impl PubSocketBackend {
                     .subscriptions
                     .push(Vec::from(&data[1..]));
             }
-            0 => {
+            Some(0) => {
                 // Unsubscribe
                 let mut del_index = None;
                 let sub = Vec::from(&data[1..]);
@@ -77,7 +83,10 @@ impl PubSocketBackend {
                         .remove(index);
                 }
             }
-            _ => (),
+            _ => log::warn!(
+                "Received message with unexpected first byte: {:?}",
+                data.first()
+            ),
         }
     }
 }
@@ -127,7 +136,7 @@ impl MultiPeerBackend for PubSocketBackend {
                         match message {
                             Some(Ok(m)) => backend.message_received(&peer_id, m),
                             Some(Err(e)) => {
-                                dbg!(e);
+                                log::debug!("Error receiving message: {:?}", e);
                                 backend.peer_disconnected(&peer_id);
                                 break;
                             }
@@ -179,17 +188,18 @@ impl SocketSend for PubSocket {
                             if e.kind() == ErrorKind::BrokenPipe {
                                 dead_peers.push(subscriber.key().clone());
                             } else {
-                                dbg!(e);
+                                log::error!("Error receiving message: {:?}", e);
                             }
                         }
                         Err(ZmqError::BufferFull(_)) => {
                             // ignore silently. https://rfc.zeromq.org/spec/29/ says:
                             // For processing outgoing messages:
                             //   SHALL silently drop the message if the queue for a subscriber is full.
+                            log::debug!("Queue for subscriber is full",);
                         }
                         Err(e) => {
-                            dbg!(e);
-                            todo!()
+                            log::error!("Error receiving message: {:?}", e);
+                            return Err(e);
                         }
                     }
                     break;

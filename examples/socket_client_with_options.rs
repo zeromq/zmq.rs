@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     for _ in 0..10u64 {
         socket.send("Hello".into()).await?;
         let repl = socket.recv().await?;
-        dbg!(repl);
+        println!("Received: {:?}", repl);
     }
     Ok(())
 }

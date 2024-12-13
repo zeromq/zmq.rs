@@ -120,27 +120,25 @@ impl Decoder for ZmqCodec {
     }
 }
 
-impl ZmqCodec {
-    fn _encode_frame(&mut self, frame: &Bytes, dst: &mut BytesMut, more: bool) {
-        let mut flags: u8 = 0;
-        if more {
-            flags |= 0b0000_0001;
-        }
-        let len = frame.len();
-        if len > 255 {
-            flags |= 0b0000_0010;
-            dst.reserve(len + 9);
-        } else {
-            dst.reserve(len + 2);
-        }
-        dst.put_u8(flags);
-        if len > 255 {
-            dst.put_u64(len as u64);
-        } else {
-            dst.put_u8(len as u8);
-        }
-        dst.extend_from_slice(frame.as_ref());
+fn encode_frame(frame: &Bytes, dst: &mut BytesMut, more: bool) {
+    let mut flags: u8 = 0;
+    if more {
+        flags |= 0b0000_0001;
     }
+    let len = frame.len();
+    if len > 255 {
+        flags |= 0b0000_0010;
+        dst.reserve(len + 9);
+    } else {
+        dst.reserve(len + 2);
+    }
+    dst.put_u8(flags);
+    if len > 255 {
+        dst.put_u64(len as u64);
+    } else {
+        dst.put_u8(len as u8);
+    }
+    dst.extend_from_slice(frame.as_ref());
 }
 
 impl Encoder for ZmqCodec {
@@ -154,7 +152,7 @@ impl Encoder for ZmqCodec {
             Message::Message(message) => {
                 let last_element = message.len() - 1;
                 for (idx, part) in message.iter().enumerate() {
-                    self._encode_frame(part, dst, idx != last_element);
+                    encode_frame(part, dst, idx != last_element);
                 }
             }
         }
@@ -179,7 +177,8 @@ pub(crate) mod tests {
             .decode(&mut bytes)
             .expect("decode success")
             .expect("single message");
-        dbg!(&message);
+
+        eprintln!("{:?}", &message);
         match message {
             Message::Message(m) => {
                 assert_eq!(6, m.into_vecdeque().len());
@@ -202,7 +201,7 @@ pub(crate) mod tests {
             .decode(&mut bytes)
             .expect("decode success")
             .expect("single message");
-        dbg!(&message);
+        eprintln!("{:?}", &message);
         assert_eq!(bytes.len(), 0);
         match message {
             Message::Message(m) => {

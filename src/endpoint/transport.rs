@@ -44,7 +44,7 @@ impl TryFrom<&str> for Transport {
 }
 
 impl fmt::Display for Transport {
-    fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         f.write_str(self.as_str())
     }
 }

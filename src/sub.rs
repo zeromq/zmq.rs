@@ -120,7 +120,7 @@ pub struct SubSocket {
 
 impl Drop for SubSocket {
     fn drop(&mut self) {
-        self.backend.shutdown()
+        self.backend.shutdown();
     }
 }
 

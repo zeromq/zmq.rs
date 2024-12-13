@@ -8,7 +8,7 @@ use std::fmt;
 pub struct ZmqEmptyMessageError;
 
 impl fmt::Display for ZmqEmptyMessageError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Unable to construct an empty ZmqMessage")
     }
 }

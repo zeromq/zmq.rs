@@ -40,7 +40,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     bench(&mut group, "TCP", "tcp://localhost:0", &mut rt);
     bench(&mut group, "IPC", "ipc://req_rep.sock", &mut rt);
 
-    fn bench(group: &mut BenchGroup, bench_name: &str, endpoint: &str, rt: &mut Runtime) {
+    fn bench(group: &mut BenchGroup<'_>, bench_name: &str, endpoint: &str, rt: &mut Runtime) {
         #[allow(unused, clippy::redundant_locals)]
         let rt = rt;
 
@@ -61,7 +61,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 async_std::task::block_on(iter_fn(&mut req, &mut rep));
                 #[cfg(feature = "async-dispatcher-runtime")]
                 async_dispatcher::block_on(iter_fn(&mut req, &mut rep));
-            })
+            });
         });
     }
 

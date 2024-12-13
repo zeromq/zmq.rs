@@ -17,7 +17,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     for i in 0..10 {
         println!("Message {}", i);
         let repl = socket.recv().await?;
-        dbg!(repl);
+
+        println!("Received: {:?}", repl);
     }
     Ok(())
 }

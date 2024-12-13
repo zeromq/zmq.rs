@@ -102,7 +102,7 @@ pub(crate) struct Peer {
 
 /// Given the result of the greetings exchange, determines the version of the
 /// ZMTP protocol that should be used for communication with the peer according
-/// to https://rfc.zeromq.org/spec/23/#version-negotiation.
+/// to [ZeroMQ RFC 23](https://rfc.zeromq.org/spec/23/#version-negotiation).
 fn negotiate_version(greeting: Message) -> ZmqResult<ZmtpVersion> {
     let my_version = ZmqGreeting::default().version;
 
