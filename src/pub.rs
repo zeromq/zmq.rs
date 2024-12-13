@@ -195,6 +195,7 @@ impl SocketSend for PubSocket {
                             // ignore silently. https://rfc.zeromq.org/spec/29/ says:
                             // For processing outgoing messages:
                             //   SHALL silently drop the message if the queue for a subscriber is full.
+                            log::debug!("Queue for subscriber is full",);
                         }
                         Err(e) => {
                             log::error!("Error receiving message: {:?}", e);
