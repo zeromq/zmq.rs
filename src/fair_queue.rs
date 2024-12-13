@@ -24,10 +24,9 @@ impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
             priority: self.counter.fetch_add(1, atomic::Ordering::Relaxed),
             key: k,
         });
-        match &self.waker {
-            Some(w) => w.wake_by_ref(),
-            None => (),
-        };
+        if let Some(w) = &self.waker {
+            w.wake_by_ref();
+        }
     }
 
     pub fn remove(&mut self, k: &K) {
