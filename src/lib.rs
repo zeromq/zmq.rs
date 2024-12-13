@@ -231,18 +231,16 @@ pub trait Socket: Sized + Send {
         let endpoint = TryIntoEndpoint::try_into(endpoint)?;
 
         let cloned_backend = self.backend();
-        let cback = move |result| {
+        let cback = move |result: ZmqResult<(FramedIo, Endpoint)>| {
             let cloned_backend = cloned_backend.clone();
             async move {
                 let result = match result {
-                    Ok((socket, endpoint)) => {
-                        match util::peer_connected(socket, cloned_backend.clone()).await {
-                            Ok(peer_id) => Ok((endpoint, peer_id)),
-                            Err(e) => Err(e),
-                        }
-                    }
+                    Ok((socket, endpoint)) => util::peer_connected(socket, cloned_backend.clone())
+                        .await
+                        .map(|peer_id| (endpoint, peer_id)),
                     Err(e) => Err(e),
                 };
+
                 match result {
                     Ok((endpoint, peer_id)) => {
                         if let Some(monitor) = cloned_backend.monitor().lock().as_mut() {
