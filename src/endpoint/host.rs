@@ -19,7 +19,7 @@ pub enum Host {
 }
 
 impl fmt::Display for Host {
-    fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         match self {
             Host::Ipv4(addr) => write!(f, "{}", addr),
             Host::Ipv6(addr) => write!(f, "{}", addr),

@@ -98,7 +98,7 @@ impl FromStr for Endpoint {
 }
 
 impl fmt::Display for Endpoint {
-    fn fmt(&self, f: &mut fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         match self {
             Endpoint::Tcp(host, port) => {
                 if let Host::Ipv6(_) = host {
