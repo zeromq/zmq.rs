@@ -60,7 +60,7 @@ async fn run_our_subs(our_subs: Vec<zeromq::SubSocket>, num_to_recv: u32) {
         })
     });
     for h in join_handles {
-        h.await.expect("Subscriber task panicked!")
+        h.await.expect("Subscriber task panicked!");
     }
     println!("Finished sub task");
 }
@@ -128,7 +128,7 @@ mod test {
             // https://github.com/zeromq/libzmq/issues/3387
             // So we will delete it ourselves.
             if let Some(path) = e.strip_prefix("ipc://") {
-                std::fs::remove_file(path).expect("Failed to remove ipc file")
+                std::fs::remove_file(path).expect("Failed to remove ipc file");
             }
         }
     }

@@ -61,7 +61,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 async_std::task::block_on(iter_fn(&mut req, &mut rep));
                 #[cfg(feature = "async-dispatcher-runtime")]
                 async_dispatcher::block_on(iter_fn(&mut req, &mut rep));
-            })
+            });
         });
     }
 

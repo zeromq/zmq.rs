@@ -52,7 +52,7 @@ pub async fn run_req_client(
         assert_eq!(
             format!("Req - {}, Rep - {}", i, i),
             String::from_utf8(repl.get(0).unwrap().to_vec()).unwrap()
-        )
+        );
     }
     req_socket.close().await;
     Ok(())
