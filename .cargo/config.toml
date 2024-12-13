@@ -1,5 +1,3 @@
-# add the below section to `.cargo/config.toml`
-
 [target.'cfg(all())']
 rustflags = [
     # BEGIN - Embark standard lints v6 for Rust 1.55+
@@ -65,7 +63,7 @@ rustflags = [
     "-Wclippy::string_add",
     "-Wclippy::string_lit_as_bytes",
     "-Wclippy::string_to_string",
-    "-Wclippy::todo",
+    # "-Wclippy::todo", // todo!("handle these in subsequent PRs")
     "-Wclippy::trait_duplication_in_bounds",
     "-Wclippy::unimplemented",
     "-Wclippy::unnested_or_patterns",
