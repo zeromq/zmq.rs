@@ -171,8 +171,8 @@ pub enum SocketEvent {
 
 #[derive(Debug, Clone)]
 pub struct SocketOptions {
-    pub(crate) peer_id: Option<PeerIdentity>,
-    pub(crate) block_on_no_clients: bool,
+    pub peer_id: Option<PeerIdentity>,
+    pub block_on_no_clients: bool,
 }
 
 impl Default for SocketOptions {
