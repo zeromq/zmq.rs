@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
         let mut repl: String = socket.recv().await?.try_into()?;
-        dbg!(&repl);
+        println!("Received: {}", repl);
         repl.push_str(" Reply");
         socket.send(repl.into()).await?;
     }

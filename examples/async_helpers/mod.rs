@@ -15,12 +15,12 @@ pub use async_std::{main, test};
 #[allow(unused)]
 #[cfg(feature = "tokio-runtime")]
 pub async fn sleep(duration: std::time::Duration) {
-    tokio::time::sleep(duration).await
+    tokio::time::sleep(duration).await;
 }
 #[allow(unused)]
 #[cfg(feature = "async-std-runtime")]
 pub async fn sleep(duration: std::time::Duration) {
-    async_std::task::sleep(duration).await
+    async_std::task::sleep(duration).await;
 }
 
 #[allow(unused_imports)]

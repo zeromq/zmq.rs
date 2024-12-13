@@ -14,10 +14,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     socket.send("Hello".into()).await?;
     let repl = socket.recv().await?;
-    dbg!(repl);
+    println!("{:?}", repl);
 
     socket.send("Hello".into()).await?;
     let repl = socket.recv().await?;
-    dbg!(repl);
+    println!("{:?}", repl);
     Ok(())
 }

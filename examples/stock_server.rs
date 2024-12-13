@@ -18,7 +18,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let price: u32 = rng.gen_range(1..100);
             let mut m: ZmqMessage = ZmqMessage::from(*stock);
             m.push_back(price.to_ne_bytes().to_vec().into());
-            dbg!(m.clone());
+            println!("Sending: {:?}", m);
             socket.send(m).await?;
         }
         async_helpers::sleep(Duration::from_secs(1)).await;
