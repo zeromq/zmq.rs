@@ -11,7 +11,7 @@ mod test {
     use zeromq::prelude::*;
     use zeromq::ZmqMessage;
 
-    /// Returns (socket, bound_endpoint, monitor)
+    // Returns (socket, bound_endpoint, monitor)
     fn setup_their_rep(bind_endpoint: &str) -> (zmq2::Socket, String, zmq2::Socket) {
         let ctx = zmq2::Context::new();
         let their_rep = ctx.socket(zmq2::REP).expect("Couldn't make rep socket");
