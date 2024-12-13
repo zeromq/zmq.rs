@@ -67,7 +67,6 @@ rustflags = [
     "-Wclippy::string_to_string",
     "-Wclippy::todo",
     "-Wclippy::trait_duplication_in_bounds",
-    "-Wclippy::unexpected_cfgs",
     "-Wclippy::unimplemented",
     "-Wclippy::unnested_or_patterns",
     "-Wclippy::unused_self",
@@ -77,5 +76,6 @@ rustflags = [
     "-Wfuture_incompatible",
     "-Wnonstandard_style",
     "-Wrust_2018_idioms",
+    "-Wunexpected_cfgs",
     # END - Embark standard lints v6 for Rust 1.55+
 ]
