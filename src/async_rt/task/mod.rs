@@ -25,7 +25,7 @@ where
 ///
 /// Note that some async runtimes (like async-std), may not bubble up panics
 /// but instead abort the entire application. In these runtimes, you won't ever
-/// get the opportunity to see the JoinError, because you're already dead.
+/// get the opportunity to see the `JoinError`, because you're already dead.
 #[derive(Debug)]
 pub enum JoinError {
     Cancelled,
