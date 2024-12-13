@@ -136,7 +136,7 @@ impl MultiPeerBackend for PubSocketBackend {
                         match message {
                             Some(Ok(m)) => backend.message_received(&peer_id, m),
                             Some(Err(e)) => {
-                                dbg!(e);
+                                log::debug!("Error receiving message: {:?}", e);
                                 backend.peer_disconnected(&peer_id);
                                 break;
                             }
@@ -188,7 +188,7 @@ impl SocketSend for PubSocket {
                             if e.kind() == ErrorKind::BrokenPipe {
                                 dead_peers.push(subscriber.key().clone());
                             } else {
-                                dbg!(e);
+                                log::error!("Error receiving message: {:?}", e);
                             }
                         }
                         Err(ZmqError::BufferFull(_)) => {
@@ -197,8 +197,8 @@ impl SocketSend for PubSocket {
                             //   SHALL silently drop the message if the queue for a subscriber is full.
                         }
                         Err(e) => {
-                            dbg!(e);
-                            todo!()
+                            log::error!("Error receiving message: {:?}", e);
+                            return Err(e);
                         }
                     }
                     break;
