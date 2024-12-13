@@ -15,8 +15,8 @@ use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use crossbeam_queue::SegQueue;
 use dashmap::DashMap;
-use futures_channel::mpsc;
-use futures_util::{SinkExt, StreamExt};
+use futures::channel::mpsc;
+use futures::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 
 use std::collections::{HashMap, HashSet};

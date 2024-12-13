@@ -1,5 +1,5 @@
-use futures_task::{waker_ref, ArcWake};
-use futures_util::Stream;
+use futures::task::{waker_ref, ArcWake};
+use futures::Stream;
 use parking_lot::Mutex;
 
 use std::cmp::Ordering;
@@ -24,10 +24,9 @@ impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
             priority: self.counter.fetch_add(1, atomic::Ordering::Relaxed),
             key: k,
         });
-        match &self.waker {
-            Some(w) => w.wake_by_ref(),
-            None => (),
-        };
+        if let Some(w) = &self.waker {
+            w.wake_by_ref();
+        }
     }
 
     pub fn remove(&mut self, k: &K) {
@@ -164,7 +163,7 @@ impl<S, K: Clone> FairQueue<S, K> {
 mod test {
     use crate::async_rt;
     use crate::fair_queue::FairQueue;
-    use futures_util::{stream, StreamExt};
+    use futures::{stream, StreamExt};
 
     #[async_rt::test]
     async fn test_fair_queue_ready() {

@@ -1,6 +1,6 @@
 mod async_helpers;
 
-use futures_util::{select, FutureExt};
+use futures::{select, FutureExt};
 use std::io::Write;
 use std::{error::Error, time::Duration};
 use zeromq::{Socket, SocketRecv, SocketSend};

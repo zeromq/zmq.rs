@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use crossbeam_queue::SegQueue;
 use dashmap::DashMap;
-use futures_util::{SinkExt, StreamExt};
+use futures::{SinkExt, StreamExt};
 
 use std::collections::HashMap;
 use std::sync::Arc;

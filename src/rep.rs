@@ -8,7 +8,7 @@ use crate::{SocketType, ZmqResult};
 
 use async_trait::async_trait;
 use dashmap::DashMap;
-use futures_util::{SinkExt, StreamExt};
+use futures::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 
 use std::collections::HashMap;

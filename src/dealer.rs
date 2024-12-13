@@ -9,8 +9,8 @@ use crate::{
 };
 
 use async_trait::async_trait;
-use futures_channel::mpsc;
-use futures_util::StreamExt;
+use futures::channel::mpsc;
+use futures::StreamExt;
 
 use std::collections::hash_map::RandomState;
 use std::collections::HashMap;

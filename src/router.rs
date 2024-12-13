@@ -10,8 +10,8 @@ use crate::{MultiPeerBackend, SocketEvent, SocketOptions, SocketRecv, SocketSend
 use crate::{Socket, SocketBackend};
 
 use async_trait::async_trait;
-use futures_channel::mpsc;
-use futures_util::{SinkExt, StreamExt};
+use futures::channel::mpsc;
+use futures::{SinkExt, StreamExt};
 
 use std::collections::HashMap;
 use std::convert::TryInto;

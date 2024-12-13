@@ -1,7 +1,7 @@
 use crate::codec::ZmqCodec;
 
 use asynchronous_codec::{FramedRead, FramedWrite};
-use futures_io::{AsyncRead, AsyncWrite};
+use futures::{AsyncRead, AsyncWrite};
 
 // Enables us to have multiple bounds on the dyn trait in `InnerFramed`
 pub trait FrameableRead: AsyncRead + Unpin + Send + Sync {}

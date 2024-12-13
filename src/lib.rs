@@ -43,8 +43,8 @@ use util::PeerIdentity;
 
 use async_trait::async_trait;
 use asynchronous_codec::FramedWrite;
-use futures_channel::mpsc;
-use futures_util::{select, FutureExt};
+use futures::channel::mpsc;
+use futures::{select, FutureExt};
 use parking_lot::Mutex;
 
 use std::collections::HashMap;
@@ -185,8 +185,8 @@ impl SocketOptions {
 pub trait MultiPeerBackend: SocketBackend {
     /// This should not be public..
     /// Find a better way of doing this
-
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo);
+
     fn peer_disconnected(&self, peer_id: &PeerIdentity);
 }
 
@@ -211,6 +211,7 @@ pub trait SocketSend {
 /// in [proxy] function as a capture parameter
 pub trait CaptureSocket: SocketSend {}
 
+#[allow(clippy::empty_line_after_outer_attr)]
 #[async_trait]
 pub trait Socket: Sized + Send {
     fn new() -> Self {
@@ -333,11 +334,11 @@ pub trait Socket: Sized + Send {
     /// # Errors
     /// May give a `ZmqError::NoSuchConnection` if `endpoint` isn't connected.
     /// May also give any other zmq errors encountered when attempting to
-    /// disconnect.
+    /// disconnect
     // TODO: async fn disconnect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) ->
     // ZmqResult<()>;
 
-    /// Disconnects all connecttions, blocking until finished.
+    /// Disconnects all connections, blocking until finished.
     // TODO: async fn disconnect_all(&mut self) -> ZmqResult<()>;
 
     /// Closes the socket, blocking until all associated binds are closed.

@@ -16,9 +16,8 @@ pub(crate) use zmq_codec::ZmqCodec;
 
 use crate::message::ZmqMessage;
 use crate::{ZmqError, ZmqResult};
-
-use futures_task::noop_waker;
-use futures_util::Sink;
+use futures::task::noop_waker;
+use futures::Sink;
 
 use std::pin::Pin;
 use std::task::{Context, Poll};

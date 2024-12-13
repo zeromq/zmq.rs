@@ -11,8 +11,8 @@ use crate::{
 
 use async_trait::async_trait;
 use dashmap::DashMap;
-use futures_channel::{mpsc, oneshot};
-use futures_util::{select, FutureExt, StreamExt};
+use futures::channel::{mpsc, oneshot};
+use futures::{select, FutureExt, StreamExt};
 use parking_lot::Mutex;
 
 use std::collections::HashMap;

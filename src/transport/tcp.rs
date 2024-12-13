@@ -12,7 +12,7 @@ use crate::endpoint::{Endpoint, Host, Port};
 use crate::task_handle::TaskHandle;
 use crate::ZmqResult;
 
-use futures_util::{select, FutureExt};
+use futures::{select, FutureExt};
 
 pub(crate) async fn connect(host: &Host, port: Port) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = TcpStream::connect((host.to_string().as_str(), port)).await?;
@@ -35,7 +35,7 @@ where
 {
     let listener = TcpListener::bind((host.to_string().as_str(), port)).await?;
     let resolved_addr = listener.local_addr()?;
-    let (stop_channel, stop_callback) = futures_channel::oneshot::channel::<()>();
+    let (stop_channel, stop_callback) = futures::channel::oneshot::channel::<()>();
     let task_handle = async_rt::task::spawn(async move {
         let mut stop_callback = stop_callback.fuse();
         loop {
