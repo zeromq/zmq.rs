@@ -1,7 +1,11 @@
 [package]
 name = "zeromq"
 version = "0.4.1"
-authors = ["Alexei Kornienko <alexei.kornienko@gmail.com>"]
+authors = [
+    "Alexei Kornienko <alexei.kornienko@gmail.com>",
+    "Ryan Butler <thebutlah@gmail.com>",
+    "Kyle Kelley <rgbkrk@gmail.com>",
+]
 edition = "2021"
 description = "A native Rust implementation of ZeroMQ"
 license = "MIT"
