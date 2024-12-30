@@ -5,7 +5,7 @@ use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
     CaptureSocket, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketOptions,
-    SocketRecv, SocketSend, SocketType, ZmqMessage, ZmqResult,
+    SocketRecv, SocketSend, SocketType, ZmqError, ZmqMessage, ZmqResult,
 };
 
 use async_trait::async_trait;
@@ -66,8 +66,19 @@ impl SocketRecv for DealerSocket {
                 Some((_peer_id, Ok(Message::Message(message)))) => {
                     return Ok(message);
                 }
-                Some((_peer_id, _)) => todo!(),
-                None => todo!(),
+                Some((_peer_id, Ok(_))) => {
+                    // Ignore non-message frames
+                    continue;
+                }
+                Some((_peer_id, Err(e))) => {
+                    // Handle potential errors from the fair queue
+                    return Err(e.into());
+                }
+                None => {
+                    // The fair queue is empty, which shouldn't happen in normal operation
+                    // We could either wait for more messages or return an error
+                    return Err(ZmqError::NoMessage);
+                }
             };
         }
     }
