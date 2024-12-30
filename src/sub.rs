@@ -1,7 +1,7 @@
 use crate::backend::Peer;
 use crate::codec::{FramedIo, Message, ZmqFramedRead};
 use crate::endpoint::Endpoint;
-use crate::error::ZmqResult;
+use crate::error::{ZmqError, ZmqResult};
 use crate::fair_queue::FairQueue;
 use crate::fair_queue::QueueInner;
 use crate::message::ZmqMessage;
@@ -191,11 +191,20 @@ impl SocketRecv for SubSocket {
                 Some((_peer_id, Ok(Message::Message(message)))) => {
                     return Ok(message);
                 }
-                Some((_peer_id, Ok(msg))) => todo!("Unimplemented message: {:?}", msg),
-                Some((peer_id, Err(_))) => {
-                    self.backend.peer_disconnected(&peer_id);
+                Some((_peer_id, Ok(_msg))) => {
+                    // Ignore non-message frames. SUB sockets are designed to only receive actual messages,
+                    // not internal protocol frames like commands or greetings.
+                    continue;
                 }
-                None => todo!(),
+                Some((peer_id, Err(e))) => {
+                    self.backend.peer_disconnected(&peer_id);
+                    // Handle potential errors from the fair queue
+                    return Err(e.into());
+                }
+                None => {
+                    // The fair queue is empty, which shouldn't happen in normal operation
+                    return Err(ZmqError::NoMessage);
+                }
             }
         }
     }
