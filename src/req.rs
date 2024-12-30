@@ -78,14 +78,24 @@ impl SocketRecv for ReqSocket {
         match self.current_request.take() {
             Some(peer_id) => {
                 if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
-                    let message = peer.recv_queue.next().await;
-                    match message {
+                    match peer.recv_queue.next().await {
                         Some(Ok(Message::Message(mut m))) => {
-                            assert!(m.len() > 1);
-                            assert!(m.pop_front().unwrap().is_empty()); // Ensure that we have delimeter as first part
+                            if m.len() < 2 {
+                                return Err(ZmqError::Other(
+                                    "Invalid message format: too few frames",
+                                ));
+                            }
+                            if !m.pop_front().unwrap().is_empty() {
+                                return Err(ZmqError::Other(
+                                    "Invalid message format: missing delimiter",
+                                ));
+                            }
                             Ok(m)
                         }
-                        Some(Ok(_)) => todo!(),
+                        Some(Ok(_)) => {
+                            // Non-message frames should be ignored by the caller
+                            Err(ZmqError::Other("Received non-message frame"))
+                        }
                         Some(Err(error)) => Err(error.into()),
                         None => Err(ZmqError::NoMessage),
                     }

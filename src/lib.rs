@@ -357,8 +357,8 @@ pub async fn proxy<Frontend: SocketSend + SocketRecv, Backend: SocketSend + Sock
                         }
                         backend.send(message).await?;
                     }
-                    Err(_) => {
-                        todo!()
+                    Err(e) => {
+                        return Err(e);
                     }
                 }
             },
@@ -370,8 +370,8 @@ pub async fn proxy<Frontend: SocketSend + SocketRecv, Backend: SocketSend + Sock
                         }
                         frontend.send(message).await?;
                     }
-                    Err(_) => {
-                        todo!()
+                    Err(e) => {
+                        return Err(e);
                     }
                 }
             }
