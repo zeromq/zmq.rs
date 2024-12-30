@@ -68,11 +68,22 @@ impl SocketRecv for RouterSocket {
                     message.push_front(peer_id.into());
                     return Ok(message);
                 }
-                Some((_peer_id, Ok(msg))) => todo!("Unimplemented message: {:?}", msg),
-                Some((peer_id, Err(_))) => {
-                    self.backend.peer_disconnected(&peer_id);
+                Some((_peer_id, Ok(_msg))) => {
+                    // todo: Log or handle other message types if needed
+                    // We could take an approach of using `tracing` and have that be an optional feature
+                    // tracing::warn!("Received unimplemented message type: {:?}", msg);
+                    continue;
                 }
-                None => todo!(),
+                Some((peer_id, Err(_e))) => {
+                    self.backend.peer_disconnected(&peer_id);
+                    // We could take an approach of using `tracing` and have that be an optional feature
+                    // tracing::error!("Error receiving message from peer {}: {:?}", peer_id, e);
+                    continue;
+                }
+                None => {
+                    // The fair queue is empty, which shouldn't happen in normal operation
+                    return Err(ZmqError::NoMessage);
+                }
             };
         }
     }
