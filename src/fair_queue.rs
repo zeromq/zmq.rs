@@ -130,7 +130,7 @@ where
                     inner.streams.insert(event.key, io_stream);
                     return Poll::Ready(item);
                 }
-                Poll::Ready(None) => continue,
+                Poll::Ready(None) => return Poll::Ready(None),
                 Poll::Pending => {
                     let mut inner = fair_queue.inner.lock();
                     inner.streams.insert(event.key, io_stream);
