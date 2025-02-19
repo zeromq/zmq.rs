@@ -134,7 +134,7 @@ where
                 Poll::Pending => {
                     let mut inner = fair_queue.inner.lock();
                     inner.streams.insert(event.key, io_stream);
-                    return Poll::Pending;
+                    continue;
                 }
             }
         }
