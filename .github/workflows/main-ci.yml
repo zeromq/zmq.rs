@@ -16,7 +16,7 @@ jobs:
           override: true
           components: clippy
       - name: Cache cargo dependencies
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: ~/.cargo/
           key: cache-cargo-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
@@ -45,7 +45,7 @@ jobs:
           toolchain: stable
           override: true
       - name: Cache cargo dependencies
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: ~/.cargo/
           key: cache-cargo-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
