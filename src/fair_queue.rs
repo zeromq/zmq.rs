@@ -90,6 +90,7 @@ where
 {
     type Item = (K, T);
 
+    #[allow(clippy::needless_continue)]
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let fair_queue = self.get_mut();
         loop {
