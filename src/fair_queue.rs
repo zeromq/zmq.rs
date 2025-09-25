@@ -220,14 +220,6 @@ mod test {
         }
     }
 
-    fn poll_debug<T>(poll: Poll<Option<T>>) -> &'static str {
-        match poll {
-            Poll::Ready(Some(_)) => "Ready(Some(_))",
-            Poll::Ready(None) => "Ready(None)",
-            Poll::Pending => "Pending",
-        }
-    }
-
     #[async_rt::test]
     async fn test_fair_queue_ready() {
         let a = stream::iter(vec!["a1", "a2", "a3"]);
@@ -323,7 +315,7 @@ mod test {
                 assert_eq!(key, "fast");
                 assert_eq!(value, "f1");
             }
-            other => panic!("Expected fast stream first, got: {:?}", poll_debug(other)),
+            other => panic!("Expected fast stream first, got: {:#?}", other),
         }
 
         // Second poll: fast stream still ready, slow stream pending
@@ -333,14 +325,14 @@ mod test {
                 assert_eq!(key, "fast");
                 assert_eq!(value, "f2");
             }
-            other => panic!("Expected fast stream second, got: {:?}", poll_debug(other)),
+            other => panic!("Expected fast stream second, got: {:#?}", other),
         }
 
         // Third poll: With noop_waker, slow stream hasn't been re-polled
         let result = Pin::new(&mut fair_queue).poll_next(&mut cx);
         match result {
             Poll::Pending => {} // Expected with noop_waker
-            other => panic!("Expected Pending, got: {:?}", poll_debug(other)),
+            other => panic!("Expected Pending, got: {:#?}", other),
         }
     }
 
