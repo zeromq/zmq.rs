@@ -72,13 +72,11 @@ impl SocketRecv for RouterSocket {
                     // todo: Log or handle other message types if needed
                     // We could take an approach of using `tracing` and have that be an optional feature
                     // tracing::warn!("Received unimplemented message type: {:?}", msg);
-                    continue;
                 }
                 Some((peer_id, Err(_e))) => {
                     self.backend.peer_disconnected(&peer_id);
                     // We could take an approach of using `tracing` and have that be an optional feature
                     // tracing::error!("Error receiving message from peer {}: {:?}", peer_id, e);
-                    continue;
                 }
                 None => {
                     // The fair queue is empty, which shouldn't happen in normal operation

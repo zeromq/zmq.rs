@@ -68,7 +68,6 @@ impl SocketRecv for DealerSocket {
                 }
                 Some((_peer_id, Ok(_))) => {
                     // Ignore non-message frames
-                    continue;
                 }
                 Some((_peer_id, Err(e))) => {
                     // Handle potential errors from the fair queue

@@ -62,7 +62,6 @@ impl SocketRecv for PullSocket {
                 }
                 Some((_peer_id, Ok(_msg))) => {
                     // Ignore non-message frames (Command, Greeting) as PULL sockets are designed to only receive actual messages, not internal protocol frames.
-                    continue;
                 }
                 Some((peer_id, Err(e))) => {
                     self.backend.peer_disconnected(&peer_id);

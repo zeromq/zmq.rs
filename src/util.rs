@@ -215,7 +215,6 @@ pub(crate) async fn connect_forever(endpoint: Endpoint) -> ZmqResult<(FramedIo, 
                     std::f64::consts::E.powf(try_num as f64 / 3.0) + rng.gen_range(0.0f64..0.1f64)
                 };
                 async_rt::task::sleep(std::time::Duration::from_secs_f64(delay)).await;
-                continue;
             }
             Err(e) => return Err(e),
         }
