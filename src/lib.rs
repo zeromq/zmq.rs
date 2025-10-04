@@ -283,9 +283,7 @@ pub trait Socket: Sized + Send {
     /// Unbinds all bound endpoints, blocking until finished.
     async fn unbind_all(&mut self) -> Vec<ZmqError> {
         let mut errs = Vec::new();
-        let endpoints: Vec<_> = self
-            .binds().keys().cloned()
-            .collect();
+        let endpoints: Vec<_> = self.binds().keys().cloned().collect();
         for endpoint in endpoints {
             if let Err(err) = self.unbind(endpoint).await {
                 errs.push(err);
