@@ -167,7 +167,6 @@ impl SocketRecv for RepSocket {
                     }
                     Message::Greeting(_) | Message::Command(_) => {
                         // Ignore non-message frames. REP sockets should only process actual messages.
-                        continue;
                     }
                 },
                 Some((peer_id, Err(e))) => {
