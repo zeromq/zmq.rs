@@ -373,7 +373,7 @@ mod test {
                     }
                 }
                 Poll::Ready(None) => break,
-                Poll::Pending => continue,
+                Poll::Pending => {}
             }
         }
 
