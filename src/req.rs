@@ -58,15 +58,12 @@ impl SocketSend for ReqSocket {
                     })
                 }
             };
-            match self.backend.peers.get_mut(&next_peer_id) {
-                Some(mut peer) => {
-                    self.backend.round_robin.push(next_peer_id.clone());
-                    message.push_front(Bytes::new());
-                    peer.send_queue.send(Message::Message(message)).await?;
-                    self.current_request = Some(next_peer_id);
-                    return Ok(());
-                }
-                None => continue,
+            if let Some(mut peer) = self.backend.peers.get_mut(&next_peer_id) {
+                self.backend.round_robin.push(next_peer_id.clone());
+                message.push_front(Bytes::new());
+                peer.send_queue.send(Message::Message(message)).await?;
+                self.current_request = Some(next_peer_id);
+                return Ok(());
             }
         }
     }

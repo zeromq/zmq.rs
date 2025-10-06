@@ -332,7 +332,7 @@ mod test {
         let result = Pin::new(&mut fair_queue).poll_next(&mut cx);
         match result {
             Poll::Pending => {} // Expected with noop_waker
-            other => panic!("Expected Pending, got: {:#?}", other),
+            other @ Poll::Ready(_) => panic!("Expected Pending, got: {:#?}", other),
         }
     }
 
@@ -373,7 +373,7 @@ mod test {
                     }
                 }
                 Poll::Ready(None) => break,
-                Poll::Pending => continue,
+                Poll::Pending => {}
             }
         }
 
