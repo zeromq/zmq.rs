@@ -96,7 +96,9 @@ impl MultiPeerBackend for SubSocketBackend {
             send_queue.send(Message::Message(message)).await.unwrap();
         }
 
-        self.peers.upsert_async(peer_id.clone(), Peer { send_queue }).await;
+        self.peers
+            .upsert_async(peer_id.clone(), Peer { send_queue })
+            .await;
         self.round_robin.push(peer_id.clone());
         match &self.fair_queue_inner {
             None => {}
@@ -144,7 +146,7 @@ impl SubSocket {
         let message: ZmqMessage = SubSocketBackend::create_subs_message(subscription, msg_type);
         let mut iter = self.backend.peers.first_entry_async().await;
 
-        while let Some(mut peer) = iter{
+        while let Some(mut peer) = iter {
             peer.send_queue
                 .send(Message::Message(message.clone()))
                 .await?;

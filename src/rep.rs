@@ -77,13 +77,15 @@ impl MultiPeerBackend for RepSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, send_queue) = io.into_parts();
 
-        self.peers.upsert_async(
-            peer_id.clone(),
-            RepPeer {
-                _identity: peer_id.clone(),
-                send_queue,
-            },
-        ).await;
+        self.peers
+            .upsert_async(
+                peer_id.clone(),
+                RepPeer {
+                    _identity: peer_id.clone(),
+                    send_queue,
+                },
+            )
+            .await;
         self.fair_queue_inner
             .lock()
             .insert(peer_id.clone(), recv_queue);

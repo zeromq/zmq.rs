@@ -114,14 +114,16 @@ impl MultiPeerBackend for PubSocketBackend {
         let (mut recv_queue, send_queue) = io.into_parts();
         // TODO provide handling for recv_queue
         let (sender, stop_receiver) = oneshot::channel();
-        self.subscribers.upsert_async(
-            peer_id.clone(),
-            Subscriber {
-                subscriptions: vec![],
-                send_queue: Box::pin(send_queue),
-                _subscription_coro_stop: sender,
-            },
-        ).await;
+        self.subscribers
+            .upsert_async(
+                peer_id.clone(),
+                Subscriber {
+                    subscriptions: vec![],
+                    send_queue: Box::pin(send_queue),
+                    _subscription_coro_stop: sender,
+                },
+            )
+            .await;
         let backend = self;
         let peer_id = peer_id.clone();
         async_rt::task::spawn(async move {

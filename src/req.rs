@@ -138,14 +138,16 @@ impl Socket for ReqSocket {
 impl MultiPeerBackend for ReqSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, send_queue) = io.into_parts();
-        self.peers.upsert_async(
-            peer_id.clone(),
-            Peer {
-                _identity: peer_id.clone(),
-                send_queue,
-                recv_queue,
-            },
-        ).await;
+        self.peers
+            .upsert_async(
+                peer_id.clone(),
+                Peer {
+                    _identity: peer_id.clone(),
+                    send_queue,
+                    recv_queue,
+                },
+            )
+            .await;
         self.round_robin.push(peer_id.clone());
     }
 

@@ -102,7 +102,9 @@ impl SocketBackend for GenericSocketBackend {
 impl MultiPeerBackend for GenericSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, send_queue) = io.into_parts();
-        self.peers.upsert_async(peer_id.clone(), Peer { send_queue }).await;
+        self.peers
+            .upsert_async(peer_id.clone(), Peer { send_queue })
+            .await;
         self.round_robin.push(peer_id.clone());
         match &self.fair_queue_inner {
             None => {}
