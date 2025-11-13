@@ -195,7 +195,6 @@ impl SocketRecv for SubSocket {
                 Some((_peer_id, Ok(_msg))) => {
                     // Ignore non-message frames. SUB sockets are designed to only receive actual messages,
                     // not internal protocol frames like commands or greetings.
-                    continue;
                 }
                 Some((peer_id, Err(e))) => {
                     self.backend.peer_disconnected(&peer_id);
