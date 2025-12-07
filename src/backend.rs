@@ -90,7 +90,7 @@ impl SocketBackend for GenericSocketBackend {
     }
 
     fn shutdown(&self) {
-        self.peers.clear();
+        self.peers.clear_sync();
     }
 
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
@@ -115,7 +115,7 @@ impl MultiPeerBackend for GenericSocketBackend {
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
-        self.peers.remove(peer_id);
+        self.peers.remove_sync(peer_id);
         match &self.fair_queue_inner {
             None => {}
             Some(inner) => {

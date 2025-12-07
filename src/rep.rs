@@ -95,7 +95,7 @@ impl MultiPeerBackend for RepSocketBackend {
         if let Some(monitor) = self.monitor().lock().as_mut() {
             let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
         }
-        self.peers.remove(peer_id);
+        self.peers.remove_sync(peer_id);
     }
 }
 
@@ -109,7 +109,7 @@ impl SocketBackend for RepSocketBackend {
     }
 
     fn shutdown(&self) {
-        self.peers.clear();
+        self.peers.clear_sync();
     }
 
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {

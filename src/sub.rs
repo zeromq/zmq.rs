@@ -72,7 +72,7 @@ impl SocketBackend for SubSocketBackend {
     }
 
     fn shutdown(&self) {
-        self.peers.clear();
+        self.peers.clear_sync();
     }
 
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
@@ -109,7 +109,7 @@ impl MultiPeerBackend for SubSocketBackend {
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
-        self.peers.remove(peer_id);
+        self.peers.remove_sync(peer_id);
     }
 }
 
@@ -144,7 +144,7 @@ impl SubSocket {
         msg_type: SubBackendMsgType,
     ) -> ZmqResult<()> {
         let message: ZmqMessage = SubSocketBackend::create_subs_message(subscription, msg_type);
-        let mut iter = self.backend.peers.first_entry_async().await;
+        let mut iter = self.backend.peers.begin_async().await;
 
         while let Some(mut peer) = iter {
             peer.send_queue

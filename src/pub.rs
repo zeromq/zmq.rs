@@ -51,35 +51,17 @@ impl PubSocketBackend {
         match data.first() {
             Some(1) => {
                 // Subscribe
-                self.subscribers
-                    .get(peer_id)
-                    .unwrap()
-                    .subscriptions
-                    .push(Vec::from(&data[1..]));
+                if let Some(mut entry) = self.subscribers.get_sync(peer_id) {
+                    entry.subscriptions.push(Vec::from(&data[1..]));
+                }
             }
             Some(0) => {
                 // Unsubscribe
-                let mut del_index = None;
                 let sub = Vec::from(&data[1..]);
-                for (idx, subscription) in self
-                    .subscribers
-                    .get(peer_id)
-                    .unwrap()
-                    .subscriptions
-                    .iter()
-                    .enumerate()
-                {
-                    if &sub == subscription {
-                        del_index = Some(idx);
-                        break;
+                if let Some(mut entry) = self.subscribers.get_sync(peer_id) {
+                    if let Some(index) = entry.subscriptions.iter().position(|s| s == &sub) {
+                        entry.subscriptions.remove(index);
                     }
-                }
-                if let Some(index) = del_index {
-                    self.subscribers
-                        .get(peer_id)
-                        .unwrap()
-                        .subscriptions
-                        .remove(index);
                 }
             }
             _ => log::warn!(
@@ -100,7 +82,7 @@ impl SocketBackend for PubSocketBackend {
     }
 
     fn shutdown(&self) {
-        self.subscribers.clear();
+        self.subscribers.clear_sync();
     }
 
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
@@ -155,7 +137,7 @@ impl MultiPeerBackend for PubSocketBackend {
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         log::info!("Client disconnected {:?}", peer_id);
-        self.subscribers.remove(peer_id);
+        self.subscribers.remove_sync(peer_id);
     }
 }
 
@@ -174,7 +156,7 @@ impl Drop for PubSocket {
 impl SocketSend for PubSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         let mut dead_peers = Vec::new();
-        let mut iter = self.backend.subscribers.first_entry_async().await;
+        let mut iter = self.backend.subscribers.begin_async().await;
         while let Some(mut subscriber) = iter {
             for sub_filter in &subscriber.subscriptions {
                 if sub_filter.len() <= message.get(0).unwrap().len()
