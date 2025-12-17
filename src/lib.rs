@@ -16,6 +16,7 @@ mod req;
 mod router;
 mod sub;
 mod task_handle;
+mod xpub;
 mod transport;
 pub mod util;
 
@@ -36,6 +37,7 @@ pub use crate::rep::*;
 pub use crate::req::*;
 pub use crate::router::*;
 pub use crate::sub::*;
+pub use crate::xpub::*;
 
 use crate::codec::*;
 use crate::transport::AcceptStopHandle;
