@@ -205,7 +205,6 @@ impl SocketRecv for XPubSocket {
                 }
                 Some((_peer_id, Ok(_msg))) => {
                     // Ignore non-message frames
-                    continue;
                 }
                 Some((peer_id, Err(e))) => {
                     self.backend.peer_disconnected(&peer_id);
