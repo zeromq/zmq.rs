@@ -16,9 +16,9 @@ mod req;
 mod router;
 mod sub;
 mod task_handle;
-mod xpub;
 mod transport;
 pub mod util;
+mod xpub;
 
 #[doc(hidden)]
 pub mod __async_rt {

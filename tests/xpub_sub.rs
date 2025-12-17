@@ -87,11 +87,17 @@ mod test {
                 .expect("Failed to connect");
 
             // Subscribe
-            sub_socket.subscribe("test").await.expect("Failed to subscribe");
+            sub_socket
+                .subscribe("test")
+                .await
+                .expect("Failed to subscribe");
             async_rt::task::sleep(Duration::from_millis(100)).await;
 
             // Unsubscribe
-            sub_socket.unsubscribe("test").await.expect("Failed to unsubscribe");
+            sub_socket
+                .unsubscribe("test")
+                .await
+                .expect("Failed to unsubscribe");
             async_rt::task::sleep(Duration::from_millis(100)).await;
         });
 
@@ -138,7 +144,10 @@ mod test {
                 .await
                 .expect("Failed to connect");
 
-            sub_socket.subscribe("topic1").await.expect("Failed to subscribe");
+            sub_socket
+                .subscribe("topic1")
+                .await
+                .expect("Failed to subscribe");
 
             async_rt::task::sleep(Duration::from_millis(200)).await;
 

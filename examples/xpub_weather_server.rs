@@ -18,7 +18,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     socket.bind("tcp://127.0.0.1:5557").await?;
 
     println!("XPUB server bound to tcp://127.0.0.1:5557");
-    println!("Run the weather_client example and connect to port 5557 to see subscription messages\n");
+    println!(
+        "Run the weather_client example and connect to port 5557 to see subscription messages\n"
+    );
 
     // Spawn a background task to handle subscription messages
     // This is the key difference between PUB and XPUB:
@@ -130,7 +132,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         counter += 1;
         if counter % 50 == 0 {
             let subs = subscription_counter.load(std::sync::atomic::Ordering::Relaxed);
-            println!("📡 Sent {} weather updates (active subscriptions: {})", counter, subs);
+            println!(
+                "📡 Sent {} weather updates (active subscriptions: {})",
+                counter, subs
+            );
         }
 
         async_helpers::sleep(Duration::from_millis(100)).await;
