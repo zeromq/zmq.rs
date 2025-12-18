@@ -131,7 +131,11 @@ where
                     inner.streams.insert(event.key, io_stream);
                     return Poll::Ready(item);
                 }
-                Poll::Ready(None) => return Poll::Ready(None),
+                Poll::Ready(None) => {
+                    // Peer disconnected. Don't put the stream back.
+                    // Continue to poll other streams instead of returning None immediately.
+                    continue;
+                }
                 Poll::Pending => {
                     let mut inner = fair_queue.inner.lock();
                     inner.streams.insert(event.key, io_stream);
@@ -276,6 +280,7 @@ mod test {
             results.push(i);
         }
 
+        // FairQueue continues polling all streams until all are exhausted
         assert_eq!(
             results,
             vec![
