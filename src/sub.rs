@@ -14,7 +14,6 @@ use crate::{
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use crossbeam_queue::SegQueue;
-use dashmap::DashMap;
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
 use parking_lot::Mutex;
@@ -28,7 +27,7 @@ pub enum SubBackendMsgType {
 }
 
 pub(crate) struct SubSocketBackend {
-    pub(crate) peers: DashMap<PeerIdentity, Peer>,
+    pub(crate) peers: scc::HashMap<PeerIdentity, Peer>,
     fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
     socket_type: SocketType,
@@ -44,7 +43,7 @@ impl SubSocketBackend {
         options: SocketOptions,
     ) -> Self {
         Self {
-            peers: DashMap::new(),
+            peers: scc::HashMap::new(),
             fair_queue_inner,
             round_robin: SegQueue::new(),
             socket_type,
@@ -73,7 +72,7 @@ impl SocketBackend for SubSocketBackend {
     }
 
     fn shutdown(&self) {
-        self.peers.clear();
+        self.peers.clear_sync();
     }
 
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
@@ -97,7 +96,9 @@ impl MultiPeerBackend for SubSocketBackend {
             send_queue.send(Message::Message(message)).await.unwrap();
         }
 
-        self.peers.insert(peer_id.clone(), Peer { send_queue });
+        self.peers
+            .upsert_async(peer_id.clone(), Peer { send_queue })
+            .await;
         self.round_robin.push(peer_id.clone());
         match &self.fair_queue_inner {
             None => {}
@@ -108,7 +109,7 @@ impl MultiPeerBackend for SubSocketBackend {
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
-        self.peers.remove(peer_id);
+        self.peers.remove_sync(peer_id);
     }
 }
 
@@ -143,11 +144,13 @@ impl SubSocket {
         msg_type: SubBackendMsgType,
     ) -> ZmqResult<()> {
         let message: ZmqMessage = SubSocketBackend::create_subs_message(subscription, msg_type);
+        let mut iter = self.backend.peers.begin_async().await;
 
-        for mut peer in self.backend.peers.iter_mut() {
+        while let Some(mut peer) = iter {
             peer.send_queue
                 .send(Message::Message(message.clone()))
                 .await?;
+            iter = peer.next_async().await;
         }
         Ok(())
     }

@@ -7,7 +7,6 @@ use crate::{
 
 use async_trait::async_trait;
 use crossbeam_queue::SegQueue;
-use dashmap::DashMap;
 use futures::channel::mpsc;
 use futures::SinkExt;
 use parking_lot::Mutex;
@@ -19,7 +18,7 @@ pub(crate) struct Peer {
 }
 
 pub(crate) struct GenericSocketBackend {
-    pub(crate) peers: DashMap<PeerIdentity, Peer>,
+    pub(crate) peers: scc::HashMap<PeerIdentity, Peer>,
     fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
     socket_type: SocketType,
@@ -34,7 +33,7 @@ impl GenericSocketBackend {
         options: SocketOptions,
     ) -> Self {
         Self {
-            peers: DashMap::new(),
+            peers: scc::HashMap::new(),
             fair_queue_inner,
             round_robin: SegQueue::new(),
             socket_type,
@@ -63,7 +62,7 @@ impl GenericSocketBackend {
                     }
                 },
             };
-            let send_result = match self.peers.get_mut(&next_peer_id) {
+            let send_result = match self.peers.get_async(&next_peer_id).await {
                 Some(mut peer) => peer.send_queue.send(message).await,
                 None => continue,
             };
@@ -91,7 +90,7 @@ impl SocketBackend for GenericSocketBackend {
     }
 
     fn shutdown(&self) {
-        self.peers.clear();
+        self.peers.clear_sync();
     }
 
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
@@ -103,7 +102,9 @@ impl SocketBackend for GenericSocketBackend {
 impl MultiPeerBackend for GenericSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, send_queue) = io.into_parts();
-        self.peers.insert(peer_id.clone(), Peer { send_queue });
+        self.peers
+            .upsert_async(peer_id.clone(), Peer { send_queue })
+            .await;
         self.round_robin.push(peer_id.clone());
         match &self.fair_queue_inner {
             None => {}
@@ -114,7 +115,7 @@ impl MultiPeerBackend for GenericSocketBackend {
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
-        self.peers.remove(peer_id);
+        self.peers.remove_sync(peer_id);
         match &self.fair_queue_inner {
             None => {}
             Some(inner) => {

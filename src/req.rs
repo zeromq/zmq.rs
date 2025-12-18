@@ -9,14 +9,13 @@ use crate::{SocketType, ZmqResult};
 use async_trait::async_trait;
 use bytes::Bytes;
 use crossbeam_queue::SegQueue;
-use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 struct ReqSocketBackend {
-    pub(crate) peers: DashMap<PeerIdentity, Peer>,
+    pub(crate) peers: scc::HashMap<PeerIdentity, Peer>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
     socket_options: SocketOptions,
@@ -58,7 +57,7 @@ impl SocketSend for ReqSocket {
                     })
                 }
             };
-            if let Some(mut peer) = self.backend.peers.get_mut(&next_peer_id) {
+            if let Some(mut peer) = self.backend.peers.get_async(&next_peer_id).await {
                 self.backend.round_robin.push(next_peer_id.clone());
                 message.push_front(Bytes::new());
                 peer.send_queue.send(Message::Message(message)).await?;
@@ -74,7 +73,7 @@ impl SocketRecv for ReqSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         match self.current_request.take() {
             Some(peer_id) => {
-                if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
+                if let Some(mut peer) = self.backend.peers.get_async(&peer_id).await {
                     match peer.recv_queue.next().await {
                         Some(Ok(Message::Message(mut m))) => {
                             if m.len() < 2 {
@@ -110,7 +109,7 @@ impl Socket for ReqSocket {
     fn with_options(options: SocketOptions) -> Self {
         Self {
             backend: Arc::new(ReqSocketBackend {
-                peers: DashMap::new(),
+                peers: scc::HashMap::new(),
                 round_robin: SegQueue::new(),
                 socket_monitor: Mutex::new(None),
                 socket_options: options,
@@ -139,19 +138,21 @@ impl Socket for ReqSocket {
 impl MultiPeerBackend for ReqSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, send_queue) = io.into_parts();
-        self.peers.insert(
-            peer_id.clone(),
-            Peer {
-                _identity: peer_id.clone(),
-                send_queue,
-                recv_queue,
-            },
-        );
+        self.peers
+            .upsert_async(
+                peer_id.clone(),
+                Peer {
+                    _identity: peer_id.clone(),
+                    send_queue,
+                    recv_queue,
+                },
+            )
+            .await;
         self.round_robin.push(peer_id.clone());
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
-        self.peers.remove(peer_id);
+        self.peers.remove_sync(peer_id);
     }
 }
 
@@ -165,7 +166,7 @@ impl SocketBackend for ReqSocketBackend {
     }
 
     fn shutdown(&self) {
-        self.peers.clear();
+        self.peers.clear_sync();
     }
 
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {

@@ -7,7 +7,6 @@ use crate::*;
 use crate::{SocketType, ZmqResult};
 
 use async_trait::async_trait;
-use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 
@@ -20,7 +19,7 @@ struct RepPeer {
 }
 
 struct RepSocketBackend {
-    pub(crate) peers: DashMap<PeerIdentity, RepPeer>,
+    pub(crate) peers: scc::HashMap<PeerIdentity, RepPeer>,
     fair_queue_inner: Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
     socket_options: SocketOptions,
@@ -46,7 +45,7 @@ impl Socket for RepSocket {
         let fair_queue = FairQueue::new(true);
         Self {
             backend: Arc::new(RepSocketBackend {
-                peers: DashMap::new(),
+                peers: scc::HashMap::new(),
                 fair_queue_inner: fair_queue.inner(),
                 socket_monitor: Mutex::new(None),
                 socket_options: options,
@@ -78,13 +77,15 @@ impl MultiPeerBackend for RepSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, send_queue) = io.into_parts();
 
-        self.peers.insert(
-            peer_id.clone(),
-            RepPeer {
-                _identity: peer_id.clone(),
-                send_queue,
-            },
-        );
+        self.peers
+            .upsert_async(
+                peer_id.clone(),
+                RepPeer {
+                    _identity: peer_id.clone(),
+                    send_queue,
+                },
+            )
+            .await;
         self.fair_queue_inner
             .lock()
             .insert(peer_id.clone(), recv_queue);
@@ -94,7 +95,7 @@ impl MultiPeerBackend for RepSocketBackend {
         if let Some(monitor) = self.monitor().lock().as_mut() {
             let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
         }
-        self.peers.remove(peer_id);
+        self.peers.remove_sync(peer_id);
     }
 }
 
@@ -108,7 +109,7 @@ impl SocketBackend for RepSocketBackend {
     }
 
     fn shutdown(&self) {
-        self.peers.clear();
+        self.peers.clear_sync();
     }
 
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
@@ -121,7 +122,7 @@ impl SocketSend for RepSocket {
     async fn send(&mut self, mut message: ZmqMessage) -> ZmqResult<()> {
         match self.current_request.take() {
             Some(peer_id) => {
-                if let Some(mut peer) = self.backend.peers.get_mut(&peer_id) {
+                if let Some(mut peer) = self.backend.peers.get_async(&peer_id).await {
                     if let Some(envelope) = self.envelope.take() {
                         message.prepend(&envelope);
                     }
