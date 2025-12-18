@@ -131,7 +131,11 @@ where
                     inner.streams.insert(event.key, io_stream);
                     return Poll::Ready(item);
                 }
-                Poll::Ready(None) => return Poll::Ready(None),
+                Poll::Ready(None) => {
+                    // Peer disconnected. Don't put the stream back.
+                    // Continue to poll other streams instead of returning None immediately.
+                    continue;
+                }
                 Poll::Pending => {
                     let mut inner = fair_queue.inner.lock();
                     inner.streams.insert(event.key, io_stream);
@@ -276,9 +280,18 @@ mod test {
             results.push(i);
         }
 
-        // FairQueue returns None when any stream ends (for disconnect handling)
-        // Stream b only has 1 item, so it ends after (2, "b1")
-        assert_eq!(results, vec![(1, "a1"), (2, "b1"), (3, "c1"), (1, "a2")]);
+        // FairQueue continues polling all streams until all are exhausted
+        assert_eq!(
+            results,
+            vec![
+                (1, "a1"),
+                (2, "b1"),
+                (3, "c1"),
+                (1, "a2"),
+                (3, "c2"),
+                (1, "a3")
+            ]
+        );
     }
 
     #[test]
@@ -320,11 +333,12 @@ mod test {
             other => panic!("Expected fast stream second, got: {:#?}", other),
         }
 
-        // Third poll: fast stream ends, returns None (disconnect behavior)
+        // Third poll: fast stream ends, but slow stream still pending
+        // With noop_waker, slow hasn't been re-polled, so we get Pending
         let result = Pin::new(&mut fair_queue).poll_next(&mut cx);
         match result {
-            Poll::Ready(None) => {} // Fast stream ended
-            other => panic!("Expected Ready(None) after stream end, got: {:#?}", other),
+            Poll::Pending => {} // Waiting for slow stream
+            other => panic!("Expected Pending with remaining streams, got: {:#?}", other),
         }
     }
 
