@@ -118,13 +118,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Publishing weather updates on tcp://127.0.0.1:5558");
     println!("Format: <zipcode> <temperature> <humidity>\n");
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut counter = 0;
 
     loop {
-        let zipcode = rng.gen_range(10000..10010);
-        let temperature = rng.gen_range(-80..135);
-        let relhumidity = rng.gen_range(10..60);
+        let zipcode = rng.random_range(10000..10010);
+        let temperature = rng.random_range(-80..135);
+        let relhumidity = rng.random_range(10..60);
 
         let message = format!("{} {} {}", zipcode, temperature, relhumidity);
         pub_socket.send(message.into()).await?;

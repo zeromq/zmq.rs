@@ -12,7 +12,6 @@ use crate::{
 };
 
 use async_trait::async_trait;
-use dashmap::DashMap;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use parking_lot::Mutex;
@@ -28,7 +27,7 @@ pub(crate) struct XPubSubscriber {
 }
 
 pub(crate) struct XPubSocketBackend {
-    subscribers: DashMap<PeerIdentity, XPubSubscriber>,
+    subscribers: scc::HashMap<PeerIdentity, XPubSubscriber>,
     fair_queue_inner: Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
     socket_options: SocketOptions,
@@ -54,35 +53,17 @@ impl XPubSocketBackend {
         match data.first() {
             Some(1) => {
                 // Subscribe
-                self.subscribers
-                    .get_mut(peer_id)
-                    .unwrap()
-                    .subscriptions
-                    .push(Vec::from(&data[1..]));
+                if let Some(mut entry) = self.subscribers.get_sync(peer_id) {
+                    entry.subscriptions.push(Vec::from(&data[1..]));
+                }
             }
             Some(0) => {
                 // Unsubscribe
-                let mut del_index = None;
                 let sub = Vec::from(&data[1..]);
-                for (idx, subscription) in self
-                    .subscribers
-                    .get(peer_id)
-                    .unwrap()
-                    .subscriptions
-                    .iter()
-                    .enumerate()
-                {
-                    if &sub == subscription {
-                        del_index = Some(idx);
-                        break;
+                if let Some(mut entry) = self.subscribers.get_sync(peer_id) {
+                    if let Some(index) = entry.subscriptions.iter().position(|s| s == &sub) {
+                        entry.subscriptions.remove(index);
                     }
-                }
-                if let Some(index) = del_index {
-                    self.subscribers
-                        .get_mut(peer_id)
-                        .unwrap()
-                        .subscriptions
-                        .remove(index);
                 }
             }
             _ => log::warn!(
@@ -103,7 +84,7 @@ impl SocketBackend for XPubSocketBackend {
     }
 
     fn shutdown(&self) {
-        self.subscribers.clear();
+        self.subscribers.clear_sync();
     }
 
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
@@ -116,13 +97,15 @@ impl MultiPeerBackend for XPubSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, send_queue) = io.into_parts();
 
-        self.subscribers.insert(
-            peer_id.clone(),
-            XPubSubscriber {
-                subscriptions: vec![],
-                send_queue: Box::pin(send_queue),
-            },
-        );
+        self.subscribers
+            .upsert_async(
+                peer_id.clone(),
+                XPubSubscriber {
+                    subscriptions: vec![],
+                    send_queue: Box::pin(send_queue),
+                },
+            )
+            .await;
 
         self.fair_queue_inner
             .lock()
@@ -131,7 +114,7 @@ impl MultiPeerBackend for XPubSocketBackend {
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         log::info!("Client disconnected {:?}", peer_id);
-        self.subscribers.remove(peer_id);
+        self.subscribers.remove_sync(peer_id);
         self.fair_queue_inner.lock().remove(peer_id);
     }
 }
@@ -152,7 +135,8 @@ impl Drop for XPubSocket {
 impl SocketSend for XPubSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
         let mut dead_peers = Vec::new();
-        for mut subscriber in self.backend.subscribers.iter_mut() {
+        let mut iter = self.backend.subscribers.begin_async().await;
+        while let Some(mut subscriber) = iter {
             for sub_filter in &subscriber.subscriptions {
                 if sub_filter.len() <= message.get(0).unwrap().len()
                     && sub_filter.as_slice() == &message.get(0).unwrap()[0..sub_filter.len()]
@@ -183,6 +167,7 @@ impl SocketSend for XPubSocket {
                     break;
                 }
             }
+            iter = subscriber.next_async().await;
         }
         for peer in dead_peers {
             self.backend.peer_disconnected(&peer);
@@ -226,7 +211,7 @@ impl Socket for XPubSocket {
         let fair_queue = FairQueue::new(true);
         Self {
             backend: Arc::new(XPubSocketBackend {
-                subscribers: DashMap::new(),
+                subscribers: scc::HashMap::new(),
                 fair_queue_inner: fair_queue.inner(),
                 socket_monitor: Mutex::new(None),
                 socket_options: options,
