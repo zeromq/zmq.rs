@@ -276,17 +276,9 @@ mod test {
             results.push(i);
         }
 
-        assert_eq!(
-            results,
-            vec![
-                (1, "a1"),
-                (2, "b1"),
-                (3, "c1"),
-                (1, "a2"),
-                (3, "c2"),
-                (1, "a3")
-            ]
-        );
+        // FairQueue returns None when any stream ends (for disconnect handling)
+        // Stream b only has 1 item, so it ends after (2, "b1")
+        assert_eq!(results, vec![(1, "a1"), (2, "b1"), (3, "c1"), (1, "a2")]);
     }
 
     #[test]
@@ -328,11 +320,11 @@ mod test {
             other => panic!("Expected fast stream second, got: {:#?}", other),
         }
 
-        // Third poll: With noop_waker, slow stream hasn't been re-polled
+        // Third poll: fast stream ends, returns None (disconnect behavior)
         let result = Pin::new(&mut fair_queue).poll_next(&mut cx);
         match result {
-            Poll::Pending => {} // Expected with noop_waker
-            other @ Poll::Ready(_) => panic!("Expected Pending, got: {:#?}", other),
+            Poll::Ready(None) => {} // Fast stream ended
+            other => panic!("Expected Ready(None) after stream end, got: {:#?}", other),
         }
     }
 
