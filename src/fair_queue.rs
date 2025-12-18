@@ -333,12 +333,11 @@ mod test {
             other => panic!("Expected fast stream second, got: {:#?}", other),
         }
 
-        // Third poll: fast stream ends, but slow stream still pending
-        // With noop_waker, slow hasn't been re-polled, so we get Pending
+        // Third poll: With noop_waker, slow stream hasn't been re-polled
         let result = Pin::new(&mut fair_queue).poll_next(&mut cx);
         match result {
-            Poll::Pending => {} // Waiting for slow stream
-            other => panic!("Expected Pending with remaining streams, got: {:#?}", other),
+            Poll::Pending => {} // Expected with noop_waker
+            other @ Poll::Ready(_) => panic!("Expected Pending, got: {:#?}", other),
         }
     }
 
