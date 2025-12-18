@@ -26,10 +26,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // The first message is "0" and signals start of batch
     sink.send("0".into()).await?;
 
-    let mut rnd = rand::thread_rng();
+    let mut rnd = rand::rng();
     let mut total_msec = 0;
     for _ in 0..100 {
-        let workload = rnd.gen_range(1..100);
+        let workload = rnd.random_range(1..100);
         sender.send(workload.to_string().into()).await?;
         total_msec += workload;
     }
