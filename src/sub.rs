@@ -205,6 +205,7 @@ impl SocketRecv for SubSocket {
                 }
                 None => {
                     // The fair queue is empty, which shouldn't happen in normal operation
+                    // this can happen if the peer disconnects while we are polling
                     return Err(ZmqError::NoMessage);
                 }
             }
