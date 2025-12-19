@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // This is the key difference between PUB and XPUB:
     // XPUB exposes subscription/unsubscription messages to the application
     let subscription_counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let counter_clone = subscription_counter.clone();
+    let _counter_clone = subscription_counter.clone();
 
     #[cfg(feature = "tokio-runtime")]
     let _subscription_handle = tokio::spawn(async move {
@@ -44,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 } else {
                                     println!("📥 Client subscribed to: '{}'", topic);
                                 }
-                                counter_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                _counter_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             }
                             0 => {
                                 // Unsubscribe message (byte value 0)
@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 } else {
                                     println!("📥 Client subscribed to: '{}'", topic);
                                 }
-                                counter_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                _counter_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             }
                             0 => {
                                 let topic = String::from_utf8_lossy(&data[1..]);
