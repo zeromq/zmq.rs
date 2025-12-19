@@ -16,7 +16,7 @@ Basic ZMTP implementation is working and tested against the reference implementa
 ### Supported socket patterns:
 
 * Request/Response (REQ, REP, DEALER, ROUTER)
-* Publish/Subscribe (PUB, SUB)
+* Publish/Subscribe (PUB, SUB, XPUB)
 * Pipeline (PUSH, PULL)
 
 ## Usage
