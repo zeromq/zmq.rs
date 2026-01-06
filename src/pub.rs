@@ -137,6 +137,9 @@ impl MultiPeerBackend for PubSocketBackend {
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         log::info!("Client disconnected {:?}", peer_id);
+        if let Some(monitor) = self.monitor().lock().as_mut() {
+            let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
+        }
         self.subscribers.remove_sync(peer_id);
     }
 }
