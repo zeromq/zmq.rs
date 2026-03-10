@@ -25,13 +25,22 @@ pub struct PullSocket {
 #[async_trait]
 impl Socket for PullSocket {
     fn with_options(options: SocketOptions) -> Self {
-        let fair_queue = FairQueue::new(true);
+        let mut fair_queue = FairQueue::new(true);
+        let backend = Arc::new(GenericSocketBackend::with_options(
+            Some(fair_queue.inner()),
+            SocketType::PULL,
+            options,
+        ));
+
+        let backend_weak = Arc::downgrade(&backend);
+        fair_queue.set_on_disconnect(move |peer_id: PeerIdentity| {
+            if let Some(backend) = backend_weak.upgrade() {
+                backend.peer_disconnected(&peer_id);
+            }
+        });
+
         Self {
-            backend: Arc::new(GenericSocketBackend::with_options(
-                Some(fair_queue.inner()),
-                SocketType::PULL,
-                options,
-            )),
+            backend,
             fair_queue,
             binds: HashMap::new(),
         }

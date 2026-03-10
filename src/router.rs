@@ -32,13 +32,22 @@ impl Drop for RouterSocket {
 #[async_trait]
 impl Socket for RouterSocket {
     fn with_options(options: SocketOptions) -> Self {
-        let fair_queue = FairQueue::new(true);
+        let mut fair_queue = FairQueue::new(true);
+        let backend = Arc::new(GenericSocketBackend::with_options(
+            Some(fair_queue.inner()),
+            SocketType::ROUTER,
+            options,
+        ));
+
+        let backend_weak = Arc::downgrade(&backend);
+        fair_queue.set_on_disconnect(move |peer_id: PeerIdentity| {
+            if let Some(backend) = backend_weak.upgrade() {
+                backend.peer_disconnected(&peer_id);
+            }
+        });
+
         Self {
-            backend: Arc::new(GenericSocketBackend::with_options(
-                Some(fair_queue.inner()),
-                SocketType::ROUTER,
-                options,
-            )),
+            backend,
             binds: HashMap::new(),
             fair_queue,
         }
