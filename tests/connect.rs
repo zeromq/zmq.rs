@@ -78,6 +78,30 @@ async fn connect_timeout_expires_for_missing_ipc_socket() {
 }
 
 #[async_rt::test]
+async fn ipc_close_allows_rebinding_same_path() {
+    let (endpoint, path) = unique_ipc_endpoint("rebind");
+
+    let mut first = zeromq::RouterSocket::new();
+    let first_bound = first.bind(&endpoint).await.unwrap();
+    assert_eq!(first_bound.to_string(), endpoint);
+
+    let errs = first.close().await;
+    assert!(errs.is_empty(), "Could not unbind first socket: {:?}", errs);
+
+    let mut second = zeromq::RouterSocket::new();
+    let second_bound = second.bind(&endpoint).await.unwrap();
+    assert_eq!(second_bound.to_string(), endpoint);
+
+    let errs = second.close().await;
+    assert!(
+        errs.is_empty(),
+        "Could not unbind second socket: {:?}",
+        errs
+    );
+    let _ = std::fs::remove_file(path);
+}
+
+#[async_rt::test]
 async fn no_connect_timeout_allows_delayed_ipc_bind() {
     let (endpoint, path) = unique_ipc_endpoint("no-timeout");
     let dealer_endpoint = endpoint.clone();
