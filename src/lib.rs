@@ -326,12 +326,13 @@ pub trait Socket: Sized + Send {
         let endpoint = TryIntoEndpoint::try_into(endpoint)?;
         let connect_timeout = backend.socket_options().connect_timeout;
 
-        let (endpoint, peer_id) = util::run_with_timeout(connect_timeout, async {
-            let (socket, endpoint) = util::connect_forever(endpoint).await?;
-            let peer_id = util::peer_connected(socket, backend.clone()).await?;
-            Ok((endpoint, peer_id))
+        let (socket, endpoint, peer_id) = util::run_with_timeout(connect_timeout, async {
+            let (mut socket, endpoint) = util::connect_forever(endpoint).await?;
+            let peer_id = util::peer_handshake(&mut socket, backend.clone()).await?;
+            Ok((socket, endpoint, peer_id))
         })
         .await?;
+        backend.peer_connected(&peer_id, socket).await;
 
         if let Some(monitor) = self.backend().monitor().lock().as_mut() {
             let _ = monitor.try_send(SocketEvent::Connected(endpoint, peer_id));

@@ -328,14 +328,19 @@ pub(crate) async fn connect_with_reconnect(
     let connect_timeout = backend.socket_options().connect_timeout;
 
     // Initial connection
-    let (resolved_endpoint, peer_id) = crate::util::run_with_timeout(connect_timeout, async {
-        let (socket, resolved_endpoint) = crate::util::connect_forever(endpoint.clone()).await?;
-        let peer_id =
-            crate::util::peer_connected(socket, backend.clone() as Arc<dyn MultiPeerBackend>)
-                .await?;
-        Ok((resolved_endpoint, peer_id))
-    })
-    .await?;
+    let (socket, resolved_endpoint, peer_id) =
+        crate::util::run_with_timeout(connect_timeout, async {
+            let (mut socket, resolved_endpoint) =
+                crate::util::connect_forever(endpoint.clone()).await?;
+            let peer_id = crate::util::peer_handshake(
+                &mut socket,
+                backend.clone() as Arc<dyn MultiPeerBackend>,
+            )
+            .await?;
+            Ok((socket, resolved_endpoint, peer_id))
+        })
+        .await?;
+    backend.clone().peer_connected(&peer_id, socket).await;
 
     // Emit Connected event
     if let Some(monitor) = backend.monitor().lock().as_mut() {

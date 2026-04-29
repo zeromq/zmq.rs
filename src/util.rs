@@ -192,16 +192,23 @@ pub(crate) async fn peer_connected(
     mut raw_socket: FramedIo,
     backend: Arc<dyn MultiPeerBackend>,
 ) -> ZmqResult<PeerIdentity> {
-    greet_exchange(&mut raw_socket).await?;
+    let peer_id = peer_handshake(&mut raw_socket, backend.clone()).await?;
+    backend.peer_connected(&peer_id, raw_socket).await;
+    Ok(peer_id)
+}
+
+pub(crate) async fn peer_handshake(
+    raw_socket: &mut FramedIo,
+    backend: Arc<dyn MultiPeerBackend>,
+) -> ZmqResult<PeerIdentity> {
+    greet_exchange(raw_socket).await?;
     let mut props = None;
     if let Some(identity) = &backend.socket_options().peer_id {
         let mut connect_ops = HashMap::new();
         connect_ops.insert("Identity".to_string(), identity.clone().into());
         props = Some(connect_ops);
     }
-    let peer_id = ready_exchange(&mut raw_socket, backend.socket_type(), props).await?;
-    backend.peer_connected(&peer_id, raw_socket).await;
-    Ok(peer_id)
+    ready_exchange(raw_socket, backend.socket_type(), props).await
 }
 
 pub(crate) async fn run_with_timeout<T, F>(duration: Option<Duration>, future: F) -> ZmqResult<T>
