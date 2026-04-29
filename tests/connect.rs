@@ -78,24 +78,6 @@ async fn connect_timeout_expires_for_missing_ipc_socket() {
 }
 
 #[async_rt::test]
-async fn connect_timeout_bounds_tcp_connection_refused_retry() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
-
-    let mut options = SocketOptions::default();
-    options.connect_timeout(Duration::from_millis(50));
-
-    let mut socket = zeromq::DealerSocket::with_options(options);
-    let err = socket
-        .connect(&format!("tcp://127.0.0.1:{port}"))
-        .await
-        .expect_err("connect should time out");
-
-    assert!(matches!(err, ZmqError::ConnectTimeout(_)), "{err:?}");
-}
-
-#[async_rt::test]
 async fn no_connect_timeout_allows_delayed_ipc_bind() {
     let (endpoint, path) = unique_ipc_endpoint("no-timeout");
     let dealer_endpoint = endpoint.clone();

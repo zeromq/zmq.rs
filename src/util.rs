@@ -369,4 +369,25 @@ pub(crate) mod tests {
             _ => panic!("Unexpected result"),
         }
     }
+
+    #[test]
+    fn retryable_connect_errors_include_refused_and_missing_ipc_socket() {
+        let tcp = Endpoint::Tcp(Host::Ipv4("127.0.0.1".parse().unwrap()), 5555);
+        let ipc = Endpoint::Ipc(Some("missing.sock".into()));
+        let missing_tcp = ZmqError::Network(std::io::Error::from(ErrorKind::NotFound));
+
+        assert!(is_retryable_connect_error(
+            &tcp,
+            &ZmqError::Network(std::io::Error::from(ErrorKind::ConnectionRefused))
+        ));
+        assert!(is_retryable_connect_error(
+            &ipc,
+            &ZmqError::Network(std::io::Error::from(ErrorKind::ConnectionRefused))
+        ));
+        assert!(is_retryable_connect_error(
+            &ipc,
+            &ZmqError::Network(std::io::Error::from(ErrorKind::NotFound))
+        ));
+        assert!(!is_retryable_connect_error(&tcp, &missing_tcp));
+    }
 }

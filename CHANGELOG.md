@@ -8,9 +8,11 @@ All notable changes to this project will be documented in this file.
 - Auto-reconnection for SUB sockets when PUB peer restarts (#230)
 - Socket monitoring via `monitor()` for connection/disconnection events
 - libzmq conformance tests for ROUTER/DEALER and PUB/SUB (#229)
+- Configurable connect timeout via `SocketOptions`, defaulting to 30 seconds
 
 ### Fixed
 - Subscription resync after reconnection (#231)
+- Retry IPC connects while the socket file does not exist yet
 - Replace panics with proper error returns in test utilities (#228)
 
 ## [0.5.0] - 2026-02-09
