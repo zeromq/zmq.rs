@@ -4,20 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0-pre.2] - 2026-04-29
+
 ### Added
-- Auto-reconnection for SUB sockets when PUB peer restarts (#230)
-- Socket monitoring via `monitor()` for connection/disconnection events
-- libzmq conformance tests for ROUTER/DEALER and PUB/SUB (#229)
-- Configurable connect timeout via `SocketOptions`, defaulting to 30 seconds
+- XSUB socket support (#236)
+- `Clone` impl for `RouterSendHalf` (#235)
+- IPC transport on Windows (#244)
+- Configurable connect timeout via `SocketOptions`, defaulting to 30 seconds (#241)
+- Monitor `Disconnected` events for DEALER, PULL, REP, ROUTER, and XPUB (#234)
 
 ### Changed
-- PUB/XPUB/XSUB fan-out now awaits transport progress instead of dropping when a message needs multiple writes
+- Bumped MSRV to 1.85 and added MSRV + nightly CI checks (#239)
+- PUB/XPUB/XSUB fan-out now awaits transport progress instead of dropping when a message needs multiple writes (#243)
+
+### Fixed
+- Deliver large PUB/XPUB/XSUB messages that require multiple transport writes (#243)
+- Retry IPC connects while the socket file does not exist yet (#241)
+
+## [0.6.0-pre.1] - 2026-03-04
+
+### Added
+- Auto-reconnection for SUB sockets when PUB peer restarts (#230)
+- libzmq conformance tests for ROUTER/DEALER and PUB/SUB (#229)
 
 ### Fixed
 - Subscription resync after reconnection (#231)
-- Retry IPC connects while the socket file does not exist yet
-- Deliver large PUB/XPUB/XSUB messages that require multiple transport writes
-- Enable IPC transport on Windows
 - Replace panics with proper error returns in test utilities (#228)
 
 ## [0.5.0] - 2026-02-09
