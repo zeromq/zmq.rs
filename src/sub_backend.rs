@@ -1,7 +1,7 @@
 use crate::backend::DisconnectNotifier;
-use crate::codec::{CodecError, FramedIo, Message, TrySend, ZmqFramedRead, ZmqFramedWrite};
+use crate::codec::{CodecError, FramedIo, Message, ZmqFramedRead, ZmqFramedWrite};
 use crate::endpoint::Endpoint;
-use crate::error::{ZmqError, ZmqResult};
+use crate::error::ZmqResult;
 use crate::fair_queue::QueueInner;
 use crate::message::ZmqMessage;
 use crate::reconnect::{ReconnectConfig, ReconnectHandle};
@@ -146,12 +146,10 @@ impl SubSocketBackend {
         self.broadcast_control_message(message).await
     }
 
-    /// Send an application message to all connected peers using non-blocking
-    /// [`try_send`](crate::codec::TrySend::try_send).
+    /// Send an application message to all connected peers.
     ///
-    /// Messages are silently dropped when a peer's buffer is full, matching
-    /// ZMQ's publish semantics. Peers with broken pipes are collected and
-    /// disconnected after the iteration completes.
+    /// Peers with broken pipes are collected and disconnected after the
+    /// iteration completes.
     pub(crate) async fn fanout_message(&self, message: ZmqMessage) -> ZmqResult<()> {
         if message.is_empty() {
             return Ok(());
@@ -163,22 +161,20 @@ impl SubSocketBackend {
             let res = peer
                 .send_queue
                 .as_mut()
-                .try_send(Message::Message(message.clone()));
+                .send(Message::Message(message.clone()))
+                .await;
             match res {
                 Ok(()) => {}
-                Err(ZmqError::Codec(CodecError::Io(e))) => {
+                Err(CodecError::Io(e)) => {
                     if e.kind() == ErrorKind::BrokenPipe {
                         dead_peers.push(peer.key().clone());
                     } else {
                         log::error!("Error sending message: {:?}", e);
                     }
                 }
-                Err(ZmqError::BufferFull(_)) => {
-                    log::debug!("Queue for subscriber is full");
-                }
                 Err(e) => {
                     log::error!("Error sending message: {:?}", e);
-                    return Err(e);
+                    return Err(e.into());
                 }
             }
             iter = peer.next_async().await;

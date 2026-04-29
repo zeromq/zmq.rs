@@ -5,13 +5,11 @@ use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{async_rt, CaptureSocket, SocketOptions};
-use crate::{
-    MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketSend, SocketType, ZmqError,
-};
+use crate::{MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketSend, SocketType};
 
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
-use futures::{select, FutureExt, StreamExt};
+use futures::{select, FutureExt, SinkExt, StreamExt};
 use parking_lot::Mutex;
 
 use std::collections::HashMap;
@@ -172,25 +170,20 @@ impl SocketSend for PubSocket {
                     let res = subscriber
                         .send_queue
                         .as_mut()
-                        .try_send(Message::Message(message.clone()));
+                        .send(Message::Message(message.clone()))
+                        .await;
                     match res {
                         Ok(()) => {}
-                        Err(ZmqError::Codec(CodecError::Io(e))) => {
+                        Err(CodecError::Io(e)) => {
                             if e.kind() == ErrorKind::BrokenPipe {
                                 dead_peers.push(subscriber.key().clone());
                             } else {
-                                log::error!("Error receiving message: {:?}", e);
+                                log::error!("Error sending message: {:?}", e);
                             }
                         }
-                        Err(ZmqError::BufferFull(_)) => {
-                            // ignore silently. https://rfc.zeromq.org/spec/29/ says:
-                            // For processing outgoing messages:
-                            //   SHALL silently drop the message if the queue for a subscriber is full.
-                            log::debug!("Queue for subscriber is full",);
-                        }
                         Err(e) => {
-                            log::error!("Error receiving message: {:?}", e);
-                            return Err(e);
+                            log::error!("Error sending message: {:?}", e);
+                            return Err(e.into());
                         }
                     }
                     break;
