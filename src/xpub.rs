@@ -13,7 +13,7 @@ use crate::{
 
 use async_trait::async_trait;
 use futures::channel::mpsc;
-use futures::StreamExt;
+use futures::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 
 use std::collections::HashMap;
@@ -144,24 +144,20 @@ impl SocketSend for XPubSocket {
                     let res = subscriber
                         .send_queue
                         .as_mut()
-                        .try_send(Message::Message(message.clone()));
+                        .send(Message::Message(message.clone()))
+                        .await;
                     match res {
                         Ok(()) => {}
-                        Err(ZmqError::Codec(CodecError::Io(e))) => {
+                        Err(CodecError::Io(e)) => {
                             if e.kind() == ErrorKind::BrokenPipe {
                                 dead_peers.push(subscriber.key().clone());
                             } else {
                                 log::error!("Error sending message: {:?}", e);
                             }
                         }
-                        Err(ZmqError::BufferFull(_)) => {
-                            // Silently drop the message if the queue for a subscriber is full.
-                            // https://rfc.zeromq.org/spec/29/
-                            log::debug!("Queue for subscriber is full");
-                        }
                         Err(e) => {
                             log::error!("Error sending message: {:?}", e);
-                            return Err(e);
+                            return Err(e.into());
                         }
                     }
                     break;
