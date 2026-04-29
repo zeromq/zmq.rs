@@ -65,6 +65,24 @@ jobs:
           command: test
           args: --all --no-default-features --features async-dispatcher-runtime,all-transport,async-dispatcher-macros
 
+  windows-ipc:
+    name: Windows IPC (${{ matrix.toolchain }})
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        toolchain: [stable, "1.85.0"]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.toolchain }}
+          override: true
+      - name: Check Windows IPC
+        run: cargo check --lib --no-default-features --features tokio-runtime,ipc-transport,tcp-transport
+      - name: Test Windows IPC
+        run: cargo test --no-default-features --features tokio-runtime,ipc-transport,tcp-transport
+
   msrv:
     name: MSRV Check
     runs-on: ubuntu-latest

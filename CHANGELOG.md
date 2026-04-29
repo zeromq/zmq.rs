@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - Subscription resync after reconnection (#231)
 - Retry IPC connects while the socket file does not exist yet
 - Deliver large PUB/XPUB/XSUB messages that require multiple transport writes
+- Enable IPC transport on Windows
 - Replace panics with proper error returns in test utilities (#228)
 
 ## [0.5.0] - 2026-02-09

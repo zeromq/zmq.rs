@@ -2,7 +2,7 @@ use zeromq::__async_rt as async_rt;
 use zeromq::prelude::*;
 use zeromq::{SocketOptions, ZmqError, ZmqMessage};
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 fn unique_ipc_endpoint(name: &str) -> (String, PathBuf) {
@@ -10,7 +10,7 @@ fn unique_ipc_endpoint(name: &str) -> (String, PathBuf) {
         .duration_since(UNIX_EPOCH)
         .expect("system time before unix epoch")
         .as_nanos();
-    let path = Path::new("/tmp").join(format!("z-{name}-{}-{nanos}.sock", std::process::id()));
+    let path = std::env::temp_dir().join(format!("z-{name}-{}-{nanos}.sock", std::process::id()));
     (format!("ipc://{}", path.display()), path)
 }
 
