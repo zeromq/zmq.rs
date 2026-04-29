@@ -10,6 +10,9 @@ All notable changes to this project will be documented in this file.
 - libzmq conformance tests for ROUTER/DEALER and PUB/SUB (#229)
 - Configurable connect timeout via `SocketOptions`, defaulting to 30 seconds
 
+### Changed
+- PUB/XPUB/XSUB fan-out now awaits transport progress instead of dropping when a message needs multiple writes
+
 ### Fixed
 - Subscription resync after reconnection (#231)
 - Retry IPC connects while the socket file does not exist yet
