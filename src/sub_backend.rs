@@ -1,7 +1,7 @@
 use crate::backend::DisconnectNotifier;
-use crate::codec::{CodecError, FramedIo, Message, TrySend, ZmqFramedRead, ZmqFramedWrite};
+use crate::codec::{CodecError, FramedIo, Message, ZmqFramedRead, ZmqFramedWrite};
 use crate::endpoint::Endpoint;
-use crate::error::{ZmqError, ZmqResult};
+use crate::error::ZmqResult;
 use crate::fair_queue::QueueInner;
 use crate::message::ZmqMessage;
 use crate::reconnect::{ReconnectConfig, ReconnectHandle};
@@ -14,6 +14,7 @@ use crate::{
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use futures::channel::mpsc;
+use futures::lock::Mutex as AsyncMutex;
 use futures::SinkExt;
 use parking_lot::Mutex;
 
@@ -32,7 +33,7 @@ pub(crate) enum SubscriptionMessageType {
 /// A connected peer for SUB/XSUB sockets, holding only the send half
 /// of the framed I/O since receiving is handled through the fair queue.
 pub(crate) struct SubPeer {
-    pub(crate) send_queue: Pin<Box<ZmqFramedWrite>>,
+    pub(crate) send_queue: Arc<AsyncMutex<Pin<Box<ZmqFramedWrite>>>>,
 }
 
 /// Shared backend for [`SubSocket`](crate::SubSocket) and [`XSubSocket`](crate::XSubSocket).
@@ -146,42 +147,44 @@ impl SubSocketBackend {
         self.broadcast_control_message(message).await
     }
 
-    /// Send an application message to all connected peers using non-blocking
-    /// [`try_send`](crate::codec::TrySend::try_send).
+    /// Send an application message to all connected peers.
     ///
-    /// Messages are silently dropped when a peer's buffer is full, matching
-    /// ZMQ's publish semantics. Peers with broken pipes are collected and
-    /// disconnected after the iteration completes.
+    /// Peers with broken pipes are collected and disconnected after the
+    /// iteration completes.
     pub(crate) async fn fanout_message(&self, message: ZmqMessage) -> ZmqResult<()> {
         if message.is_empty() {
             return Ok(());
         }
 
-        let mut dead_peers = Vec::new();
+        let mut targets = Vec::new();
         let mut iter = self.peers.begin_async().await;
-        while let Some(mut peer) = iter {
-            let res = peer
-                .send_queue
+        while let Some(peer) = iter {
+            targets.push((peer.key().clone(), peer.send_queue.clone()));
+            iter = peer.next_async().await;
+        }
+
+        let mut dead_peers = Vec::new();
+        for (peer_id, send_queue) in targets {
+            let res = send_queue
+                .lock()
+                .await
                 .as_mut()
-                .try_send(Message::Message(message.clone()));
+                .send(Message::Message(message.clone()))
+                .await;
             match res {
                 Ok(()) => {}
-                Err(ZmqError::Codec(CodecError::Io(e))) => {
+                Err(CodecError::Io(e)) => {
                     if e.kind() == ErrorKind::BrokenPipe {
-                        dead_peers.push(peer.key().clone());
+                        dead_peers.push(peer_id);
                     } else {
                         log::error!("Error sending message: {:?}", e);
                     }
                 }
-                Err(ZmqError::BufferFull(_)) => {
-                    log::debug!("Queue for subscriber is full");
-                }
                 Err(e) => {
                     log::error!("Error sending message: {:?}", e);
-                    return Err(e);
+                    return Err(e.into());
                 }
             }
-            iter = peer.next_async().await;
         }
 
         for peer_id in dead_peers {
@@ -205,13 +208,19 @@ impl SubSocketBackend {
 
     /// Reliably send a message to every connected peer using async send.
     async fn broadcast_control_message(&self, message: ZmqMessage) -> ZmqResult<()> {
+        let mut targets = Vec::new();
+        let mut iter = self.peers.begin_async().await;
+        while let Some(peer) = iter {
+            targets.push((peer.key().clone(), peer.send_queue.clone()));
+            iter = peer.next_async().await;
+        }
+
         let mut dead_peers = Vec::new();
         let mut first_error = None;
-        let mut iter = self.peers.begin_async().await;
-        while let Some(mut peer) = iter {
-            let peer_id = peer.key().clone();
-            let result = peer
-                .send_queue
+        for (peer_id, send_queue) in targets {
+            let result = send_queue
+                .lock()
+                .await
                 .as_mut()
                 .send(Message::Message(message.clone()))
                 .await;
@@ -235,7 +244,6 @@ impl SubSocketBackend {
                     first_error.get_or_insert(e.into());
                 }
             }
-            iter = peer.next_async().await;
         }
 
         for peer_id in dead_peers {
@@ -285,7 +293,7 @@ impl MultiPeerBackend for SubSocketBackend {
             .upsert_async(
                 peer_id.clone(),
                 SubPeer {
-                    send_queue: Box::pin(send_queue),
+                    send_queue: Arc::new(AsyncMutex::new(Box::pin(send_queue))),
                 },
             )
             .await;

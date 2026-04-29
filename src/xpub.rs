@@ -13,7 +13,8 @@ use crate::{
 
 use async_trait::async_trait;
 use futures::channel::mpsc;
-use futures::StreamExt;
+use futures::lock::Mutex as AsyncMutex;
+use futures::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 
 use std::collections::HashMap;
@@ -23,7 +24,7 @@ use std::sync::Arc;
 
 pub(crate) struct XPubSubscriber {
     pub(crate) subscriptions: Vec<Vec<u8>>,
-    pub(crate) send_queue: Pin<Box<ZmqFramedWrite>>,
+    pub(crate) send_queue: Arc<AsyncMutex<Pin<Box<ZmqFramedWrite>>>>,
 }
 
 pub(crate) struct XPubSocketBackend {
@@ -98,7 +99,7 @@ impl MultiPeerBackend for XPubSocketBackend {
                 peer_id.clone(),
                 XPubSubscriber {
                     subscriptions: vec![],
-                    send_queue: Box::pin(send_queue),
+                    send_queue: Arc::new(AsyncMutex::new(Box::pin(send_queue))),
                 },
             )
             .await;
@@ -134,40 +135,40 @@ impl SocketSend for XPubSocket {
             Some(frame) => frame,
             None => return Ok(()), // Empty message, nothing to publish
         };
-        let mut dead_peers = Vec::new();
+        let mut targets = Vec::new();
         let mut iter = self.backend.subscribers.begin_async().await;
-        while let Some(mut subscriber) = iter {
-            for sub_filter in &subscriber.subscriptions {
-                if sub_filter.len() <= first_frame.len()
+        while let Some(subscriber) = iter {
+            if subscriber.subscriptions.iter().any(|sub_filter| {
+                sub_filter.len() <= first_frame.len()
                     && sub_filter.as_slice() == &first_frame[0..sub_filter.len()]
-                {
-                    let res = subscriber
-                        .send_queue
-                        .as_mut()
-                        .try_send(Message::Message(message.clone()));
-                    match res {
-                        Ok(()) => {}
-                        Err(ZmqError::Codec(CodecError::Io(e))) => {
-                            if e.kind() == ErrorKind::BrokenPipe {
-                                dead_peers.push(subscriber.key().clone());
-                            } else {
-                                log::error!("Error sending message: {:?}", e);
-                            }
-                        }
-                        Err(ZmqError::BufferFull(_)) => {
-                            // Silently drop the message if the queue for a subscriber is full.
-                            // https://rfc.zeromq.org/spec/29/
-                            log::debug!("Queue for subscriber is full");
-                        }
-                        Err(e) => {
-                            log::error!("Error sending message: {:?}", e);
-                            return Err(e);
-                        }
-                    }
-                    break;
-                }
+            }) {
+                targets.push((subscriber.key().clone(), subscriber.send_queue.clone()));
             }
             iter = subscriber.next_async().await;
+        }
+
+        let mut dead_peers = Vec::new();
+        for (peer_id, send_queue) in targets {
+            let res = send_queue
+                .lock()
+                .await
+                .as_mut()
+                .send(Message::Message(message.clone()))
+                .await;
+            match res {
+                Ok(()) => {}
+                Err(CodecError::Io(e)) => {
+                    if e.kind() == ErrorKind::BrokenPipe {
+                        dead_peers.push(peer_id);
+                    } else {
+                        log::error!("Error sending message: {:?}", e);
+                    }
+                }
+                Err(e) => {
+                    log::error!("Error sending message: {:?}", e);
+                    return Err(e.into());
+                }
+            }
         }
         for peer in dead_peers {
             self.backend.peer_disconnected(&peer);
