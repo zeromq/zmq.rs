@@ -325,11 +325,17 @@ pub(crate) async fn connect_with_reconnect(
     endpoint: &str,
 ) -> ZmqResult<()> {
     let endpoint = TryIntoEndpoint::try_into(endpoint)?;
+    let connect_timeout = backend.socket_options().connect_timeout;
 
     // Initial connection
-    let (socket, resolved_endpoint) = crate::util::connect_forever(endpoint.clone()).await?;
-    let peer_id =
-        crate::util::peer_connected(socket, backend.clone() as Arc<dyn MultiPeerBackend>).await?;
+    let (resolved_endpoint, peer_id) = crate::util::run_with_timeout(connect_timeout, async {
+        let (socket, resolved_endpoint) = crate::util::connect_forever(endpoint.clone()).await?;
+        let peer_id =
+            crate::util::peer_connected(socket, backend.clone() as Arc<dyn MultiPeerBackend>)
+                .await?;
+        Ok((resolved_endpoint, peer_id))
+    })
+    .await?;
 
     // Emit Connected event
     if let Some(monitor) = backend.monitor().lock().as_mut() {

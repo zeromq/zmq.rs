@@ -7,9 +7,12 @@ use futures::{SinkExt, StreamExt};
 use rand::Rng;
 
 use std::convert::{TryFrom, TryInto};
+use std::future::Future;
+use std::io::ErrorKind;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Clone)]
@@ -201,12 +204,37 @@ pub(crate) async fn peer_connected(
     Ok(peer_id)
 }
 
+pub(crate) async fn run_with_timeout<T, F>(duration: Option<Duration>, future: F) -> ZmqResult<T>
+where
+    F: Future<Output = ZmqResult<T>>,
+{
+    match duration {
+        Some(duration) => match async_rt::task::timeout(duration, future).await {
+            Ok(result) => result,
+            Err(_) => Err(ZmqError::ConnectTimeout(duration)),
+        },
+        None => future.await,
+    }
+}
+
+fn is_retryable_connect_error(endpoint: &Endpoint, error: &ZmqError) -> bool {
+    match error {
+        ZmqError::Network(error) if error.kind() == ErrorKind::ConnectionRefused => true,
+        ZmqError::Network(error)
+            if endpoint.transport() == Transport::Ipc && error.kind() == ErrorKind::NotFound =>
+        {
+            true
+        }
+        _ => false,
+    }
+}
+
 pub(crate) async fn connect_forever(endpoint: Endpoint) -> ZmqResult<(FramedIo, Endpoint)> {
     let mut try_num: u64 = 0;
     loop {
         match transport::connect(&endpoint).await {
             Ok(res) => return Ok(res),
-            Err(ZmqError::Network(e)) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
+            Err(e) if is_retryable_connect_error(&endpoint, &e) => {
                 if try_num < 5 {
                     try_num += 1;
                 }

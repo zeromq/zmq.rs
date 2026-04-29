@@ -7,6 +7,8 @@ use crate::ZmqMessage;
 use futures::channel::mpsc;
 use thiserror::Error;
 
+use std::time::Duration;
+
 pub type ZmqResult<T> = Result<T, ZmqError>;
 
 #[derive(Error, Debug)]
@@ -47,6 +49,8 @@ pub enum ZmqError {
     PeerIdentity,
     #[error("Unsupported ZMTP version")]
     UnsupportedVersion(ZmtpVersion),
+    #[error("Connect timed out after {0:?}")]
+    ConnectTimeout(Duration),
 }
 
 impl From<mpsc::TrySendError<Message>> for ZmqError {
