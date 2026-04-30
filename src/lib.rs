@@ -29,6 +29,12 @@ pub mod __async_rt {
     pub use super::async_rt::*;
 }
 
+#[doc(hidden)]
+pub mod __bench {
+    //! DO NOT USE! PRIVATE IMPLEMENTATION, EXPOSED ONLY FOR BENCHMARKS.
+    pub use super::codec::{Message, ZmqCodec};
+}
+
 pub use crate::dealer::*;
 pub use crate::endpoint::{Endpoint, Host, Transport, TryIntoEndpoint};
 pub use crate::error::{ZmqError, ZmqResult};

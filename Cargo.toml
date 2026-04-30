@@ -60,10 +60,13 @@ hex = "0.4"
 bench = false
 
 [[bench]]
-name = "pub_sub"
+name = "codec"
 harness = false
-bench = false
 
 [[bench]]
-name = "req_rep"
+name = "compare_libzmq"
+harness = false
+
+[[bench]]
+name = "throughput"
 harness = false
