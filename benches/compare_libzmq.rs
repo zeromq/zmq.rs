@@ -16,9 +16,8 @@ use std::thread;
 use std::time::Duration;
 
 use zeromq::{
-    __async_rt::task,
-    prelude::*, DealerSocket, PubSocket, PullSocket, PushSocket, RepSocket, ReqSocket,
-    RouterSocket, SubSocket, ZmqMessage,
+    __async_rt::task, prelude::*, DealerSocket, PubSocket, PullSocket, PushSocket, RepSocket,
+    ReqSocket, RouterSocket, SubSocket, ZmqMessage,
 };
 
 const MSG_SIZES: &[usize] = &[16, 256, 4096, 65536];

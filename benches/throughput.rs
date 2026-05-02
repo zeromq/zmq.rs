@@ -10,8 +10,7 @@ use std::thread;
 use std::time::Duration;
 
 use zeromq::{
-    __async_rt::task,
-    prelude::*, DealerSocket, PubSocket, RouterSocket, SubSocket, ZmqMessage,
+    __async_rt::task, prelude::*, DealerSocket, PubSocket, RouterSocket, SubSocket, ZmqMessage,
 };
 
 const BATCH_SIZE: usize = 1024;
