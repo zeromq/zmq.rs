@@ -5,15 +5,18 @@
 //! TCP and IPC. Branch-only socket families, inproc, security, and engine-level
 //! tests are omitted so criterion group names can be compared directly.
 
+mod bench_runtime;
+
+use bench_runtime::BenchRuntime;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use futures::future;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::Duration;
-use tokio::runtime::{Builder, Runtime};
 
 use zeromq::{
+    __async_rt::task,
     prelude::*, DealerSocket, PubSocket, PullSocket, PushSocket, RepSocket, ReqSocket,
     RouterSocket, SubSocket, ZmqMessage,
 };
@@ -37,12 +40,8 @@ fn endpoint(tag: &str, transport: &str) -> String {
     }
 }
 
-fn build_rt() -> Runtime {
-    Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .expect("tokio runtime")
+fn build_rt() -> BenchRuntime {
+    BenchRuntime::new()
 }
 
 fn bench_libzmq_pub_sub(c: &mut Criterion) {
@@ -163,7 +162,7 @@ fn bench_zmqrs_pub_sub(c: &mut Criterion) {
 
 fn bench_zmqrs_pub_sub_one(
     b: &mut criterion::Bencher<'_>,
-    rt: &Runtime,
+    rt: &BenchRuntime,
     n_subs: usize,
     msg_size: usize,
     endpoint: &str,
@@ -178,7 +177,7 @@ fn bench_zmqrs_pub_sub_one(
             s.subscribe("").await.expect("subscribe");
             subs.push(s);
         }
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        task::sleep(Duration::from_millis(100)).await;
         (p, subs)
     });
 
@@ -272,7 +271,7 @@ fn bench_zmqrs_req_rep(c: &mut Criterion) {
 
 fn bench_zmqrs_req_rep_one(
     b: &mut criterion::Bencher<'_>,
-    rt: &Runtime,
+    rt: &BenchRuntime,
     msg_size: usize,
     endpoint: &str,
 ) {
@@ -281,7 +280,7 @@ fn bench_zmqrs_req_rep_one(
         let bound = r.bind(endpoint).await.expect("rep bind").to_string();
         let mut q = ReqSocket::new();
         q.connect(bound.as_str()).await.expect("req connect");
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        task::sleep(Duration::from_millis(50)).await;
         (q, r)
     });
     let request = vec![0xCD; msg_size];
@@ -359,7 +358,7 @@ fn bench_zmqrs_push_pull(c: &mut Criterion) {
 
 fn bench_zmqrs_push_pull_one(
     b: &mut criterion::Bencher<'_>,
-    rt: &Runtime,
+    rt: &BenchRuntime,
     msg_size: usize,
     endpoint: &str,
 ) {
@@ -368,7 +367,7 @@ fn bench_zmqrs_push_pull_one(
         let bound = p.bind(endpoint).await.expect("pull bind").to_string();
         let mut s = PushSocket::new();
         s.connect(bound.as_str()).await.expect("push connect");
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        task::sleep(Duration::from_millis(50)).await;
         (s, p)
     });
     let payload = vec![0xCD; msg_size];
@@ -459,7 +458,7 @@ fn bench_zmqrs_dealer_router(c: &mut Criterion) {
 
 fn bench_zmqrs_dealer_router_one(
     b: &mut criterion::Bencher<'_>,
-    rt: &Runtime,
+    rt: &BenchRuntime,
     msg_size: usize,
     endpoint: &str,
 ) {
@@ -468,7 +467,7 @@ fn bench_zmqrs_dealer_router_one(
         let bound = r.bind(endpoint).await.expect("router bind").to_string();
         let mut d = DealerSocket::new();
         d.connect(bound.as_str()).await.expect("dealer connect");
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        task::sleep(Duration::from_millis(50)).await;
         (d, r)
     });
     let payload = vec![0xCD; msg_size];

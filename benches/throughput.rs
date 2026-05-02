@@ -1,13 +1,18 @@
 //! Pipelined-throughput benches for workloads master can run.
 
+mod bench_runtime;
+
+use bench_runtime::BenchRuntime;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::Duration;
-use tokio::runtime::{Builder, Runtime};
 
-use zeromq::{prelude::*, DealerSocket, PubSocket, RouterSocket, SubSocket, ZmqMessage};
+use zeromq::{
+    __async_rt::task,
+    prelude::*, DealerSocket, PubSocket, RouterSocket, SubSocket, ZmqMessage,
+};
 
 const BATCH_SIZE: usize = 1024;
 const PIPELINE_SIZES: &[usize] = &[256, 4096];
@@ -29,12 +34,8 @@ fn endpoint(tag: &str, transport: &str) -> String {
     }
 }
 
-fn build_rt() -> Runtime {
-    Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .expect("tokio runtime")
+fn build_rt() -> BenchRuntime {
+    BenchRuntime::new()
 }
 
 fn bench_zmqrs_pub_pipelined(c: &mut Criterion) {
@@ -65,7 +66,7 @@ fn bench_zmqrs_pub_pipelined(c: &mut Criterion) {
 
 fn bench_zmqrs_pub_pipelined_one(
     b: &mut criterion::Bencher<'_>,
-    rt: &Runtime,
+    rt: &BenchRuntime,
     n_subs: usize,
     msg_size: usize,
     transport: &str,
@@ -93,7 +94,7 @@ fn bench_zmqrs_pub_pipelined_one(
             p.send(sync.clone()).await.expect("pub sync");
             let mut waiting = Vec::new();
             for mut s in remaining.drain(..) {
-                match tokio::time::timeout(Duration::from_millis(5), s.recv()).await {
+                match task::timeout(Duration::from_millis(5), s.recv()).await {
                     Ok(Ok(_)) => ready.push(s),
                     Ok(Err(e)) => panic!("sub sync recv: {e:?}"),
                     Err(_) => waiting.push(s),
@@ -110,9 +111,9 @@ fn bench_zmqrs_pub_pipelined_one(
             let sub_handles: Vec<_> = subs
                 .drain(..)
                 .map(|mut s| {
-                    tokio::spawn(async move {
+                    task::spawn(async move {
                         for _ in 0..BATCH_SIZE {
-                            match tokio::time::timeout(Duration::from_millis(20), s.recv()).await {
+                            match task::timeout(Duration::from_millis(20), s.recv()).await {
                                 Ok(Ok(m)) => {
                                     black_box(m);
                                 }
@@ -254,7 +255,7 @@ fn bench_zmqrs_dealer_router_pipelined(c: &mut Criterion) {
 
 fn bench_zmqrs_dealer_router_one(
     b: &mut criterion::Bencher<'_>,
-    rt: &Runtime,
+    rt: &BenchRuntime,
     msg_size: usize,
     transport: &str,
 ) {
@@ -264,7 +265,7 @@ fn bench_zmqrs_dealer_router_one(
         let bound = r.bind(&endpoint).await.expect("router bind").to_string();
         let mut d = DealerSocket::new();
         d.connect(bound.as_str()).await.expect("dealer connect");
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        task::sleep(Duration::from_millis(50)).await;
         let (send, recv) = d.split();
         (send, recv, r)
     });
@@ -278,14 +279,14 @@ fn bench_zmqrs_dealer_router_one(
         let mut recv = dealer_recv.take().unwrap();
         let mut r = router.take().unwrap();
         rt.block_on(async {
-            let router_task = tokio::spawn(async move {
+            let router_task = task::spawn(async move {
                 for _ in 0..BATCH_SIZE {
                     let m = r.recv().await.expect("router recv");
                     r.send(m).await.expect("router send");
                 }
                 r
             });
-            let recv_task = tokio::spawn(async move {
+            let recv_task = task::spawn(async move {
                 for _ in 0..BATCH_SIZE {
                     black_box(recv.recv().await.expect("dealer recv"));
                 }
