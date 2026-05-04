@@ -4,9 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.6.0-pre.2] - 2026-04-29
+## [0.6.0] - 2026-05-04
 
 ### Added
+- Auto-reconnection for SUB sockets when PUB peer restarts (#230)
+- libzmq conformance tests for ROUTER/DEALER and PUB/SUB (#229)
 - XSUB socket support (#236)
 - `Clone` impl for `RouterSendHalf` (#235)
 - IPC transport on Windows (#244)
@@ -18,18 +20,10 @@ All notable changes to this project will be documented in this file.
 - PUB/XPUB/XSUB fan-out now awaits transport progress instead of dropping when a message needs multiple writes (#243)
 
 ### Fixed
-- Deliver large PUB/XPUB/XSUB messages that require multiple transport writes (#243)
-- Retry IPC connects while the socket file does not exist yet (#241)
-
-## [0.6.0-pre.1] - 2026-03-04
-
-### Added
-- Auto-reconnection for SUB sockets when PUB peer restarts (#230)
-- libzmq conformance tests for ROUTER/DEALER and PUB/SUB (#229)
-
-### Fixed
 - Subscription resync after reconnection (#231)
 - Replace panics with proper error returns in test utilities (#228)
+- Deliver large PUB/XPUB/XSUB messages that require multiple transport writes (#243)
+- Retry IPC connects while the socket file does not exist yet (#241)
 
 ## [0.5.0] - 2026-02-09
 
