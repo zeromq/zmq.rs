@@ -1,3 +1,5 @@
+#![cfg(feature = "tokio-runtime")]
+
 use bytes::Bytes;
 use zeromq::prelude::*;
 use zeromq::ZmqMessage;
@@ -10,7 +12,6 @@ const REPRO_CHILD_TEST_NAME: &str = "issue_248_repro_child_process";
 const REPRO_ROLE_ENV: &str = "ZMQ_RS_ISSUE_248_ROLE";
 const REPRO_ENDPOINT_ENV: &str = "ZMQ_RS_ISSUE_248_ENDPOINT";
 
-#[cfg(feature = "tokio-runtime")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pull_recv_with_per_call_timeout_keeps_making_progress() {
     const TEST_WINDOW: Duration = Duration::from_secs(3);
@@ -45,7 +46,7 @@ async fn pull_recv_with_per_call_timeout_keeps_making_progress() {
             match tokio::time::timeout(remaining, pull.recv()).await {
                 Ok(Ok(_)) => count += 1,
                 Ok(Err(err)) => panic!("recv failed after {count} messages: {err:?}"),
-                Err(_) => panic!("per-call timeout fired after {count} messages"),
+                Err(err) => panic!("per-call timeout fired after {count} messages: {err:?}"),
             }
         }
     })
@@ -62,7 +63,6 @@ async fn pull_recv_with_per_call_timeout_keeps_making_progress() {
     );
 }
 
-#[cfg(feature = "tokio-runtime")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pull_recv_with_per_call_timeout_keeps_making_progress_across_processes() {
     let endpoint = unused_tcp_endpoint();
@@ -104,7 +104,6 @@ async fn pull_recv_with_per_call_timeout_keeps_making_progress_across_processes(
     );
 }
 
-#[cfg(feature = "tokio-runtime")]
 #[test]
 fn issue_248_repro_child_process() {
     let Some(role) = std::env::var(REPRO_ROLE_ENV).ok() else {
@@ -125,7 +124,6 @@ fn issue_248_repro_child_process() {
     });
 }
 
-#[cfg(feature = "tokio-runtime")]
 async fn run_issue_248_push_child(endpoint: &str) {
     let mut socket = zeromq::PushSocket::new();
     socket.bind(endpoint).await.unwrap();
@@ -141,7 +139,6 @@ async fn run_issue_248_push_child(endpoint: &str) {
     }
 }
 
-#[cfg(feature = "tokio-runtime")]
 async fn run_issue_248_pull_child(endpoint: &str) {
     let mut socket = zeromq::PullSocket::new();
     socket.connect(endpoint).await.unwrap();
@@ -158,7 +155,7 @@ async fn run_issue_248_pull_child(endpoint: &str) {
         match tokio::time::timeout(remaining, socket.recv()).await {
             Ok(Ok(_)) => count += 1,
             Ok(Err(err)) => panic!("recv failed after {count} messages: {err:?}"),
-            Err(_) => panic!("per-call timeout fired after {count} messages"),
+            Err(err) => panic!("per-call timeout fired after {count} messages: {err:?}"),
         }
     }
     assert!(
