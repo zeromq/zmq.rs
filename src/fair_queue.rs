@@ -3,7 +3,7 @@ use futures::Stream;
 use parking_lot::Mutex;
 
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::hash::Hash;
 use std::pin::Pin;
 use std::sync::atomic;
@@ -13,6 +13,7 @@ use std::task::{Context, Poll, Waker};
 pub(crate) struct QueueInner<S, K: Clone> {
     counter: atomic::AtomicUsize,
     ready_queue: BinaryHeap<ReadyEvent<K>>,
+    queued: HashSet<K>,
     streams: HashMap<K, Pin<Box<S>>>,
     waker: Option<Waker>,
     /// Callback invoked when a stream ends (peer disconnected).
@@ -23,10 +24,7 @@ pub(crate) struct QueueInner<S, K: Clone> {
 impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
     pub fn insert(&mut self, k: K, s: S) {
         self.streams.insert(k.clone(), Box::pin(s));
-        self.ready_queue.push(ReadyEvent {
-            priority: self.counter.fetch_add(1, atomic::Ordering::Relaxed),
-            key: k,
-        });
+        self.push_ready(k);
         if let Some(w) = &self.waker {
             w.wake_by_ref();
         }
@@ -34,6 +32,7 @@ impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
 
     pub fn remove(&mut self, k: &K) {
         self.streams.remove(k);
+        self.queued.remove(k);
     }
 
     /// Clear all streams and the ready queue.
@@ -43,9 +42,19 @@ impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
     pub fn clear(&mut self) {
         self.streams.clear();
         self.ready_queue.clear();
+        self.queued.clear();
         // Wake the waker so any pending poll_next returns
         if let Some(w) = self.waker.take() {
             w.wake();
+        }
+    }
+
+    fn push_ready(&mut self, k: K) {
+        if self.queued.insert(k.clone()) {
+            self.ready_queue.push(ReadyEvent {
+                priority: self.counter.fetch_add(1, atomic::Ordering::Relaxed),
+                key: k,
+            });
         }
     }
 }
@@ -87,11 +96,11 @@ struct StreamWaker<S, K: Clone> {
 impl<S, K> ArcWake for StreamWaker<S, K>
 where
     S: Send,
-    K: Clone + Send + Sync,
+    K: Clone + Eq + Hash + Send + Sync,
 {
     fn wake_by_ref(arc_self: &Arc<Self>) {
         let mut inner = arc_self.inner.lock();
-        inner.ready_queue.push(arc_self.event.clone());
+        inner.push_ready(arc_self.event.key.clone());
         if let Some(waker) = inner.waker.take() {
             waker.wake_by_ref();
         }
@@ -109,7 +118,14 @@ where
     #[allow(clippy::needless_continue)]
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let fair_queue = self.get_mut();
-        loop {
+        let mut remaining_ready = {
+            let mut inner = fair_queue.inner.lock();
+            inner.waker = Some(cx.waker().clone());
+            inner.ready_queue.len()
+        };
+
+        while remaining_ready > 0 {
+            remaining_ready -= 1;
             let (event, mut io_stream) = {
                 let mut inner = fair_queue.inner.lock();
                 inner.waker = Some(cx.waker().clone());
@@ -123,6 +139,7 @@ where
                         }
                     }
                 };
+                inner.queued.remove(&event.key);
                 match inner.streams.remove(&event.key) {
                     Some(stream) => (event, stream),
                     None => continue,
@@ -137,14 +154,11 @@ where
             let mut cx = Context::from_waker(&waker_ref);
             match io_stream.as_mut().poll_next(&mut cx) {
                 Poll::Ready(Some(res)) => {
-                    let item = Some((event.key.clone(), res));
+                    let key = event.key.clone();
+                    let item = Some((key.clone(), res));
                     let mut inner = fair_queue.inner.lock();
-                    let priority = inner.counter.fetch_add(1, atomic::Ordering::Relaxed);
-                    inner.ready_queue.push(ReadyEvent {
-                        priority,
-                        key: event.key.clone(),
-                    });
                     inner.streams.insert(event.key, io_stream);
+                    inner.push_ready(key);
                     return Poll::Ready(item);
                 }
                 Poll::Ready(None) => {
@@ -169,6 +183,21 @@ where
                 }
             }
         }
+
+        let mut inner = fair_queue.inner.lock();
+        inner.waker = Some(cx.waker().clone());
+        let should_wake = !inner.ready_queue.is_empty();
+        let result = if !inner.streams.is_empty() || fair_queue.block_on_no_clients {
+            Poll::Pending
+        } else {
+            Poll::Ready(None)
+        };
+        drop(inner);
+
+        if should_wake {
+            cx.waker().wake_by_ref();
+        }
+        result
     }
 }
 
@@ -179,6 +208,7 @@ impl<S, K: Clone> FairQueue<S, K> {
             inner: Arc::new(Mutex::new(QueueInner {
                 counter: atomic::AtomicUsize::new(0),
                 ready_queue: BinaryHeap::new(),
+                queued: HashSet::new(),
                 streams: HashMap::new(),
                 waker: None,
                 on_disconnect: None,
@@ -217,6 +247,14 @@ mod test {
         messages: VecDeque<&'static str>,
     }
 
+    struct CountPendingStream {
+        poll_count: usize,
+    }
+
+    struct WakePendingStream {
+        poll_count: usize,
+    }
+
     impl TestStream {
         fn new(pending_polls: usize, messages: &[&'static str]) -> Self {
             Self {
@@ -231,6 +269,25 @@ mod test {
 
         fn pending_once(messages: &[&'static str]) -> Self {
             Self::new(1, messages)
+        }
+    }
+
+    impl Stream for CountPendingStream {
+        type Item = &'static str;
+
+        fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            self.get_mut().poll_count += 1;
+            Poll::Pending
+        }
+    }
+
+    impl Stream for WakePendingStream {
+        type Item = &'static str;
+
+        fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            self.get_mut().poll_count += 1;
+            cx.waker().wake_by_ref();
+            Poll::Pending
         }
     }
 
@@ -249,6 +306,8 @@ mod test {
 
     enum UnifiedStream {
         Test(TestStream),
+        CountPending(CountPendingStream),
+        WakePending(WakePendingStream),
     }
 
     impl Stream for UnifiedStream {
@@ -257,6 +316,8 @@ mod test {
         fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             match self.get_mut() {
                 UnifiedStream::Test(stream) => Pin::new(stream).poll_next(cx),
+                UnifiedStream::CountPending(stream) => Pin::new(stream).poll_next(cx),
+                UnifiedStream::WakePending(stream) => Pin::new(stream).poll_next(cx),
             }
         }
     }
@@ -425,6 +486,96 @@ mod test {
             fast_messages >= 1,
             "Fast stream was starved: {:?}",
             messages
+        );
+    }
+
+    #[test]
+    fn test_fair_queue_polls_ready_set_before_yielding_pending() {
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        let mut fair_queue: FairQueue<UnifiedStream, &str> = FairQueue::new(false);
+        {
+            let inner = fair_queue.inner();
+            let mut lock = inner.lock();
+            lock.insert(
+                "pending-1",
+                UnifiedStream::CountPending(CountPendingStream { poll_count: 0 }),
+            );
+            lock.insert(
+                "pending-2",
+                UnifiedStream::CountPending(CountPendingStream { poll_count: 0 }),
+            );
+            lock.insert(
+                "pending-3",
+                UnifiedStream::CountPending(CountPendingStream { poll_count: 0 }),
+            );
+        }
+
+        let result = Pin::new(&mut fair_queue).poll_next(&mut cx);
+        assert!(
+            matches!(result, Poll::Pending),
+            "expected FairQueue to yield Pending, got {result:?}"
+        );
+
+        let inner = fair_queue.inner();
+        let mut lock = inner.lock();
+        let poll_count: usize = lock
+            .streams
+            .values_mut()
+            .map(|stream| {
+                let UnifiedStream::CountPending(stream) = stream.as_mut().get_mut() else {
+                    panic!("unexpected stream type");
+                };
+                stream.poll_count
+            })
+            .sum();
+        assert_eq!(
+            poll_count, 3,
+            "FairQueue should poll all initially ready streams before yielding Pending"
+        );
+    }
+
+    #[test]
+    fn test_fair_queue_defers_ready_events_generated_during_poll() {
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        let mut fair_queue: FairQueue<UnifiedStream, &str> = FairQueue::new(false);
+        {
+            let inner = fair_queue.inner();
+            let mut lock = inner.lock();
+            lock.insert(
+                "pending",
+                UnifiedStream::WakePending(WakePendingStream { poll_count: 0 }),
+            );
+        }
+
+        let result = Pin::new(&mut fair_queue).poll_next(&mut cx);
+        assert!(
+            matches!(result, Poll::Pending),
+            "expected FairQueue to yield Pending, got {result:?}"
+        );
+
+        let inner = fair_queue.inner();
+        let mut lock = inner.lock();
+        assert_eq!(
+            lock.ready_queue.len(),
+            1,
+            "wake generated during poll should remain queued for a later poll"
+        );
+        assert_eq!(
+            lock.queued.len(),
+            1,
+            "wake generated during poll should be tracked as queued"
+        );
+        let stream = lock.streams.get_mut("pending").unwrap();
+        let UnifiedStream::WakePending(stream) = stream.as_mut().get_mut() else {
+            panic!("unexpected stream type");
+        };
+        assert_eq!(
+            stream.poll_count, 1,
+            "FairQueue should not consume same-poll wake events immediately"
         );
     }
 }
