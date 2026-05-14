@@ -143,12 +143,12 @@ fn encode_frame(frame: &Bytes, dst: &mut BytesMut, more: bool) {
 
 impl Encoder for ZmqCodec {
     type Error = CodecError;
-    type Item<'a> = Message;
+    type Item<'a> = &'a Message;
 
     fn encode(&mut self, message: Self::Item<'_>, dst: &mut BytesMut) -> Result<(), Self::Error> {
         match message {
-            Message::Greeting(payload) => dst.unsplit(payload.into()),
-            Message::Command(command) => dst.unsplit(command.into()),
+            Message::Greeting(payload) => dst.unsplit((*payload).into()),
+            Message::Command(command) => dst.unsplit(command.clone().into()),
             Message::Message(message) => {
                 let last_element = message.len() - 1;
                 for (idx, part) in message.iter().enumerate() {

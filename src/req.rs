@@ -60,7 +60,8 @@ impl SocketSend for ReqSocket {
             if let Some(mut peer) = self.backend.peers.get_async(&next_peer_id).await {
                 self.backend.round_robin.push(next_peer_id.clone());
                 message.push_front(Bytes::new());
-                peer.send_queue.send(Message::Message(message)).await?;
+                let outbound = Message::Message(message);
+                peer.send_queue.send(&outbound).await?;
                 self.current_request = Some(next_peer_id);
                 return Ok(());
             }

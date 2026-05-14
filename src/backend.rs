@@ -92,7 +92,7 @@ impl GenericSocketBackend {
                 },
             };
             let send_result = match self.peers.get_async(&next_peer_id).await {
-                Some(mut peer) => peer.send_queue.send(message).await,
+                Some(mut peer) => peer.send_queue.send(&message).await,
                 None => continue,
             };
             return match send_result {

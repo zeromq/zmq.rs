@@ -135,7 +135,8 @@ impl SocketSend for RepSocket {
                     if let Some(envelope) = self.envelope.take() {
                         message.prepend(&envelope);
                     }
-                    peer.send_queue.send(Message::Message(message)).await?;
+                    let outbound = Message::Message(message);
+                    peer.send_queue.send(&outbound).await?;
                     Ok(())
                 } else {
                     Err(ZmqError::ReturnToSender {
