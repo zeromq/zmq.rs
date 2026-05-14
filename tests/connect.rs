@@ -1,6 +1,6 @@
 use zeromq::__async_rt as async_rt;
 use zeromq::prelude::*;
-use zeromq::{SocketOptions, ZmqError, ZmqMessage};
+use zeromq::{Endpoint, SocketOptions, ZmqError, ZmqMessage};
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -78,6 +78,45 @@ async fn connect_timeout_expires_for_missing_ipc_socket() {
 }
 
 #[async_rt::test]
+async fn tcp_active_bind_to_same_endpoint_is_rejected() {
+    let mut first = zeromq::RouterSocket::new();
+    let bound = first.bind("tcp://127.0.0.1:0").await.unwrap();
+    let endpoint = bound.to_string();
+
+    let mut second = zeromq::RouterSocket::new();
+    let err = second
+        .bind(&endpoint)
+        .await
+        .expect_err("second bind should fail while first listener is active");
+
+    assert!(matches!(err, ZmqError::Network(_)), "{err:?}");
+
+    let errs = first.close().await;
+    assert!(errs.is_empty(), "Could not unbind first socket: {:?}", errs);
+}
+
+#[async_rt::test]
+async fn ipc_active_bind_to_same_path_is_rejected() {
+    let (endpoint, path) = unique_ipc_endpoint("active-duplicate-bind");
+
+    let mut first = zeromq::RouterSocket::new();
+    let first_bound = first.bind(&endpoint).await.unwrap();
+    assert_eq!(first_bound.to_string(), endpoint);
+
+    let mut second = zeromq::RouterSocket::new();
+    let err = second
+        .bind(&endpoint)
+        .await
+        .expect_err("second bind should fail while first listener is active");
+
+    assert!(matches!(err, ZmqError::Network(_)), "{err:?}");
+
+    let errs = first.close().await;
+    assert!(errs.is_empty(), "Could not unbind first socket: {:?}", errs);
+    let _ = std::fs::remove_file(path);
+}
+
+#[async_rt::test]
 async fn ipc_close_allows_rebinding_same_path() {
     let (endpoint, path) = unique_ipc_endpoint("rebind");
 
@@ -99,6 +138,19 @@ async fn ipc_close_allows_rebinding_same_path() {
         errs
     );
     let _ = std::fs::remove_file(path);
+}
+
+#[async_rt::test]
+async fn unbind_unbound_endpoint_returns_no_such_bind() {
+    let mut socket = zeromq::RouterSocket::new();
+    let endpoint: Endpoint = "tcp://127.0.0.1:1".parse().unwrap();
+
+    let err = socket
+        .unbind(endpoint.clone())
+        .await
+        .expect_err("unbinding an endpoint that was never bound should fail");
+
+    assert!(matches!(err, ZmqError::NoSuchBind(e) if e == endpoint));
 }
 
 #[async_rt::test]
