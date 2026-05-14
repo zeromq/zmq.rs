@@ -47,9 +47,7 @@ fn bench_libzmq_pub_sub(c: &mut Criterion) {
     for &transport in TRANSPORTS {
         for &n_subs in SUB_COUNTS {
             let mut group = c.benchmark_group(format!("libzmq/pub_sub/{transport}/subs={n_subs}"));
-            group.sample_size(10);
-            group.measurement_time(Duration::from_secs(10));
-            group.warm_up_time(Duration::from_secs(2));
+            bench_runtime::configure_group(&mut group);
             for &msg_size in MSG_SIZES {
                 group.throughput(Throughput::Bytes((msg_size * n_subs) as u64));
                 group.bench_with_input(
@@ -132,9 +130,7 @@ fn bench_zmqrs_pub_sub(c: &mut Criterion) {
     for &transport in TRANSPORTS {
         for &n_subs in SUB_COUNTS {
             let mut group = c.benchmark_group(format!("zmqrs/pub_sub/{transport}/subs={n_subs}"));
-            group.sample_size(10);
-            group.measurement_time(Duration::from_secs(10));
-            group.warm_up_time(Duration::from_secs(2));
+            bench_runtime::configure_group(&mut group);
             for &msg_size in MSG_SIZES {
                 if n_subs == 64 && msg_size == 65536 {
                     continue;
@@ -197,9 +193,7 @@ fn bench_zmqrs_pub_sub_one(
 fn bench_libzmq_req_rep(c: &mut Criterion) {
     for &transport in TRANSPORTS {
         let mut group = c.benchmark_group(format!("libzmq/req_rep/{transport}"));
-        group.sample_size(10);
-        group.measurement_time(Duration::from_secs(10));
-        group.warm_up_time(Duration::from_secs(2));
+        bench_runtime::configure_group(&mut group);
         for &msg_size in MSG_SIZES {
             group.throughput(Throughput::Bytes(msg_size as u64));
             group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {
@@ -250,9 +244,7 @@ fn bench_zmqrs_req_rep(c: &mut Criterion) {
     let rt = build_rt();
     for &transport in TRANSPORTS {
         let mut group = c.benchmark_group(format!("zmqrs/req_rep/{transport}"));
-        group.sample_size(10);
-        group.measurement_time(Duration::from_secs(10));
-        group.warm_up_time(Duration::from_secs(2));
+        bench_runtime::configure_group(&mut group);
         for &msg_size in MSG_SIZES {
             group.throughput(Throughput::Bytes(msg_size as u64));
             group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {
@@ -301,9 +293,7 @@ fn bench_zmqrs_req_rep_one(
 fn bench_libzmq_push_pull(c: &mut Criterion) {
     for &transport in TRANSPORTS {
         let mut group = c.benchmark_group(format!("libzmq/push_pull/{transport}"));
-        group.sample_size(10);
-        group.measurement_time(Duration::from_secs(10));
-        group.warm_up_time(Duration::from_secs(2));
+        bench_runtime::configure_group(&mut group);
         for &msg_size in MSG_SIZES {
             group.throughput(Throughput::Bytes(msg_size as u64));
             group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {
@@ -337,9 +327,7 @@ fn bench_zmqrs_push_pull(c: &mut Criterion) {
     let rt = build_rt();
     for &transport in TRANSPORTS {
         let mut group = c.benchmark_group(format!("zmqrs/push_pull/{transport}"));
-        group.sample_size(10);
-        group.measurement_time(Duration::from_secs(10));
-        group.warm_up_time(Duration::from_secs(2));
+        bench_runtime::configure_group(&mut group);
         for &msg_size in MSG_SIZES {
             group.throughput(Throughput::Bytes(msg_size as u64));
             group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {
@@ -383,9 +371,7 @@ fn bench_zmqrs_push_pull_one(
 fn bench_libzmq_dealer_router(c: &mut Criterion) {
     for &transport in TRANSPORTS {
         let mut group = c.benchmark_group(format!("libzmq/dealer_router/{transport}"));
-        group.sample_size(10);
-        group.measurement_time(Duration::from_secs(10));
-        group.warm_up_time(Duration::from_secs(2));
+        bench_runtime::configure_group(&mut group);
         for &msg_size in MSG_SIZES {
             group.throughput(Throughput::Bytes(msg_size as u64));
             group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {
@@ -437,9 +423,7 @@ fn bench_zmqrs_dealer_router(c: &mut Criterion) {
     let rt = build_rt();
     for &transport in TRANSPORTS {
         let mut group = c.benchmark_group(format!("zmqrs/dealer_router/{transport}"));
-        group.sample_size(10);
-        group.measurement_time(Duration::from_secs(10));
-        group.warm_up_time(Duration::from_secs(2));
+        bench_runtime::configure_group(&mut group);
         for &msg_size in MSG_SIZES {
             group.throughput(Throughput::Bytes(msg_size as u64));
             group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {

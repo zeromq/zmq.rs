@@ -65,6 +65,30 @@ jobs:
           command: test
           args: --all --no-default-features --features async-dispatcher-runtime,all-transport,async-dispatcher-macros
 
+  perf-smoke:
+    name: Performance Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install libzmq
+        run: sudo apt update && sudo apt install libzmq3-dev
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/
+          key: cache-cargo-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+      - name: Compile benchmark targets
+        run: cargo bench --no-run
+      - name: Check perf suite dry run
+        run: python3 scripts/run_perf_suite.py --profile smoke --impl zmqrs,libzmq --transport tcp --run-id ci-dry-run --dry-run
+      - name: Run perf suite smoke
+        run: python3 scripts/run_perf_suite.py --profile smoke --impl zmqrs,libzmq --transport tcp --run-id ci-smoke
+
   windows-ipc:
     name: Windows IPC (${{ matrix.toolchain }})
     runs-on: windows-latest

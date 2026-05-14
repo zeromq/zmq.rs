@@ -5,8 +5,8 @@ use bytes::{Bytes, BytesMut};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 use zeromq::{
-    __bench::{Message, ZmqCodec},
     ZmqMessage,
+    __bench::{Message, ZmqCodec},
 };
 
 const FRAME_SIZES: &[usize] = &[16, 256, 4096, 65536];

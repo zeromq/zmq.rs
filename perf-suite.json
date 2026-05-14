@@ -1,0 +1,124 @@
+{
+  "schema": 1,
+  "omq": {
+    "repository": "https://github.com/paddor/omq.rs.git",
+    "revision": "a46c1f7"
+  },
+  "profiles": {
+    "smoke": {
+      "description": "Fast CI/local sanity profile. Runs one PUSH/PULL TCP point for zmq.rs and libzmq, and one OMQ PUSH/PULL point when OMQ is selected.",
+      "criterion_args": ["--sample-size", "10", "--measurement-time", "1", "--warm-up-time", "1"],
+      "zmqrs_runtimes": ["tokio-runtime"],
+      "benches": [
+        {
+          "name": "compare_libzmq",
+          "implementations": ["zmqrs", "libzmq"],
+          "templates": ["{impl}/push_pull/{transport}/16"]
+        }
+      ],
+      "omq": {
+        "packages": ["omq-tokio"],
+        "benches": ["push_pull"],
+        "sizes": [128],
+        "peers": [1],
+        "round_ms": 100,
+        "rounds": 1
+      }
+    },
+    "standard": {
+      "description": "Day-to-day comparison profile for decision making before and after hot-path changes.",
+      "criterion_args": ["--sample-size", "10", "--measurement-time", "3", "--warm-up-time", "1"],
+      "zmqrs_runtimes": ["tokio-runtime", "async-std-runtime", "async-dispatcher-runtime"],
+      "benches": [
+        {
+          "name": "compare_libzmq",
+          "implementations": ["zmqrs", "libzmq"],
+          "templates": [
+            "{impl}/push_pull/{transport}/{size}",
+            "{impl}/req_rep/{transport}/{size}",
+            "{impl}/dealer_router/{transport}/{size}",
+            "{impl}/pub_sub/{transport}/subs={subs}/{size}"
+          ],
+          "sizes": [16, 256, 4096],
+          "subs": [1, 8]
+        },
+        {
+          "name": "throughput",
+          "implementations": ["zmqrs", "libzmq"],
+          "templates": [
+            "{impl}/throughput/dealer_router/{transport}/{size}",
+            "{impl}/throughput/pub_fanout/{transport}/subs={subs}/{size}"
+          ],
+          "sizes": [256, 4096],
+          "subs": [1, 8]
+        },
+        {
+          "name": "codec",
+          "implementations": ["zmqrs"],
+          "templates": [
+            "codec/encode/frames={frames}/{size}",
+            "codec/decode/frames={frames}/{size}"
+          ],
+          "sizes": [16, 4096, 65536],
+          "frames": [1, 8]
+        }
+      ],
+      "omq": {
+        "packages": ["omq-tokio", "omq-compio"],
+        "benches": ["push_pull", "req_rep", "router_dealer", "pub_sub"],
+        "sizes": [128, 2048, 8192],
+        "peers": [1, 8],
+        "round_ms": 300,
+        "rounds": 2
+      }
+    },
+    "full": {
+      "description": "Long local/manual run. Use this before claiming performance wins.",
+      "criterion_args": ["--sample-size", "20", "--measurement-time", "10", "--warm-up-time", "2"],
+      "zmqrs_runtimes": ["tokio-runtime", "async-std-runtime", "async-dispatcher-runtime"],
+      "benches": [
+        {
+          "name": "compare_libzmq",
+          "implementations": ["zmqrs", "libzmq"],
+          "templates": [
+            "{impl}/push_pull/{transport}/{size}",
+            "{impl}/req_rep/{transport}/{size}",
+            "{impl}/dealer_router/{transport}/{size}",
+            "{impl}/pub_sub/{transport}/subs={subs}/{size}"
+          ],
+          "sizes": [16, 256, 4096, 65536],
+          "subs": [1, 8, 64]
+        },
+        {
+          "name": "throughput",
+          "implementations": ["zmqrs", "libzmq"],
+          "templates": [
+            "{impl}/throughput/dealer_router/{transport}/{size}",
+            "{impl}/throughput/pub_fanout/{transport}/subs={subs}/{size}"
+          ],
+          "sizes": [256, 4096],
+          "subs": [1, 8, 64]
+        },
+        {
+          "name": "codec",
+          "implementations": ["zmqrs"],
+          "templates": [
+            "codec/encode/frames={frames}/{size}",
+            "codec/decode/frames={frames}/{size}"
+          ],
+          "sizes": [16, 256, 4096, 65536],
+          "frames": [1, 2, 8]
+        }
+      ],
+      "omq": {
+        "packages": ["omq-tokio", "omq-compio"],
+        "benches": ["push_pull", "req_rep", "router_dealer", "pub_sub", "latency"],
+        "sizes": [32, 128, 512, 2048, 8192, 32768, 131072],
+        "peers": [1, 3, 8],
+        "round_ms": 500,
+        "rounds": 3,
+        "include_inproc": true
+      }
+    }
+  }
+}

@@ -44,9 +44,7 @@ fn bench_zmqrs_pub_pipelined(c: &mut Criterion) {
             let mut group = c.benchmark_group(format!(
                 "zmqrs/throughput/pub_fanout/{transport}/subs={n_subs}"
             ));
-            group.sample_size(10);
-            group.measurement_time(Duration::from_secs(10));
-            group.warm_up_time(Duration::from_secs(2));
+            bench_runtime::configure_group(&mut group);
             for &msg_size in PIPELINE_SIZES {
                 let bytes = (BATCH_SIZE * msg_size * n_subs) as u64;
                 group.throughput(Throughput::Bytes(bytes));
@@ -143,9 +141,7 @@ fn bench_libzmq_pub_pipelined(c: &mut Criterion) {
             let mut group = c.benchmark_group(format!(
                 "libzmq/throughput/pub_fanout/{transport}/subs={n_subs}"
             ));
-            group.sample_size(10);
-            group.measurement_time(Duration::from_secs(10));
-            group.warm_up_time(Duration::from_secs(2));
+            bench_runtime::configure_group(&mut group);
             for &msg_size in PIPELINE_SIZES {
                 let bytes = (BATCH_SIZE * msg_size * n_subs) as u64;
                 group.throughput(Throughput::Bytes(bytes));
@@ -239,9 +235,7 @@ fn bench_zmqrs_dealer_router_pipelined(c: &mut Criterion) {
     let rt = build_rt();
     for &transport in TRANSPORTS {
         let mut group = c.benchmark_group(format!("zmqrs/throughput/dealer_router/{transport}"));
-        group.sample_size(10);
-        group.measurement_time(Duration::from_secs(10));
-        group.warm_up_time(Duration::from_secs(2));
+        bench_runtime::configure_group(&mut group);
         for &msg_size in PIPELINE_SIZES {
             group.throughput(Throughput::Bytes((BATCH_SIZE * msg_size) as u64));
             group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {
@@ -306,9 +300,7 @@ fn bench_zmqrs_dealer_router_one(
 fn bench_libzmq_dealer_router_pipelined(c: &mut Criterion) {
     for &transport in TRANSPORTS {
         let mut group = c.benchmark_group(format!("libzmq/throughput/dealer_router/{transport}"));
-        group.sample_size(10);
-        group.measurement_time(Duration::from_secs(10));
-        group.warm_up_time(Duration::from_secs(2));
+        bench_runtime::configure_group(&mut group);
         for &msg_size in PIPELINE_SIZES {
             group.throughput(Throughput::Bytes((BATCH_SIZE * msg_size) as u64));
             group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {
