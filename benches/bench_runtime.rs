@@ -24,9 +24,15 @@ impl BenchRuntime {
             }
         }
 
+        #[cfg(all(not(feature = "tokio-runtime"), feature = "async-dispatcher-runtime"))]
+        {
+            async_dispatcher::set_dispatcher(async_dispatcher::thread_dispatcher());
+            Self {}
+        }
+
         #[cfg(all(
-            not(feature = "tokio-runtime"),
-            any(feature = "async-std-runtime", feature = "async-dispatcher-runtime")
+            not(any(feature = "tokio-runtime", feature = "async-dispatcher-runtime")),
+            feature = "async-std-runtime"
         ))]
         {
             Self {}
@@ -43,9 +49,14 @@ impl BenchRuntime {
             self.inner.block_on(future)
         }
 
+        #[cfg(all(not(feature = "tokio-runtime"), feature = "async-dispatcher-runtime"))]
+        {
+            async_dispatcher::block_on(future)
+        }
+
         #[cfg(all(
-            not(feature = "tokio-runtime"),
-            any(feature = "async-std-runtime", feature = "async-dispatcher-runtime")
+            not(any(feature = "tokio-runtime", feature = "async-dispatcher-runtime")),
+            feature = "async-std-runtime"
         ))]
         {
             async_std::task::block_on(future)
