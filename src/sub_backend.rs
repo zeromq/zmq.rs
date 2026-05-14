@@ -164,13 +164,9 @@ impl SubSocketBackend {
         }
 
         let mut dead_peers = Vec::new();
+        let outbound = Message::Message(message);
         for (peer_id, send_queue) in targets {
-            let res = send_queue
-                .lock()
-                .await
-                .as_mut()
-                .send(Message::Message(message.clone()))
-                .await;
+            let res = send_queue.lock().await.as_mut().send(&outbound).await;
             match res {
                 Ok(()) => {}
                 Err(CodecError::Io(e)) => {
@@ -217,13 +213,9 @@ impl SubSocketBackend {
 
         let mut dead_peers = Vec::new();
         let mut first_error = None;
+        let outbound = Message::Message(message);
         for (peer_id, send_queue) in targets {
-            let result = send_queue
-                .lock()
-                .await
-                .as_mut()
-                .send(Message::Message(message.clone()))
-                .await;
+            let result = send_queue.lock().await.as_mut().send(&outbound).await;
             match result {
                 Ok(()) => {}
                 Err(e)
@@ -283,7 +275,8 @@ impl MultiPeerBackend for SubSocketBackend {
         let (recv_queue, mut send_queue) = io.into_parts();
 
         for message in self.subscription_messages() {
-            if let Err(e) = send_queue.send(Message::Message(message)).await {
+            let outbound = Message::Message(message);
+            if let Err(e) = send_queue.send(&outbound).await {
                 log::error!("Failed to send subscription to peer {:?}: {:?}", peer_id, e);
                 return;
             }

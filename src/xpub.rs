@@ -148,13 +148,9 @@ impl SocketSend for XPubSocket {
         }
 
         let mut dead_peers = Vec::new();
+        let outbound = Message::Message(message);
         for (peer_id, send_queue) in targets {
-            let res = send_queue
-                .lock()
-                .await
-                .as_mut()
-                .send(Message::Message(message.clone()))
-                .await;
+            let res = send_queue.lock().await.as_mut().send(&outbound).await;
             match res {
                 Ok(()) => {}
                 Err(CodecError::Io(e)) => {
