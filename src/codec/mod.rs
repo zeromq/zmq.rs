@@ -7,6 +7,7 @@ mod framed;
 mod greeting;
 pub(crate) mod mechanism;
 mod zmq_codec;
+mod zmtp_frame;
 
 pub(crate) use command::{ZmqCommand, ZmqCommandName};
 pub(crate) use error::{CodecError, CodecResult};

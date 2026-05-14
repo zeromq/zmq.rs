@@ -1,27 +1,21 @@
 use super::command::ZmqCommand;
 use super::error::CodecError;
 use super::greeting::ZmqGreeting;
+use super::zmtp_frame::{encode_payload_frame, ZmtpFrameHeader, GREETING_SIZE};
 use super::Message;
 use crate::ZmqMessage;
 
 use asynchronous_codec::{Decoder, Encoder};
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 
 use std::convert::TryFrom;
-
-#[derive(Debug, Clone, Copy)]
-struct Frame {
-    command: bool,
-    long: bool,
-    more: bool,
-}
 
 #[derive(Debug)]
 enum DecoderState {
     Greeting,
     FrameHeader,
-    FrameLen(Frame),
-    Frame(Frame),
+    FrameLen(ZmtpFrameHeader),
+    Frame(ZmtpFrameHeader),
 }
 
 #[derive(Debug)]
@@ -38,7 +32,7 @@ impl ZmqCodec {
     pub fn new() -> Self {
         Self {
             state: DecoderState::Greeting,
-            waiting_for: 64, // len of the greeting frame
+            waiting_for: GREETING_SIZE,
             buffered_message: None,
         }
     }
@@ -67,19 +61,15 @@ impl Decoder for ZmqCodec {
                 self.state = DecoderState::FrameHeader;
                 self.waiting_for = 1;
                 Ok(Some(Message::Greeting(ZmqGreeting::try_from(
-                    src.split_to(64).freeze(),
+                    src.split_to(GREETING_SIZE).freeze(),
                 )?)))
             }
             DecoderState::FrameHeader => {
                 let flags = src.get_u8();
 
-                let frame = Frame {
-                    command: (flags & 0b0000_0100) != 0,
-                    long: (flags & 0b0000_0010) != 0,
-                    more: (flags & 0b0000_0001) != 0,
-                };
+                let frame = ZmtpFrameHeader::from_flags(flags);
                 self.state = DecoderState::FrameLen(frame);
-                self.waiting_for = if frame.long { 8 } else { 1 };
+                self.waiting_for = frame.length_size();
                 self.decode(src)
             }
             DecoderState::FrameLen(frame) => {
@@ -121,24 +111,7 @@ impl Decoder for ZmqCodec {
 }
 
 fn encode_frame(frame: &Bytes, dst: &mut BytesMut, more: bool) {
-    let mut flags: u8 = 0;
-    if more {
-        flags |= 0b0000_0001;
-    }
-    let len = frame.len();
-    if len > 255 {
-        flags |= 0b0000_0010;
-        dst.reserve(len + 9);
-    } else {
-        dst.reserve(len + 2);
-    }
-    dst.put_u8(flags);
-    if len > 255 {
-        dst.put_u64(len as u64);
-    } else {
-        dst.put_u8(len as u8);
-    }
-    dst.extend_from_slice(frame.as_ref());
+    encode_payload_frame(frame, dst, false, more);
 }
 
 impl Encoder for ZmqCodec {

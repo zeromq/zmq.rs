@@ -1,4 +1,5 @@
 use super::error::CodecError;
+use super::zmtp_frame::ZmtpFrameHeader;
 use crate::SocketType;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -97,18 +98,9 @@ impl From<ZmqCommand> for BytesMut {
             message_len += val.len() + 4;
         }
 
-        let long_message = message_len > 255;
-
-        let mut bytes = BytesMut::new();
-        if long_message {
-            bytes.reserve(message_len + 9);
-            bytes.put_u8(0x06);
-            bytes.put_u64(message_len as u64);
-        } else {
-            bytes.reserve(message_len + 2);
-            bytes.put_u8(0x04);
-            bytes.put_u8(message_len as u8);
-        };
+        let header = ZmtpFrameHeader::for_payload(message_len, true, false);
+        let mut bytes = BytesMut::with_capacity(header.encoded_len(message_len));
+        header.write_prefix(message_len, &mut bytes);
         bytes.put_u8(command_name.len() as u8);
         bytes.extend_from_slice(command_name.as_ref());
         for (prop, val) in command.properties.iter() {
