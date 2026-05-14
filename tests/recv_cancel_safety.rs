@@ -198,9 +198,7 @@ fn single_frame(seq: usize) -> ZmqMessage {
 
 fn multipart_message(peer: usize, seq: usize, large_frame_len: usize) -> ZmqMessage {
     let marker = (b'a' + peer as u8) as char;
-    let large = std::iter::repeat(marker)
-        .take(large_frame_len)
-        .collect::<String>();
+    let large = std::iter::repeat_n(marker, large_frame_len).collect::<String>();
 
     ZmqMessage::try_from(vec![
         Bytes::from(format!("peer:{peer}")),
