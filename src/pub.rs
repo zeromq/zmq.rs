@@ -2,6 +2,9 @@ use crate::codec::*;
 use crate::endpoint::Endpoint;
 use crate::error::ZmqResult;
 use crate::message::*;
+use crate::pub_fanout::{
+    subscription_change, FanoutEvent, FanoutEventReceiver, FanoutEventSender, FanoutState,
+};
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{async_rt, CaptureSocket, SocketOptions};
@@ -9,64 +12,53 @@ use crate::{MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketSend, So
 
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
-use futures::lock::Mutex as AsyncMutex;
-use futures::{select, FutureExt, SinkExt, StreamExt};
+use futures::{select, FutureExt, StreamExt};
 use parking_lot::Mutex;
 
 use std::collections::HashMap;
-use std::io::ErrorKind;
-use std::pin::Pin;
 use std::sync::Arc;
 
-pub(crate) struct Subscriber {
-    pub(crate) subscriptions: Vec<Vec<u8>>,
-    pub(crate) send_queue: Arc<AsyncMutex<Pin<Box<ZmqFramedWrite>>>>,
+pub(crate) struct PubConnection {
     _subscription_coro_stop: oneshot::Sender<()>,
 }
 
 pub(crate) struct PubSocketBackend {
-    subscribers: scc::HashMap<PeerIdentity, Subscriber>,
+    connections: scc::HashMap<PeerIdentity, PubConnection>,
+    fanout_events: FanoutEventSender,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
     socket_options: SocketOptions,
 }
 
 impl PubSocketBackend {
     fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
-        let data = match message {
-            Message::Message(m) => {
-                if m.len() != 1 {
-                    log::warn!("Received message with unexpected length: {}", m.len());
-                    return;
-                }
-                m.into_vec().pop().unwrap_or_default()
-            }
+        let message = match message {
+            Message::Message(m) => m,
             _ => return,
         };
 
-        if data.is_empty() {
+        if let Some(change) = subscription_change(&message) {
+            let _ = self
+                .fanout_events
+                .unbounded_send(FanoutEvent::Subscription {
+                    peer_id: peer_id.clone(),
+                    change,
+                });
             return;
         }
 
-        match data.first() {
-            Some(1) => {
-                // Subscribe
-                if let Some(mut entry) = self.subscribers.get_sync(peer_id) {
-                    entry.subscriptions.push(Vec::from(&data[1..]));
-                }
-            }
-            Some(0) => {
-                // Unsubscribe
-                let sub = Vec::from(&data[1..]);
-                if let Some(mut entry) = self.subscribers.get_sync(peer_id) {
-                    if let Some(index) = entry.subscriptions.iter().position(|s| s == &sub) {
-                        entry.subscriptions.remove(index);
-                    }
-                }
-            }
-            _ => log::warn!(
+        if message.len() != 1 {
+            log::warn!("Received message with unexpected length: {}", message.len());
+            return;
+        }
+
+        let Some(frame) = message.get(0) else {
+            return;
+        };
+        if !frame.is_empty() {
+            log::warn!(
                 "Received message with unexpected first byte: {:?}",
-                data.first()
-            ),
+                frame.first()
+            );
         }
     }
 }
@@ -81,7 +73,7 @@ impl SocketBackend for PubSocketBackend {
     }
 
     fn shutdown(&self) {
-        self.subscribers.clear_sync();
+        self.connections.clear_sync();
     }
 
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
@@ -93,18 +85,28 @@ impl SocketBackend for PubSocketBackend {
 impl MultiPeerBackend for PubSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (mut recv_queue, send_queue) = io.into_parts();
-        // TODO provide handling for recv_queue
         let (sender, stop_receiver) = oneshot::channel();
-        self.subscribers
+        self.connections
             .upsert_async(
                 peer_id.clone(),
-                Subscriber {
-                    subscriptions: vec![],
-                    send_queue: Arc::new(AsyncMutex::new(Box::pin(send_queue))),
+                PubConnection {
                     _subscription_coro_stop: sender,
                 },
             )
             .await;
+
+        if self
+            .fanout_events
+            .unbounded_send(FanoutEvent::PeerConnected {
+                peer_id: peer_id.clone(),
+                send_queue,
+            })
+            .is_err()
+        {
+            self.connections.remove_sync(peer_id);
+            return;
+        }
+
         let backend = self;
         let peer_id = peer_id.clone();
         async_rt::task::spawn(async move {
@@ -139,12 +141,17 @@ impl MultiPeerBackend for PubSocketBackend {
         if let Some(monitor) = self.monitor().lock().as_mut() {
             let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
         }
-        self.subscribers.remove_sync(peer_id);
+        self.connections.remove_sync(peer_id);
+        let _ = self
+            .fanout_events
+            .unbounded_send(FanoutEvent::PeerDisconnected(peer_id.clone()));
     }
 }
 
 pub struct PubSocket {
     pub(crate) backend: Arc<PubSocketBackend>,
+    fanout_state: FanoutState,
+    fanout_events: FanoutEventReceiver,
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
@@ -157,45 +164,17 @@ impl Drop for PubSocket {
 #[async_trait]
 impl SocketSend for PubSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+        self.fanout_state.drain_events(&mut self.fanout_events);
+
         let first_frame = match message.get(0) {
             Some(frame) => frame,
             None => return Ok(()), // Empty message, nothing to publish
         };
-        let mut targets = Vec::new();
-        let mut iter = self.backend.subscribers.begin_async().await;
-        while let Some(subscriber) = iter {
-            if subscriber.subscriptions.iter().any(|sub_filter| {
-                sub_filter.len() <= first_frame.len()
-                    && sub_filter.as_slice() == &first_frame[0..sub_filter.len()]
-            }) {
-                targets.push((subscriber.key().clone(), subscriber.send_queue.clone()));
-            }
-            iter = subscriber.next_async().await;
-        }
 
-        let mut dead_peers = Vec::new();
-        for (peer_id, send_queue) in targets {
-            let res = send_queue
-                .lock()
-                .await
-                .as_mut()
-                .send(Message::Message(message.clone()))
-                .await;
-            match res {
-                Ok(()) => {}
-                Err(CodecError::Io(e)) => {
-                    if e.kind() == ErrorKind::BrokenPipe {
-                        dead_peers.push(peer_id);
-                    } else {
-                        log::error!("Error sending message: {:?}", e);
-                    }
-                }
-                Err(e) => {
-                    log::error!("Error sending message: {:?}", e);
-                    return Err(e.into());
-                }
-            }
-        }
+        let dead_peers = self
+            .fanout_state
+            .send_matching(first_frame, &message)
+            .await?;
         for peer in dead_peers {
             self.backend.peer_disconnected(&peer);
         }
@@ -208,12 +187,16 @@ impl CaptureSocket for PubSocket {}
 #[async_trait]
 impl Socket for PubSocket {
     fn with_options(options: SocketOptions) -> Self {
+        let (fanout_event_sender, fanout_events) = mpsc::unbounded();
         Self {
             backend: Arc::new(PubSocketBackend {
-                subscribers: scc::HashMap::new(),
+                connections: scc::HashMap::new(),
+                fanout_events: fanout_event_sender,
                 socket_monitor: Mutex::new(None),
                 socket_options: options,
             }),
+            fanout_state: FanoutState::default(),
+            fanout_events,
             binds: HashMap::new(),
         }
     }
