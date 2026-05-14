@@ -53,6 +53,7 @@ configuration does not leak into the external benchmark build.
      runtime policy work.
    - Correctness checks: protocol fixture tests, greeting/mechanism tests,
      interop with libzmq, and no public socket API changes.
+   - Boundary note: [`SANS_IO_ZMTP_BOUNDARY.md`](SANS_IO_ZMTP_BOUNDARY.md).
 
 5. Gather-write and `writev` large-frame path
    - Goal: send multipart and large frames with vectored writes where the
