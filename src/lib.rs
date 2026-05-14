@@ -54,7 +54,6 @@ use crate::transport::AcceptStopHandle;
 use util::PeerIdentity;
 
 use async_trait::async_trait;
-use asynchronous_codec::FramedWrite;
 use futures::channel::mpsc;
 use futures::{select, FutureExt};
 use parking_lot::Mutex;

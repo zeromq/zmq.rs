@@ -93,20 +93,70 @@ where
 #[cfg(feature = "tokio-runtime")]
 fn make_framed<T>(stream: T) -> FramedIo
 where
-    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Sync + 'static,
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static,
 {
-    use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+    use tokio_util::compat::TokioAsyncReadCompatExt;
     let (read, write) = tokio::io::split(stream);
-    FramedIo::new(Box::new(read.compat()), Box::new(write.compat_write()))
+    FramedIo::new(Box::new(read.compat()), Box::new(TokioWriteCompat(write)))
+}
+
+#[cfg(feature = "tokio-runtime")]
+struct TokioWriteCompat<T>(T);
+
+#[cfg(feature = "tokio-runtime")]
+impl<T> futures::AsyncWrite for TokioWriteCompat<T>
+where
+    T: tokio::io::AsyncWrite + Unpin,
+{
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        tokio::io::AsyncWrite::poll_write(std::pin::Pin::new(&mut self.0), cx, buf)
+    }
+
+    fn poll_write_vectored(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        tokio::io::AsyncWrite::poll_write_vectored(std::pin::Pin::new(&mut self.0), cx, bufs)
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        tokio::io::AsyncWrite::poll_flush(std::pin::Pin::new(&mut self.0), cx)
+    }
+
+    fn poll_close(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        tokio::io::AsyncWrite::poll_shutdown(std::pin::Pin::new(&mut self.0), cx)
+    }
+}
+
+#[cfg(feature = "tokio-runtime")]
+impl<T> crate::codec::FrameableWrite for TokioWriteCompat<T>
+where
+    T: tokio::io::AsyncWrite + Unpin + Send + Sync,
+{
+    fn supports_write_vectored(&self) -> bool {
+        tokio::io::AsyncWrite::is_write_vectored(&self.0)
+    }
 }
 
 #[allow(unused)]
 #[cfg(any(feature = "async-std-runtime", feature = "async-dispatcher-runtime"))]
 fn make_framed<T>(stream: T) -> FramedIo
 where
-    T: futures::AsyncRead + futures::AsyncWrite + Send + Sync + 'static,
+    T: futures::AsyncRead + futures::AsyncWrite + Unpin + Send + Sync + 'static,
 {
     use futures::AsyncReadExt;
     let (read, write) = stream.split();
-    FramedIo::new(Box::new(read), Box::new(write))
+    let write: Box<dyn crate::codec::FrameableWrite> = Box::new(write);
+    FramedIo::new(Box::new(read), write)
 }
