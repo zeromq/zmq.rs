@@ -29,6 +29,12 @@ where
     }
 }
 
+impl FrameableWrite for futures::io::Sink {
+    fn supports_write_vectored(&self) -> bool {
+        false
+    }
+}
+
 /// A `Sink` of ZMTP messages encoded to an `AsyncWrite`.
 ///
 /// The ordinary codec encoder still exists for pure codec callers. This write
@@ -103,7 +109,7 @@ impl ZmqFramedWrite {
     }
 }
 
-impl Sink<Message> for ZmqFramedWrite {
+impl<'a> Sink<&'a Message> for ZmqFramedWrite {
     type Error = CodecError;
 
     fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -111,13 +117,13 @@ impl Sink<Message> for ZmqFramedWrite {
         self.poll_drain_buffer(cx, false)
     }
 
-    fn start_send(mut self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
+    fn start_send(mut self: Pin<&mut Self>, item: &'a Message) -> Result<(), Self::Error> {
         match item {
-            Message::Message(message) if self.should_write_vectored(&message) => {
+            Message::Message(message) if self.should_write_vectored(message) => {
                 self.pending = Some(PendingWrite::from_message(message));
                 Ok(())
             }
-            item => {
+            _ => {
                 let this = &mut *self;
                 this.codec.encode(item, &mut this.buffer)
             }
@@ -148,15 +154,15 @@ struct PendingWrite {
 }
 
 impl PendingWrite {
-    fn from_message(message: ZmqMessage) -> Self {
-        let mut frames = message.into_vec().into_iter().peekable();
+    fn from_message(message: &ZmqMessage) -> Self {
+        let mut frames = message.iter().peekable();
         let mut segments = Vec::new();
 
         while let Some(payload) = frames.next() {
             let more = frames.peek().is_some();
-            segments.push(PendingSegment::Header(FrameHeader::new(&payload, more)));
+            segments.push(PendingSegment::Header(FrameHeader::new(payload, more)));
             if !payload.is_empty() {
-                segments.push(PendingSegment::Payload(payload));
+                segments.push(PendingSegment::Payload(payload.clone()));
             }
         }
 
@@ -294,7 +300,8 @@ mod tests {
         let expected = encode_with_codec(message.clone());
 
         let mut framed = ZmqFramedWrite::new(Box::new(writer));
-        block_on(framed.send(Message::Message(message))).expect("send succeeds");
+        let outbound = Message::Message(message);
+        block_on(framed.send(&outbound)).expect("send succeeds");
 
         let stats = stats.lock().expect("stats lock");
         assert_eq!(stats.bytes, expected);
@@ -313,7 +320,8 @@ mod tests {
         let expected = encode_with_codec(message.clone());
 
         let mut framed = ZmqFramedWrite::new(Box::new(writer));
-        block_on(framed.send(Message::Message(message))).expect("send succeeds");
+        let outbound = Message::Message(message);
+        block_on(framed.send(&outbound)).expect("send succeeds");
 
         let stats = stats.lock().expect("stats lock");
         assert_eq!(stats.bytes, expected);
@@ -324,9 +332,8 @@ mod tests {
     fn encode_with_codec(message: ZmqMessage) -> Vec<u8> {
         let mut codec = ZmqCodec::new();
         let mut dst = BytesMut::new();
-        codec
-            .encode(Message::Message(message), &mut dst)
-            .expect("codec encode");
+        let outbound = Message::Message(message);
+        codec.encode(&outbound, &mut dst).expect("codec encode");
         dst.to_vec()
     }
 

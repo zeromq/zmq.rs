@@ -114,15 +114,13 @@ impl FanoutState {
     ) -> ZmqResult<Vec<PeerIdentity>> {
         let mut dead_peers = Vec::new();
 
+        let outbound = Message::Message(message.clone());
         for (peer_id, peer) in self.peers.iter_mut() {
             if !peer.is_subscribed_to(first_frame) {
                 continue;
             }
 
-            let res = peer
-                .send_queue
-                .send(Message::Message(message.clone()))
-                .await;
+            let res = peer.send_queue.send(&outbound).await;
             match res {
                 Ok(()) => {}
                 Err(CodecError::Io(e)) => {
@@ -163,9 +161,7 @@ pub(crate) fn subscription_change(message: &ZmqMessage) -> Option<SubscriptionCh
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::codec::{FrameableWrite, ZmqCodec};
-
-    use asynchronous_codec::FramedWrite;
+    use crate::codec::FrameableWrite;
 
     #[test]
     fn duplicate_subscription_requires_matching_unsubscribe_events() {
@@ -196,6 +192,6 @@ mod tests {
 
     fn sink_write() -> ZmqFramedWrite {
         let writer: Box<dyn FrameableWrite> = Box::new(futures::io::sink());
-        FramedWrite::new(writer, ZmqCodec::new())
+        ZmqFramedWrite::new(writer)
     }
 }
