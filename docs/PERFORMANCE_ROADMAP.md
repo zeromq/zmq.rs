@@ -1,8 +1,7 @@
 # Performance Roadmap
 
-This branch supersedes PR #251 as the official performance path. It stays
-focused on measurement and planning: no runtime internals, socket hot paths, or
-public crate APIs are changed here.
+This roadmap focuses on measurement and planning: no runtime internals, socket
+hot paths, or public crate APIs are changed here.
 
 ## Benchmark Contract
 

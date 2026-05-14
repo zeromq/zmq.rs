@@ -39,7 +39,8 @@ python3 scripts/run_perf_suite.py --profile standard --impl zmqrs,libzmq,omq --t
 Each run writes `manifest.json`, `results.jsonl`, `summary.md`, and
 `summary.html` under `target/perf-runs/<run-id>/`. Use
 `--candidate-path <path>` to compare another checkout without changing this
-suite.
+suite. See [`BENCHMARK_RESULTS.md`](BENCHMARK_RESULTS.md) for the standard way
+to package and share runs without committing generated data.
 
 ## Running Locally
 
