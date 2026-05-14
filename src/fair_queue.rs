@@ -236,6 +236,7 @@ mod test {
     use crate::async_rt;
     use crate::fair_queue::FairQueue;
     use futures::task::noop_waker;
+    use futures::Future;
     use futures::{stream, Stream, StreamExt};
     use std::collections::VecDeque;
     use std::pin::Pin;
@@ -253,6 +254,11 @@ mod test {
 
     struct WakePendingStream {
         poll_count: usize,
+    }
+
+    struct WakeThenReadyStream {
+        poll_count: usize,
+        message: Option<&'static str>,
     }
 
     impl TestStream {
@@ -288,6 +294,21 @@ mod test {
             self.get_mut().poll_count += 1;
             cx.waker().wake_by_ref();
             Poll::Pending
+        }
+    }
+
+    impl Stream for WakeThenReadyStream {
+        type Item = &'static str;
+
+        fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            let this = self.get_mut();
+            this.poll_count += 1;
+            if this.poll_count == 1 {
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            } else {
+                Poll::Ready(this.message.take())
+            }
         }
     }
 
@@ -356,6 +377,35 @@ mod test {
                 (3, "c3")
             ]
         );
+    }
+
+    #[async_rt::test]
+    async fn test_fair_queue_next_future_can_be_dropped_after_pending() {
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        let mut fair_queue: FairQueue<WakeThenReadyStream, &str> = FairQueue::new(false);
+        {
+            let inner = fair_queue.inner();
+            let mut lock = inner.lock();
+            lock.insert(
+                "peer",
+                WakeThenReadyStream {
+                    poll_count: 0,
+                    message: Some("message"),
+                },
+            );
+        }
+
+        {
+            let mut next = fair_queue.next();
+            assert!(
+                matches!(Pin::new(&mut next).poll(&mut cx), Poll::Pending),
+                "first poll should park the recv future"
+            );
+        }
+
+        assert_eq!(fair_queue.next().await, Some(("peer", "message")));
     }
 
     #[async_rt::test]
