@@ -1,4 +1,4 @@
-use crate::codec::{CodecResult, FramedIo};
+use crate::codec::{CodecResult, FramedIo, ZmqFramedWrite};
 use crate::*;
 
 use asynchronous_codec::FramedRead;
@@ -99,7 +99,7 @@ impl From<PeerIdentity> for Vec<u8> {
 
 pub(crate) struct Peer {
     pub(crate) _identity: PeerIdentity,
-    pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
+    pub(crate) send_queue: ZmqFramedWrite,
     pub(crate) recv_queue: FramedRead<Box<dyn FrameableRead>, ZmqCodec>,
 }
 
