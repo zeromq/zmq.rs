@@ -1,8 +1,9 @@
 use crate::backend::DisconnectNotifier;
-use crate::codec::{CodecError, FramedIo, Message, ZmqFramedRead, ZmqFramedWrite};
+use crate::codec::{CodecError, FramedIo, Message, ZmqFramedRead};
 use crate::endpoint::Endpoint;
 use crate::error::ZmqResult;
 use crate::fair_queue::QueueInner;
+use crate::fanout::{send_message_to_targets, SharedSendQueue};
 use crate::message::ZmqMessage;
 use crate::reconnect::{ReconnectConfig, ReconnectHandle};
 use crate::transport::AcceptStopHandle;
@@ -20,7 +21,6 @@ use parking_lot::Mutex;
 
 use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
-use std::pin::Pin;
 use std::sync::Arc;
 
 /// Type of subscription message sent from SUB/XSUB to PUB/XPUB.
@@ -33,7 +33,7 @@ pub(crate) enum SubscriptionMessageType {
 /// A connected peer for SUB/XSUB sockets, holding only the send half
 /// of the framed I/O since receiving is handled through the fair queue.
 pub(crate) struct SubPeer {
-    pub(crate) send_queue: Arc<AsyncMutex<Pin<Box<ZmqFramedWrite>>>>,
+    pub(crate) send_queue: SharedSendQueue,
 }
 
 /// Shared backend for [`SubSocket`](crate::SubSocket) and [`XSubSocket`](crate::XSubSocket).
@@ -164,13 +164,7 @@ impl SubSocketBackend {
         }
 
         let mut dead_peers = Vec::new();
-        for (peer_id, send_queue) in targets {
-            let res = send_queue
-                .lock()
-                .await
-                .as_mut()
-                .send(Message::Message(message.clone()))
-                .await;
+        for (peer_id, res) in send_message_to_targets(targets, message).await {
             match res {
                 Ok(()) => {}
                 Err(CodecError::Io(e)) => {
@@ -217,13 +211,7 @@ impl SubSocketBackend {
 
         let mut dead_peers = Vec::new();
         let mut first_error = None;
-        for (peer_id, send_queue) in targets {
-            let result = send_queue
-                .lock()
-                .await
-                .as_mut()
-                .send(Message::Message(message.clone()))
-                .await;
+        for (peer_id, result) in send_message_to_targets(targets, message).await {
             match result {
                 Ok(()) => {}
                 Err(e)

@@ -1,6 +1,7 @@
 use crate::codec::*;
 use crate::endpoint::Endpoint;
 use crate::error::ZmqResult;
+use crate::fanout::{send_message_to_targets, SharedSendQueue};
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
@@ -10,17 +11,16 @@ use crate::{MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketSend, So
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
 use futures::lock::Mutex as AsyncMutex;
-use futures::{select, FutureExt, SinkExt, StreamExt};
+use futures::{select, FutureExt, StreamExt};
 use parking_lot::Mutex;
 
 use std::collections::HashMap;
 use std::io::ErrorKind;
-use std::pin::Pin;
 use std::sync::Arc;
 
 pub(crate) struct Subscriber {
     pub(crate) subscriptions: Vec<Vec<u8>>,
-    pub(crate) send_queue: Arc<AsyncMutex<Pin<Box<ZmqFramedWrite>>>>,
+    pub(crate) send_queue: SharedSendQueue,
     _subscription_coro_stop: oneshot::Sender<()>,
 }
 
@@ -174,13 +174,7 @@ impl SocketSend for PubSocket {
         }
 
         let mut dead_peers = Vec::new();
-        for (peer_id, send_queue) in targets {
-            let res = send_queue
-                .lock()
-                .await
-                .as_mut()
-                .send(Message::Message(message.clone()))
-                .await;
+        for (peer_id, res) in send_message_to_targets(targets, message).await {
             match res {
                 Ok(()) => {}
                 Err(CodecError::Io(e)) => {

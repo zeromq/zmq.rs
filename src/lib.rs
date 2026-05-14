@@ -7,6 +7,7 @@ mod dealer;
 mod endpoint;
 mod error;
 mod fair_queue;
+mod fanout;
 mod message;
 mod r#pub;
 mod pull;

@@ -236,7 +236,7 @@ mod test {
     use crate::async_rt;
     use crate::fair_queue::FairQueue;
     use futures::task::noop_waker;
-    use futures::{stream, Stream, StreamExt};
+    use futures::{stream, Future, Stream, StreamExt};
     use std::collections::VecDeque;
     use std::pin::Pin;
     use std::task::{Context, Poll};
@@ -253,6 +253,11 @@ mod test {
 
     struct WakePendingStream {
         poll_count: usize,
+    }
+
+    struct WakeThenReadyStream {
+        polled: bool,
+        message: Option<&'static str>,
     }
 
     impl TestStream {
@@ -291,6 +296,20 @@ mod test {
         }
     }
 
+    impl Stream for WakeThenReadyStream {
+        type Item = &'static str;
+
+        fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            let this = self.get_mut();
+            if !this.polled {
+                this.polled = true;
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            Poll::Ready(this.message.take())
+        }
+    }
+
     impl Stream for TestStream {
         type Item = &'static str;
 
@@ -308,6 +327,7 @@ mod test {
         Test(TestStream),
         CountPending(CountPendingStream),
         WakePending(WakePendingStream),
+        WakeThenReady(WakeThenReadyStream),
     }
 
     impl Stream for UnifiedStream {
@@ -318,6 +338,7 @@ mod test {
                 UnifiedStream::Test(stream) => Pin::new(stream).poll_next(cx),
                 UnifiedStream::CountPending(stream) => Pin::new(stream).poll_next(cx),
                 UnifiedStream::WakePending(stream) => Pin::new(stream).poll_next(cx),
+                UnifiedStream::WakeThenReady(stream) => Pin::new(stream).poll_next(cx),
             }
         }
     }
@@ -577,5 +598,34 @@ mod test {
             stream.poll_count, 1,
             "FairQueue should not consume same-poll wake events immediately"
         );
+    }
+
+    #[async_rt::test]
+    async fn test_fair_queue_recv_is_cancel_safe_after_pending_poll() {
+        let mut fair_queue: FairQueue<UnifiedStream, &str> = FairQueue::new(false);
+        {
+            let inner = fair_queue.inner();
+            let mut lock = inner.lock();
+            lock.insert(
+                "peer",
+                UnifiedStream::WakeThenReady(WakeThenReadyStream {
+                    polled: false,
+                    message: Some("m1"),
+                }),
+            );
+        }
+
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+        {
+            let mut pending_recv = Box::pin(fair_queue.next());
+            assert!(
+                matches!(pending_recv.as_mut().poll(&mut cx), Poll::Pending),
+                "first recv poll should park before the message is ready"
+            );
+        }
+
+        let next = fair_queue.next().await;
+        assert_eq!(next, Some(("peer", "m1")));
     }
 }
