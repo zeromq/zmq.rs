@@ -15,9 +15,17 @@ impl BenchRuntime {
     pub fn new() -> Self {
         #[cfg(feature = "tokio-runtime")]
         {
+            let worker_threads = std::env::var("ZMQRS_BENCH_TOKIO_WORKERS")
+                .ok()
+                .and_then(|value| value.parse::<usize>().ok())
+                .filter(|&value| value > 0)
+                .unwrap_or_else(|| {
+                    std::thread::available_parallelism().map_or(2, std::num::NonZero::get)
+                });
+
             Self {
                 inner: Builder::new_multi_thread()
-                    .worker_threads(2)
+                    .worker_threads(worker_threads)
                     .enable_all()
                     .build()
                     .expect("tokio runtime"),

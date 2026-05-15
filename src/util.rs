@@ -1,7 +1,6 @@
-use crate::codec::{CodecResult, FramedIo, ZmqFramedWrite};
+use crate::codec::{CodecResult, FramedIo, ZmqFramedRead, ZmqFramedWrite};
 use crate::*;
 
-use asynchronous_codec::FramedRead;
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use rand::Rng;
@@ -100,7 +99,7 @@ impl From<PeerIdentity> for Vec<u8> {
 pub(crate) struct Peer {
     pub(crate) _identity: PeerIdentity,
     pub(crate) send_queue: ZmqFramedWrite,
-    pub(crate) recv_queue: FramedRead<Box<dyn FrameableRead>, ZmqCodec>,
+    pub(crate) recv_queue: ZmqFramedRead,
 }
 
 /// Given the result of the greetings exchange, determines the version of the
