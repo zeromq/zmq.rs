@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod test {
+    use bytes::Bytes;
     use zeromq::__async_rt as async_rt;
     use zeromq::prelude::*;
     use zeromq::Endpoint;
@@ -7,6 +8,7 @@ mod test {
 
     use futures::channel::{mpsc, oneshot};
     use futures::{SinkExt, StreamExt};
+    use std::convert::TryFrom;
     use std::time::Duration;
 
     async fn recv_text(sub_socket: &mut zeromq::SubSocket) -> String {
@@ -37,6 +39,62 @@ mod test {
             }
         }
         panic!("timed out waiting for subscription to receive {payload}");
+    }
+
+    async fn drain_pending(sub_socket: &mut zeromq::SubSocket) {
+        loop {
+            match async_rt::task::timeout(Duration::from_millis(10), sub_socket.recv()).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => panic!("failed to drain subscriber payload: {e:?}"),
+                Err(_) => break,
+            }
+        }
+    }
+
+    async fn wait_for_delivery_to_both(
+        pub_socket: &mut zeromq::PubSocket,
+        left: &mut zeromq::SubSocket,
+        right: &mut zeromq::SubSocket,
+        payload: &str,
+    ) {
+        let mut left_ready = false;
+        let mut right_ready = false;
+        for _ in 0..200 {
+            pub_socket
+                .send(ZmqMessage::from(payload))
+                .await
+                .expect("failed to send sync payload");
+
+            if !left_ready {
+                match async_rt::task::timeout(Duration::from_millis(10), left.recv()).await {
+                    Ok(Ok(message)) if message.get(0).unwrap().as_ref() == payload.as_bytes() => {
+                        left_ready = true;
+                    }
+                    Ok(Err(e)) => panic!("failed to receive left sync payload: {e:?}"),
+                    Ok(Ok(_)) | Err(_) => {}
+                }
+            }
+
+            if !right_ready {
+                match async_rt::task::timeout(Duration::from_millis(10), right.recv()).await {
+                    Ok(Ok(message)) if message.get(0).unwrap().as_ref() == payload.as_bytes() => {
+                        right_ready = true;
+                    }
+                    Ok(Err(e)) => panic!("failed to receive right sync payload: {e:?}"),
+                    Ok(Ok(_)) | Err(_) => {}
+                }
+            }
+
+            if left_ready && right_ready {
+                drain_pending(left).await;
+                drain_pending(right).await;
+                return;
+            }
+
+            async_rt::task::sleep(Duration::from_millis(5)).await;
+        }
+
+        panic!("timed out waiting for both subscriptions to receive {payload}");
     }
 
     #[async_rt::test]
@@ -131,6 +189,137 @@ mod test {
             .await
             .expect("Failed to send replacement message");
         assert_eq!(recv_text(&mut sub_socket).await, "stay-after-unsubscribe");
+    }
+
+    #[async_rt::test]
+    async fn test_pub_fanout_burst_reaches_all_subscribers() {
+        pretty_env_logger::try_init().ok();
+
+        let mut pub_socket = zeromq::PubSocket::new();
+        let endpoint = pub_socket
+            .bind("tcp://127.0.0.1:0")
+            .await
+            .expect("Failed to bind");
+
+        let mut left = zeromq::SubSocket::new();
+        left.connect(&endpoint.to_string())
+            .await
+            .expect("Failed to connect left subscriber");
+        left.subscribe("burst")
+            .await
+            .expect("Failed to subscribe left subscriber");
+
+        let mut right = zeromq::SubSocket::new();
+        right
+            .connect(&endpoint.to_string())
+            .await
+            .expect("Failed to connect right subscriber");
+        right
+            .subscribe("burst")
+            .await
+            .expect("Failed to subscribe right subscriber");
+
+        wait_for_delivery_to_both(&mut pub_socket, &mut left, &mut right, "burst-sync").await;
+
+        for idx in 0..256 {
+            pub_socket
+                .send(ZmqMessage::from(format!("burst-{idx:03}")))
+                .await
+                .expect("Failed to send burst message");
+        }
+
+        for idx in 0..256 {
+            let expected = format!("burst-{idx:03}");
+            assert_eq!(recv_text(&mut left).await, expected);
+            assert_eq!(recv_text(&mut right).await, expected);
+        }
+    }
+
+    #[async_rt::test]
+    async fn test_pub_fanout_delivers_multipart_message() {
+        pretty_env_logger::try_init().ok();
+
+        let mut pub_socket = zeromq::PubSocket::new();
+        let endpoint = pub_socket
+            .bind("tcp://127.0.0.1:0")
+            .await
+            .expect("Failed to bind");
+
+        let mut sub_socket = zeromq::SubSocket::new();
+        sub_socket
+            .connect(&endpoint.to_string())
+            .await
+            .expect("Failed to connect subscriber");
+        sub_socket
+            .subscribe("topic")
+            .await
+            .expect("Failed to subscribe subscriber");
+        wait_for_delivery(&mut pub_socket, &mut sub_socket, "topic-sync").await;
+
+        let message = ZmqMessage::try_from(vec![
+            Bytes::from_static(b"topic.multipart"),
+            Bytes::from_static(b"payload"),
+        ])
+        .expect("Failed to build multipart message");
+        pub_socket
+            .send(message)
+            .await
+            .expect("Failed to send multipart message");
+
+        let received = async_rt::task::timeout(Duration::from_secs(2), sub_socket.recv())
+            .await
+            .expect("timeout waiting for multipart PUB message")
+            .expect("failed to receive multipart PUB message");
+        assert_eq!(received.len(), 2);
+        assert_eq!(received.get(0).unwrap().as_ref(), b"topic.multipart");
+        assert_eq!(received.get(1).unwrap().as_ref(), b"payload");
+    }
+
+    #[async_rt::test]
+    async fn test_pub_fanout_continues_after_subscriber_disconnect() {
+        pretty_env_logger::try_init().ok();
+
+        let mut pub_socket = zeromq::PubSocket::new();
+        let endpoint = pub_socket
+            .bind("tcp://127.0.0.1:0")
+            .await
+            .expect("Failed to bind");
+
+        let mut dropped_sub = zeromq::SubSocket::new();
+        dropped_sub
+            .connect(&endpoint.to_string())
+            .await
+            .expect("Failed to connect dropped subscriber");
+        dropped_sub
+            .subscribe("gone")
+            .await
+            .expect("Failed to subscribe dropped subscriber");
+        wait_for_delivery(&mut pub_socket, &mut dropped_sub, "gone-sync").await;
+
+        let mut live_sub = zeromq::SubSocket::new();
+        live_sub
+            .connect(&endpoint.to_string())
+            .await
+            .expect("Failed to connect live subscriber");
+        live_sub
+            .subscribe("live")
+            .await
+            .expect("Failed to subscribe live subscriber");
+        wait_for_delivery(&mut pub_socket, &mut live_sub, "live-sync").await;
+
+        drop(dropped_sub);
+        async_rt::task::sleep(Duration::from_millis(50)).await;
+
+        pub_socket
+            .send(ZmqMessage::from("gone-after-drop"))
+            .await
+            .expect("Failed to send to dropped subscriber");
+        pub_socket
+            .send(ZmqMessage::from("live-after-drop"))
+            .await
+            .expect("Failed to send to live subscriber");
+
+        assert_eq!(recv_text(&mut live_sub).await, "live-after-drop");
     }
 
     #[async_rt::test]

@@ -1,10 +1,12 @@
-use crate::codec::{CodecError, Message, ZmqFramedWrite};
+use crate::codec::{Message, ZmqCodec, ZmqFramedWrite};
 use crate::error::ZmqResult;
 use crate::message::ZmqMessage;
 use crate::util::PeerIdentity;
 
+use asynchronous_codec::Encoder;
+use bytes::BytesMut;
 use futures::channel::mpsc;
-use futures::SinkExt;
+use futures::io::AsyncWriteExt;
 
 use std::collections::HashMap;
 use std::io::ErrorKind;
@@ -64,7 +66,9 @@ impl FanoutState {
             FanoutEvent::Subscription { peer_id, change } => {
                 self.apply_subscription(&peer_id, change);
             }
-            FanoutEvent::PeerDisconnected(peer_id) => self.peer_disconnected(&peer_id),
+            FanoutEvent::PeerDisconnected(peer_id) => {
+                self.peer_disconnected(&peer_id);
+            }
         }
     }
 
@@ -113,26 +117,22 @@ impl FanoutState {
         message: &ZmqMessage,
     ) -> ZmqResult<Vec<PeerIdentity>> {
         let mut dead_peers = Vec::new();
+        let encoded = encode_message(message)?;
 
-        let outbound = Message::Message(message.clone());
         for (peer_id, peer) in self.peers.iter_mut() {
             if !peer.is_subscribed_to(first_frame) {
                 continue;
             }
 
-            let res = peer.send_queue.send(&outbound).await;
+            let res = peer.send_queue.write_all(encoded.as_ref()).await;
             match res {
                 Ok(()) => {}
-                Err(CodecError::Io(e)) => {
-                    if e.kind() == ErrorKind::BrokenPipe {
+                Err(e) => {
+                    if matches!(e.kind(), ErrorKind::BrokenPipe | ErrorKind::ConnectionReset) {
                         dead_peers.push(peer_id.clone());
                     } else {
                         log::error!("Error sending message: {:?}", e);
                     }
-                }
-                Err(e) => {
-                    log::error!("Error sending message: {:?}", e);
-                    return Err(e.into());
                 }
             }
         }
@@ -143,6 +143,12 @@ impl FanoutState {
 
         Ok(dead_peers)
     }
+}
+
+fn encode_message(message: &ZmqMessage) -> ZmqResult<BytesMut> {
+    let mut encoded = BytesMut::new();
+    ZmqCodec::new().encode(Message::Message(message.clone()), &mut encoded)?;
+    Ok(encoded)
 }
 
 pub(crate) fn subscription_change(message: &ZmqMessage) -> Option<SubscriptionChange> {
