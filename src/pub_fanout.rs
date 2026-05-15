@@ -1,5 +1,5 @@
 use crate::async_rt;
-use crate::codec::{Message, ZmqCodec, ZmqFramedWrite};
+use crate::codec::{CodecError, Message, ZmqCodec, ZmqFramedWrite};
 use crate::error::ZmqResult;
 use crate::message::ZmqMessage;
 use crate::util::PeerIdentity;
@@ -10,12 +10,13 @@ use futures::channel::oneshot;
 use futures::{channel::mpsc, SinkExt, StreamExt};
 
 use std::collections::HashMap;
-use std::io::ErrorKind;
+use std::io::{self, ErrorKind};
 
 const PEER_QUEUE_CAPACITY: usize = 1024;
 const PEER_BATCH_MAX_MESSAGES: usize = 64;
 const PEER_BATCH_MAX_BYTES: usize = 64 * 1024;
 const PEER_SYNC_WRITE_THRESHOLD: usize = 1024;
+const PEER_QUEUE_AFTER_SINGLE_SMALL_WRITES: usize = 32;
 
 pub(crate) type FanoutEventSender = mpsc::UnboundedSender<FanoutEvent>;
 pub(crate) type FanoutEventReceiver = mpsc::UnboundedReceiver<FanoutEvent>;
@@ -57,7 +58,17 @@ impl FanoutPeer {
     }
 }
 
-struct FanoutPeerWriter {
+enum FanoutPeerWriter {
+    Direct {
+        peer_id: PeerIdentity,
+        send_queue: Option<ZmqFramedWrite>,
+        fanout_events: FanoutEventSender,
+        single_small_writes: usize,
+    },
+    Queued(QueuedPeerWriter),
+}
+
+struct QueuedPeerWriter {
     sender: mpsc::Sender<PeerWrite>,
     large_accepted: Option<oneshot::Receiver<()>>,
 }
@@ -68,6 +79,82 @@ struct PeerWrite {
 }
 
 impl FanoutPeerWriter {
+    fn direct(
+        peer_id: PeerIdentity,
+        send_queue: ZmqFramedWrite,
+        fanout_events: FanoutEventSender,
+    ) -> Self {
+        Self::Direct {
+            peer_id,
+            send_queue: Some(send_queue),
+            fanout_events,
+            single_small_writes: 0,
+        }
+    }
+
+    fn should_send_direct_single_peer(&mut self, large_message: bool) -> bool {
+        match self {
+            Self::Direct {
+                send_queue: Some(_),
+                ..
+            } if large_message => true,
+            Self::Direct {
+                send_queue: Some(_),
+                single_small_writes,
+                ..
+            } => {
+                *single_small_writes += 1;
+                *single_small_writes <= PEER_QUEUE_AFTER_SINGLE_SMALL_WRITES
+            }
+            _ => false,
+        }
+    }
+
+    async fn send_direct(&mut self, message: &ZmqMessage) -> Result<(), CodecError> {
+        match self {
+            Self::Direct {
+                send_queue: Some(send_queue),
+                ..
+            } => send_queue.send(&Message::Message(message.clone())).await,
+            _ => Err(CodecError::Io(io::Error::new(
+                ErrorKind::BrokenPipe,
+                "fanout direct writer unavailable",
+            ))),
+        }
+    }
+
+    async fn send_queued(&mut self, encoded: Bytes, limit_large_inflight: bool) -> Result<(), ()> {
+        self.ensure_queued()
+            .send(encoded, limit_large_inflight)
+            .await
+    }
+
+    fn ensure_queued(&mut self) -> &mut QueuedPeerWriter {
+        if let Self::Direct {
+            peer_id,
+            send_queue,
+            fanout_events,
+            ..
+        } = self
+        {
+            let send_queue = send_queue
+                .take()
+                .expect("fanout direct writer missing send queue");
+            *self = Self::Queued(QueuedPeerWriter::spawn(
+                peer_id.clone(),
+                send_queue,
+                fanout_events.clone(),
+            ));
+        }
+
+        match self {
+            Self::Queued(writer) => writer,
+            Self::Direct { .. } => unreachable!(),
+        }
+    }
+}
+
+impl QueuedPeerWriter {
     fn spawn(
         peer_id: PeerIdentity,
         send_queue: ZmqFramedWrite,
@@ -208,7 +295,7 @@ impl FanoutState {
         send_queue: ZmqFramedWrite,
         fanout_events: FanoutEventSender,
     ) {
-        let writer = FanoutPeerWriter::spawn(peer_id.clone(), send_queue, fanout_events);
+        let writer = FanoutPeerWriter::direct(peer_id.clone(), send_queue, fanout_events);
         self.peers.insert(
             peer_id,
             FanoutPeer {
@@ -260,8 +347,9 @@ impl FanoutState {
         message: &ZmqMessage,
     ) -> ZmqResult<Vec<PeerIdentity>> {
         let mut dead_peers = Vec::new();
-        let encoded = encode_message(message)?;
-        let limit_large_inflight = encoded.len() >= PEER_SYNC_WRITE_THRESHOLD;
+        let limit_large_inflight = message_payload_len(message) >= PEER_SYNC_WRITE_THRESHOLD;
+        let single_peer = self.peers.len() == 1;
+        let mut encoded: Option<Bytes> = None;
         let mut queued = false;
 
         for (peer_id, peer) in self.peers.iter_mut() {
@@ -270,16 +358,44 @@ impl FanoutState {
             }
 
             let peer_id = peer_id.clone();
-            match peer
-                .writer
-                .send(encoded.clone(), limit_large_inflight)
-                .await
+            if single_peer
+                && peer
+                    .writer
+                    .should_send_direct_single_peer(limit_large_inflight)
             {
-                Ok(()) => {
-                    queued = true;
+                match peer.writer.send_direct(message).await {
+                    Ok(()) => {}
+                    Err(CodecError::Io(error)) => {
+                        if matches!(
+                            error.kind(),
+                            ErrorKind::BrokenPipe | ErrorKind::ConnectionReset
+                        ) {
+                            log_peer_write_error(&peer_id, &error);
+                            dead_peers.push(peer_id);
+                        } else {
+                            log::error!("Error sending message to peer {:?}: {:?}", peer_id, error);
+                        }
+                    }
+                    Err(error) => {
+                        log::error!("Error sending message to peer {:?}: {:?}", peer_id, error);
+                        return Err(error.into());
+                    }
                 }
-                Err(_) => {
-                    dead_peers.push(peer_id);
+            } else {
+                let encoded = if let Some(encoded) = &encoded {
+                    encoded.clone()
+                } else {
+                    let next = encode_message(message)?;
+                    encoded = Some(next.clone());
+                    next
+                };
+                match peer.writer.send_queued(encoded, limit_large_inflight).await {
+                    Ok(()) => {
+                        queued = true;
+                    }
+                    Err(_) => {
+                        dead_peers.push(peer_id);
+                    }
                 }
             }
         }
@@ -330,6 +446,10 @@ fn encode_message(message: &ZmqMessage) -> ZmqResult<Bytes> {
     let mut encoded = BytesMut::new();
     ZmqCodec::new().encode(&Message::Message(message.clone()), &mut encoded)?;
     Ok(encoded.freeze())
+}
+
+fn message_payload_len(message: &ZmqMessage) -> usize {
+    message.iter().map(Bytes::len).sum()
 }
 
 fn log_peer_write_error(peer_id: &PeerIdentity, error: &std::io::Error) {
@@ -418,9 +538,9 @@ mod tests {
 
     fn sink_writer() -> FanoutPeerWriter {
         let (sender, _receiver_guard) = mpsc::channel(1);
-        FanoutPeerWriter {
+        FanoutPeerWriter::Queued(QueuedPeerWriter {
             sender,
             large_accepted: None,
-        }
+        })
     }
 }
