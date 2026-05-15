@@ -14,7 +14,7 @@ rust-version = "1.85.0"
 
 [features]
 default = ["tokio-runtime", "all-transport"]
-tokio-runtime = ["tokio", "tokio-util"]
+tokio-runtime = ["tokio", "tokio-util", "dep:socket2"]
 async-std-runtime = ["async-std"]
 async-dispatcher-runtime = ["async-std", "async-dispatcher"]
 async-dispatcher-macros = ["async-dispatcher/macros"]
@@ -44,6 +44,7 @@ once_cell = "1"
 log = "0.4"
 asynchronous-codec = "0.7"
 async-std = { version = "1", features = ["attributes"], optional = true }
+socket2 = { version = "0.6", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 win_uds = { version = "=0.2.2", features = ["async"], optional = true }
