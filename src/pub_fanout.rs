@@ -7,7 +7,7 @@ use crate::util::PeerIdentity;
 use asynchronous_codec::Encoder;
 use bytes::{Bytes, BytesMut};
 use futures::channel::oneshot;
-use futures::{channel::mpsc, io::AsyncWriteExt, SinkExt, StreamExt};
+use futures::{channel::mpsc, SinkExt, StreamExt};
 
 use std::collections::HashMap;
 use std::io::ErrorKind;
@@ -167,8 +167,8 @@ async fn write_batch(
     }
 
     match batch {
-        Some(batch) => send_queue.write_all(batch.as_ref()).await?,
-        None => send_queue.write_all(first_encoded.as_ref()).await?,
+        Some(batch) => send_queue.write_encoded_all(batch.as_ref()).await?,
+        None => send_queue.write_encoded_all(first_encoded.as_ref()).await?,
     };
 
     Ok(())
@@ -328,7 +328,7 @@ fn should_yield_after_enqueue() -> bool {
 
 fn encode_message(message: &ZmqMessage) -> ZmqResult<Bytes> {
     let mut encoded = BytesMut::new();
-    ZmqCodec::new().encode(Message::Message(message.clone()), &mut encoded)?;
+    ZmqCodec::new().encode(&Message::Message(message.clone()), &mut encoded)?;
     Ok(encoded.freeze())
 }
 

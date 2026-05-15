@@ -4,7 +4,7 @@ use crate::ZmqMessage;
 use asynchronous_codec::{Decoder, Encoder};
 use bytes::{Buf, Bytes, BytesMut};
 use futures::{ready, Sink, Stream};
-use futures::{AsyncRead, AsyncWrite};
+use futures::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use std::io::{self, Error, ErrorKind, IoSlice};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -125,6 +125,12 @@ impl ZmqFramedWrite {
             pending: None,
             high_water_mark: 131_072,
         }
+    }
+
+    pub(crate) async fn write_encoded_all(&mut self, bytes: &[u8]) -> io::Result<()> {
+        debug_assert!(self.buffer.is_empty());
+        debug_assert!(self.pending.is_none());
+        self.inner.write_all(bytes).await
     }
 
     fn should_write_vectored(&self, message: &ZmqMessage) -> bool {
