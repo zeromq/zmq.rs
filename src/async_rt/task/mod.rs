@@ -4,6 +4,8 @@ pub use join_handle::JoinHandle;
 
 use std::any::Any;
 use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 #[track_caller]
 pub fn spawn<T>(task: T) -> JoinHandle<T::Output>
@@ -59,6 +61,28 @@ pub async fn sleep(duration: std::time::Duration) {
     ::async_std::task::sleep(duration).await;
     #[cfg(feature = "async-dispatcher-runtime")]
     ::async_dispatcher::sleep(duration).await;
+}
+
+pub async fn yield_now() {
+    struct YieldNow {
+        yielded: bool,
+    }
+
+    impl Future for YieldNow {
+        type Output = ();
+
+        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            if self.yielded {
+                Poll::Ready(())
+            } else {
+                self.yielded = true;
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+        }
+    }
+
+    YieldNow { yielded: false }.await;
 }
 
 pub async fn timeout<F, T>(

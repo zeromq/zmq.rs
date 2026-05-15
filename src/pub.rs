@@ -100,6 +100,7 @@ impl MultiPeerBackend for PubSocketBackend {
             .unbounded_send(FanoutEvent::PeerConnected {
                 peer_id: peer_id.clone(),
                 send_queue,
+                fanout_events: self.fanout_events.clone(),
             })
             .is_err()
         {
