@@ -5,8 +5,7 @@ use crate::util::PeerIdentity;
 
 use asynchronous_codec::Encoder;
 use bytes::BytesMut;
-use futures::channel::mpsc;
-use futures::io::AsyncWriteExt;
+use futures::{channel::mpsc, io::AsyncWriteExt};
 
 use std::collections::HashMap;
 use std::io::ErrorKind;
@@ -33,11 +32,16 @@ pub(crate) enum FanoutEvent {
 
 struct FanoutPeer {
     subscriptions: Vec<Vec<u8>>,
+    all_subscription_count: usize,
     send_queue: ZmqFramedWrite,
 }
 
 impl FanoutPeer {
     fn is_subscribed_to(&self, first_frame: &[u8]) -> bool {
+        if self.all_subscription_count > 0 {
+            return true;
+        }
+
         self.subscriptions.iter().any(|sub_filter| {
             sub_filter.len() <= first_frame.len()
                 && sub_filter.as_slice() == &first_frame[..sub_filter.len()]
@@ -77,6 +81,7 @@ impl FanoutState {
             peer_id,
             FanoutPeer {
                 subscriptions: Vec::new(),
+                all_subscription_count: 0,
                 send_queue,
             },
         );
@@ -97,6 +102,9 @@ impl FanoutState {
 
         match change {
             SubscriptionChange::Subscribe(subscription) => {
+                if subscription.is_empty() {
+                    peer.all_subscription_count += 1;
+                }
                 peer.subscriptions.push(subscription);
             }
             SubscriptionChange::Unsubscribe(subscription) => {
@@ -105,7 +113,10 @@ impl FanoutState {
                     .iter()
                     .position(|existing| existing == &subscription)
                 {
-                    peer.subscriptions.remove(index);
+                    let removed = peer.subscriptions.remove(index);
+                    if removed.is_empty() {
+                        peer.all_subscription_count = peer.all_subscription_count.saturating_sub(1);
+                    }
                 }
             }
         }
@@ -124,17 +135,9 @@ impl FanoutState {
                 continue;
             }
 
+            let peer_id = peer_id.clone();
             let res = peer.send_queue.write_all(encoded.as_ref()).await;
-            match res {
-                Ok(()) => {}
-                Err(e) => {
-                    if matches!(e.kind(), ErrorKind::BrokenPipe | ErrorKind::ConnectionReset) {
-                        dead_peers.push(peer_id.clone());
-                    } else {
-                        log::error!("Error sending message: {:?}", e);
-                    }
-                }
-            }
+            handle_write_result(peer_id, res, &mut dead_peers);
         }
 
         for peer_id in &dead_peers {
@@ -149,6 +152,23 @@ fn encode_message(message: &ZmqMessage) -> ZmqResult<BytesMut> {
     let mut encoded = BytesMut::new();
     ZmqCodec::new().encode(Message::Message(message.clone()), &mut encoded)?;
     Ok(encoded)
+}
+
+fn handle_write_result(
+    peer_id: PeerIdentity,
+    result: std::io::Result<()>,
+    dead_peers: &mut Vec<PeerIdentity>,
+) {
+    match result {
+        Ok(()) => {}
+        Err(e) => {
+            if matches!(e.kind(), ErrorKind::BrokenPipe | ErrorKind::ConnectionReset) {
+                dead_peers.push(peer_id);
+            } else {
+                log::error!("Error sending message: {:?}", e);
+            }
+        }
+    }
 }
 
 pub(crate) fn subscription_change(message: &ZmqMessage) -> Option<SubscriptionChange> {
@@ -177,6 +197,7 @@ mod tests {
             peer_id.clone(),
             FanoutPeer {
                 subscriptions: Vec::new(),
+                all_subscription_count: 0,
                 send_queue: sink_write(),
             },
         );
@@ -194,6 +215,34 @@ mod tests {
         state.apply_subscription(&peer_id, SubscriptionChange::Unsubscribe(b"dup".to_vec()));
         let peer = state.peers.get(&peer_id).unwrap();
         assert!(!peer.is_subscribed_to(b"dup-after-two-unsubscribes"));
+    }
+
+    #[test]
+    fn duplicate_empty_subscription_requires_matching_unsubscribe_events() {
+        let mut state = FanoutState::default();
+        let peer_id = PeerIdentity::new();
+        state.peers.insert(
+            peer_id.clone(),
+            FanoutPeer {
+                subscriptions: Vec::new(),
+                all_subscription_count: 0,
+                send_queue: sink_write(),
+            },
+        );
+
+        state.apply_subscription(&peer_id, SubscriptionChange::Subscribe(Vec::new()));
+        state.apply_subscription(&peer_id, SubscriptionChange::Subscribe(Vec::new()));
+
+        let peer = state.peers.get(&peer_id).unwrap();
+        assert!(peer.is_subscribed_to(b"anything-after-empty-subscribe"));
+
+        state.apply_subscription(&peer_id, SubscriptionChange::Unsubscribe(Vec::new()));
+        let peer = state.peers.get(&peer_id).unwrap();
+        assert!(peer.is_subscribed_to(b"anything-after-one-unsubscribe"));
+
+        state.apply_subscription(&peer_id, SubscriptionChange::Unsubscribe(Vec::new()));
+        let peer = state.peers.get(&peer_id).unwrap();
+        assert!(!peer.is_subscribed_to(b"anything-after-two-unsubscribes"));
     }
 
     fn sink_write() -> ZmqFramedWrite {
