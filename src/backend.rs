@@ -409,13 +409,13 @@ async fn run_push_send_queue(
             }
         }
 
+        credits.release(batch_messages, batch_bytes);
+
         if send_queue.flush().await.is_err() {
             credits.close();
             backend.peer_disconnected(&peer_id);
             return;
         }
-
-        credits.release(batch_messages, batch_bytes);
     }
 
     let _ = send_queue.flush().await;
