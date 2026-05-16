@@ -8,10 +8,13 @@ mod test {
     #[test]
     fn test_single_frame_public_behavior() {
         let m = ZmqMessage::from(Bytes::from("data"));
+        fn assert_public_iter_type(_: std::collections::vec_deque::Iter<'_, Bytes>) {}
+
         assert_eq!(m.len(), 1);
         assert!(!m.is_empty());
         assert_eq!(m.get(0), Some(&Bytes::from("data")));
         assert_eq!(m.get(1), None);
+        assert_public_iter_type(m.iter());
         assert_eq!(
             m.iter().cloned().collect::<Vec<_>>(),
             vec![Bytes::from("data")]
@@ -50,6 +53,22 @@ mod test {
         let data = m.split_off(1);
         assert_eq!(m.get(0), Some(&Bytes::from("data")));
         assert!(data.is_empty());
+    }
+
+    #[test]
+    fn test_single_frame_public_iter_cache_does_not_survive_mutation() {
+        let mut m = ZmqMessage::from(Bytes::from("body"));
+        assert_eq!(
+            m.iter().cloned().collect::<Vec<_>>(),
+            vec![Bytes::from("body")]
+        );
+
+        m.push_front(Bytes::from("id"));
+
+        assert_eq!(
+            m.iter().cloned().collect::<Vec<_>>(),
+            vec![Bytes::from("id"), Bytes::from("body")]
+        );
     }
 
     #[test]

@@ -1,6 +1,5 @@
 use bytes::Bytes;
 
-use std::collections::vec_deque::Iter;
 use std::collections::VecDeque;
 use std::convert::{From, TryFrom};
 use std::fmt;
@@ -19,15 +18,23 @@ impl fmt::Display for ZmqEmptyMessageError {
 #[derive(Debug)]
 pub struct ZmqMessage {
     frames: MessageFrames,
-    iter_cache: OnceLock<VecDeque<Bytes>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 enum MessageFrames {
     Empty,
-    Single(Bytes),
+    #[allow(clippy::box_collection)]
+    Single {
+        frame: Bytes,
+        // Public API requires returning VecDeque::Iter. Keep that compatibility
+        // cache off the hot message path and allocate it only when public iter()
+        // is used on a single-frame message.
+        iter_cache: OnceLock<Box<VecDeque<Bytes>>>,
+    },
     Multi(VecDeque<Bytes>),
 }
+
+static EMPTY_FRAMES: OnceLock<VecDeque<Bytes>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 enum IterInner<'a> {
@@ -76,10 +83,17 @@ impl ExactSizeIterator for IterRef<'_> {
 impl FusedIterator for IterRef<'_> {}
 
 impl MessageFrames {
+    fn single(frame: Bytes) -> Self {
+        Self::Single {
+            frame,
+            iter_cache: OnceLock::new(),
+        }
+    }
+
     fn from_vecdeque(mut frames: VecDeque<Bytes>) -> Self {
         match frames.len() {
             0 => Self::Empty,
-            1 => Self::Single(frames.pop_front().expect("length checked")),
+            1 => Self::single(frames.pop_front().expect("length checked")),
             _ => Self::Multi(frames),
         }
     }
@@ -87,7 +101,7 @@ impl MessageFrames {
     fn from_vec(mut frames: Vec<Bytes>) -> Self {
         match frames.len() {
             0 => Self::Empty,
-            1 => Self::Single(frames.pop().expect("length checked")),
+            1 => Self::single(frames.pop().expect("length checked")),
             _ => Self::Multi(frames.into()),
         }
     }
@@ -96,7 +110,7 @@ impl MessageFrames {
         let replacement = match self {
             Self::Multi(frames) if frames.is_empty() => Some(Self::Empty),
             Self::Multi(frames) if frames.len() == 1 => {
-                Some(Self::Single(frames.pop_front().expect("length checked")))
+                Some(Self::single(frames.pop_front().expect("length checked")))
             }
             _ => None,
         };
@@ -106,15 +120,17 @@ impl MessageFrames {
         }
     }
 
-    fn to_vecdeque(&self) -> VecDeque<Bytes> {
+    fn public_iter(&self) -> std::collections::vec_deque::Iter<'_, Bytes> {
         match self {
-            Self::Empty => VecDeque::new(),
-            Self::Single(frame) => {
-                let mut frames = VecDeque::with_capacity(1);
-                frames.push_back(frame.clone());
-                frames
-            }
-            Self::Multi(frames) => frames.clone(),
+            Self::Empty => EMPTY_FRAMES.get_or_init(VecDeque::new).iter(),
+            Self::Single { frame, iter_cache } => iter_cache
+                .get_or_init(|| {
+                    let mut frames = VecDeque::with_capacity(1);
+                    frames.push_back(frame.clone());
+                    Box::new(frames)
+                })
+                .iter(),
+            Self::Multi(frames) => frames.iter(),
         }
     }
 }
@@ -123,21 +139,27 @@ impl Clone for ZmqMessage {
     fn clone(&self) -> Self {
         Self {
             frames: self.frames.clone(),
-            iter_cache: OnceLock::new(),
+        }
+    }
+}
+
+impl Clone for MessageFrames {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Empty => Self::Empty,
+            Self::Single { frame, .. } => Self::single(frame.clone()),
+            Self::Multi(frames) => Self::Multi(frames.clone()),
         }
     }
 }
 
 impl ZmqMessage {
-    fn clear_iter_cache(&mut self) {
-        self.iter_cache = OnceLock::new();
-    }
-
     pub fn push_back(&mut self, frame: Bytes) {
-        self.clear_iter_cache();
         match std::mem::replace(&mut self.frames, MessageFrames::Empty) {
-            MessageFrames::Empty => self.frames = MessageFrames::Single(frame),
-            MessageFrames::Single(existing) => {
+            MessageFrames::Empty => self.frames = MessageFrames::single(frame),
+            MessageFrames::Single {
+                frame: existing, ..
+            } => {
                 let mut frames = VecDeque::with_capacity(2);
                 frames.push_back(existing);
                 frames.push_back(frame);
@@ -151,10 +173,11 @@ impl ZmqMessage {
     }
 
     pub fn push_front(&mut self, frame: Bytes) {
-        self.clear_iter_cache();
         match std::mem::replace(&mut self.frames, MessageFrames::Empty) {
-            MessageFrames::Empty => self.frames = MessageFrames::Single(frame),
-            MessageFrames::Single(existing) => {
+            MessageFrames::Empty => self.frames = MessageFrames::single(frame),
+            MessageFrames::Single {
+                frame: existing, ..
+            } => {
                 let mut frames = VecDeque::with_capacity(2);
                 frames.push_back(frame);
                 frames.push_back(existing);
@@ -167,14 +190,8 @@ impl ZmqMessage {
         }
     }
 
-    pub fn iter(&self) -> Iter<'_, Bytes> {
-        match &self.frames {
-            MessageFrames::Multi(frames) => frames.iter(),
-            MessageFrames::Empty | MessageFrames::Single(_) => self
-                .iter_cache
-                .get_or_init(|| self.frames.to_vecdeque())
-                .iter(),
-        }
+    pub fn iter(&self) -> std::collections::vec_deque::Iter<'_, Bytes> {
+        self.frames.public_iter()
     }
 
     pub(crate) fn frame_iter(
@@ -184,19 +201,18 @@ impl ZmqMessage {
         IterRef {
             inner: match &self.frames {
                 MessageFrames::Empty => IterInner::Empty,
-                MessageFrames::Single(frame) => IterInner::Single(Some(frame)),
+                MessageFrames::Single { frame, .. } => IterInner::Single(Some(frame)),
                 MessageFrames::Multi(frames) => IterInner::Multi(frames.iter()),
             },
         }
     }
 
     pub(crate) fn pop_front(&mut self) -> Option<Bytes> {
-        self.clear_iter_cache();
         match &mut self.frames {
             MessageFrames::Empty => None,
-            MessageFrames::Single(_) => {
+            MessageFrames::Single { .. } => {
                 match std::mem::replace(&mut self.frames, MessageFrames::Empty) {
-                    MessageFrames::Single(frame) => Some(frame),
+                    MessageFrames::Single { frame, .. } => Some(frame),
                     _ => unreachable!("variant checked"),
                 }
             }
@@ -211,7 +227,7 @@ impl ZmqMessage {
     pub fn len(&self) -> usize {
         match &self.frames {
             MessageFrames::Empty => 0,
-            MessageFrames::Single(_) => 1,
+            MessageFrames::Single { .. } => 1,
             MessageFrames::Multi(frames) => frames.len(),
         }
     }
@@ -222,16 +238,16 @@ impl ZmqMessage {
 
     pub fn get(&self, index: usize) -> Option<&Bytes> {
         match &self.frames {
-            MessageFrames::Single(frame) if index == 0 => Some(frame),
+            MessageFrames::Single { frame, .. } if index == 0 => Some(frame),
             MessageFrames::Multi(frames) => frames.get(index),
-            MessageFrames::Empty | MessageFrames::Single(_) => None,
+            MessageFrames::Empty | MessageFrames::Single { .. } => None,
         }
     }
 
     pub fn into_vec(self) -> Vec<Bytes> {
         match self.frames {
             MessageFrames::Empty => Vec::new(),
-            MessageFrames::Single(frame) => vec![frame],
+            MessageFrames::Single { frame, .. } => vec![frame],
             MessageFrames::Multi(frames) => Vec::from(frames),
         }
     }
@@ -239,7 +255,7 @@ impl ZmqMessage {
     pub fn into_vecdeque(self) -> VecDeque<Bytes> {
         match self.frames {
             MessageFrames::Empty => VecDeque::new(),
-            MessageFrames::Single(frame) => {
+            MessageFrames::Single { frame, .. } => {
                 let mut frames = VecDeque::with_capacity(1);
                 frames.push_back(frame);
                 frames
@@ -255,7 +271,6 @@ impl ZmqMessage {
     }
 
     pub fn split_off(&mut self, at: usize) -> ZmqMessage {
-        self.clear_iter_cache();
         let frames = match &mut self.frames {
             MessageFrames::Empty => {
                 if at == 0 {
@@ -264,7 +279,7 @@ impl ZmqMessage {
                     panic!("`at` out of bounds")
                 }
             }
-            MessageFrames::Single(_) => match at {
+            MessageFrames::Single { .. } => match at {
                 0 => std::mem::replace(&mut self.frames, MessageFrames::Empty),
                 1 => MessageFrames::Empty,
                 _ => panic!("`at` out of bounds"),
@@ -272,10 +287,7 @@ impl ZmqMessage {
             MessageFrames::Multi(frames) => MessageFrames::from_vecdeque(frames.split_off(at)),
         };
         self.frames.normalize();
-        ZmqMessage {
-            frames,
-            iter_cache: OnceLock::new(),
-        }
+        ZmqMessage { frames }
     }
 }
 
@@ -287,7 +299,6 @@ impl TryFrom<Vec<Bytes>> for ZmqMessage {
         } else {
             Ok(Self {
                 frames: MessageFrames::from_vec(v),
-                iter_cache: OnceLock::new(),
             })
         }
     }
@@ -301,7 +312,6 @@ impl TryFrom<VecDeque<Bytes>> for ZmqMessage {
         } else {
             Ok(Self {
                 frames: MessageFrames::from_vecdeque(v),
-                iter_cache: OnceLock::new(),
             })
         }
     }
@@ -316,8 +326,7 @@ impl From<Vec<u8>> for ZmqMessage {
 impl From<Bytes> for ZmqMessage {
     fn from(b: Bytes) -> Self {
         Self {
-            frames: MessageFrames::Single(b),
-            iter_cache: OnceLock::new(),
+            frames: MessageFrames::single(b),
         }
     }
 }
