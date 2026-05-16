@@ -238,6 +238,13 @@ pub trait SocketRecv {
 
 #[async_trait]
 pub trait SocketSend {
+    /// Queues a complete ZMQ message for delivery by this socket.
+    ///
+    /// A successful return means the socket has accepted responsibility for the
+    /// message. It does not guarantee that the message has already been written
+    /// to the network, received by a peer, or processed by the remote
+    /// application. Socket types that apply backpressure may wait here until the
+    /// message can be queued.
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()>;
 }
 
@@ -367,6 +374,10 @@ pub trait Socket: Sized + Send {
     // TODO: async fn disconnect_all(&mut self) -> ZmqResult<()>;
 
     /// Closes the socket, blocking until all associated binds are closed.
+    ///
+    /// Queued outbound messages remain owned by the socket backend and may
+    /// continue draining after this method returns. This currently matches the
+    /// explicit `drop` path rather than providing a configurable linger period.
     /// This is equivalent to `drop()`, but with the benefit of blocking until
     /// resources are released, and getting any underlying errors.
     ///

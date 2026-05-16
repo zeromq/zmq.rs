@@ -11,7 +11,7 @@ use crate::{Socket, SocketBackend};
 
 use async_trait::async_trait;
 use futures::channel::mpsc;
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -107,7 +107,7 @@ impl SocketSend for RouterSocket {
         let peer_id: PeerIdentity = message.pop_front().unwrap().try_into()?;
         match self.backend.peers.get_async(&peer_id).await {
             Some(mut peer) => {
-                peer.send_queue.send(Message::Message(message)).await?;
+                peer.send(Message::Message(message)).await?;
                 Ok(())
             }
             None => Err(ZmqError::Other("Destination client not found by identity")),
@@ -182,7 +182,7 @@ impl SocketSend for RouterSendHalf {
         let peer_id: PeerIdentity = message.pop_front().unwrap().try_into()?;
         match self.inner.backend.peers.get_async(&peer_id).await {
             Some(mut peer) => {
-                peer.send_queue.send(Message::Message(message)).await?;
+                peer.send(Message::Message(message)).await?;
                 Ok(())
             }
             None => Err(ZmqError::Other("Destination client not found by identity")),
