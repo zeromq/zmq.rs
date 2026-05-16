@@ -6,6 +6,53 @@ mod test {
     use zeromq::ZmqMessage;
 
     #[test]
+    fn test_single_frame_public_behavior() {
+        let m = ZmqMessage::from(Bytes::from("data"));
+        assert_eq!(m.len(), 1);
+        assert!(!m.is_empty());
+        assert_eq!(m.get(0), Some(&Bytes::from("data")));
+        assert_eq!(m.get(1), None);
+        assert_eq!(
+            m.iter().cloned().collect::<Vec<_>>(),
+            vec![Bytes::from("data")]
+        );
+        assert_eq!(m.clone().into_vec(), vec![Bytes::from("data")]);
+        assert_eq!(
+            m.into_vecdeque().into_iter().collect::<Vec<_>>(),
+            vec![Bytes::from("data")]
+        );
+    }
+
+    #[test]
+    fn test_single_frame_promotes_to_multipart() {
+        let mut m = ZmqMessage::from(Bytes::from("body"));
+        m.push_front(Bytes::from("id"));
+        m.push_back(Bytes::from("tail"));
+
+        assert_eq!(m.len(), 3);
+        assert_eq!(m.get(0), Some(&Bytes::from("id")));
+        assert_eq!(m.get(1), Some(&Bytes::from("body")));
+        assert_eq!(m.get(2), Some(&Bytes::from("tail")));
+        assert_eq!(
+            m.iter().rev().cloned().collect::<Vec<_>>(),
+            vec![Bytes::from("tail"), Bytes::from("body"), Bytes::from("id")]
+        );
+    }
+
+    #[test]
+    fn test_split_off_single_frame_boundaries() {
+        let mut m = ZmqMessage::from(Bytes::from("data"));
+        let data = m.split_off(0);
+        assert!(m.is_empty());
+        assert_eq!(data.get(0), Some(&Bytes::from("data")));
+
+        let mut m = ZmqMessage::from(Bytes::from("data"));
+        let data = m.split_off(1);
+        assert_eq!(m.get(0), Some(&Bytes::from("data")));
+        assert!(data.is_empty());
+    }
+
+    #[test]
     fn test_split_off() {
         let mut frames = VecDeque::with_capacity(5);
         frames.push_back(Bytes::from("id1"));
@@ -44,5 +91,15 @@ mod test {
         assert_eq!(m.get(2), Some(&Bytes::from("")));
         assert_eq!(m.get(3), Some(&Bytes::from("data1")));
         assert_eq!(m.get(4), Some(&Bytes::from("data2")));
+        assert_eq!(
+            m.iter().rev().cloned().collect::<Vec<_>>(),
+            vec![
+                Bytes::from("data2"),
+                Bytes::from("data1"),
+                Bytes::from(""),
+                Bytes::from("id2"),
+                Bytes::from("id1"),
+            ]
+        );
     }
 }
