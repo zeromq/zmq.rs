@@ -151,7 +151,7 @@ impl Encoder for ZmqCodec {
             Message::Command(command) => dst.unsplit(command.into()),
             Message::Message(message) => {
                 let last_element = message.len() - 1;
-                for (idx, part) in message.iter().enumerate() {
+                for (idx, part) in message.frame_iter().enumerate() {
                     encode_frame(part, dst, idx != last_element);
                 }
             }

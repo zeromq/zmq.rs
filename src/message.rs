@@ -1,9 +1,11 @@
 use bytes::Bytes;
 
+use std::collections::vec_deque::Iter;
 use std::collections::VecDeque;
 use std::convert::{From, TryFrom};
 use std::fmt;
 use std::iter::FusedIterator;
+use std::sync::OnceLock;
 
 #[derive(Debug)]
 pub struct ZmqEmptyMessageError;
@@ -14,9 +16,10 @@ impl fmt::Display for ZmqEmptyMessageError {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ZmqMessage {
     frames: MessageFrames,
+    iter_cache: OnceLock<VecDeque<Bytes>>,
 }
 
 #[derive(Debug, Clone)]
@@ -102,10 +105,36 @@ impl MessageFrames {
             *self = replacement;
         }
     }
+
+    fn to_vecdeque(&self) -> VecDeque<Bytes> {
+        match self {
+            Self::Empty => VecDeque::new(),
+            Self::Single(frame) => {
+                let mut frames = VecDeque::with_capacity(1);
+                frames.push_back(frame.clone());
+                frames
+            }
+            Self::Multi(frames) => frames.clone(),
+        }
+    }
+}
+
+impl Clone for ZmqMessage {
+    fn clone(&self) -> Self {
+        Self {
+            frames: self.frames.clone(),
+            iter_cache: OnceLock::new(),
+        }
+    }
 }
 
 impl ZmqMessage {
+    fn clear_iter_cache(&mut self) {
+        self.iter_cache = OnceLock::new();
+    }
+
     pub fn push_back(&mut self, frame: Bytes) {
+        self.clear_iter_cache();
         match std::mem::replace(&mut self.frames, MessageFrames::Empty) {
             MessageFrames::Empty => self.frames = MessageFrames::Single(frame),
             MessageFrames::Single(existing) => {
@@ -122,6 +151,7 @@ impl ZmqMessage {
     }
 
     pub fn push_front(&mut self, frame: Bytes) {
+        self.clear_iter_cache();
         match std::mem::replace(&mut self.frames, MessageFrames::Empty) {
             MessageFrames::Empty => self.frames = MessageFrames::Single(frame),
             MessageFrames::Single(existing) => {
@@ -137,7 +167,17 @@ impl ZmqMessage {
         }
     }
 
-    pub fn iter(
+    pub fn iter(&self) -> Iter<'_, Bytes> {
+        match &self.frames {
+            MessageFrames::Multi(frames) => frames.iter(),
+            MessageFrames::Empty | MessageFrames::Single(_) => self
+                .iter_cache
+                .get_or_init(|| self.frames.to_vecdeque())
+                .iter(),
+        }
+    }
+
+    pub(crate) fn frame_iter(
         &self,
     ) -> impl DoubleEndedIterator<Item = &Bytes> + ExactSizeIterator + FusedIterator + Clone + '_
     {
@@ -151,6 +191,7 @@ impl ZmqMessage {
     }
 
     pub(crate) fn pop_front(&mut self) -> Option<Bytes> {
+        self.clear_iter_cache();
         match &mut self.frames {
             MessageFrames::Empty => None,
             MessageFrames::Single(_) => {
@@ -208,12 +249,13 @@ impl ZmqMessage {
     }
 
     pub fn prepend(&mut self, message: &ZmqMessage) {
-        for frame in message.iter().rev() {
+        for frame in message.frame_iter().rev() {
             self.push_front(frame.clone());
         }
     }
 
     pub fn split_off(&mut self, at: usize) -> ZmqMessage {
+        self.clear_iter_cache();
         let frames = match &mut self.frames {
             MessageFrames::Empty => {
                 if at == 0 {
@@ -230,7 +272,10 @@ impl ZmqMessage {
             MessageFrames::Multi(frames) => MessageFrames::from_vecdeque(frames.split_off(at)),
         };
         self.frames.normalize();
-        ZmqMessage { frames }
+        ZmqMessage {
+            frames,
+            iter_cache: OnceLock::new(),
+        }
     }
 }
 
@@ -242,6 +287,7 @@ impl TryFrom<Vec<Bytes>> for ZmqMessage {
         } else {
             Ok(Self {
                 frames: MessageFrames::from_vec(v),
+                iter_cache: OnceLock::new(),
             })
         }
     }
@@ -255,6 +301,7 @@ impl TryFrom<VecDeque<Bytes>> for ZmqMessage {
         } else {
             Ok(Self {
                 frames: MessageFrames::from_vecdeque(v),
+                iter_cache: OnceLock::new(),
             })
         }
     }
@@ -270,6 +317,7 @@ impl From<Bytes> for ZmqMessage {
     fn from(b: Bytes) -> Self {
         Self {
             frames: MessageFrames::Single(b),
+            iter_cache: OnceLock::new(),
         }
     }
 }

@@ -424,7 +424,7 @@ async fn run_push_send_queue(
 
 fn message_payload_bytes(message: &Message) -> usize {
     match message {
-        Message::Message(message) => message.iter().map(bytes::Bytes::len).sum(),
+        Message::Message(message) => message.frame_iter().map(bytes::Bytes::len).sum(),
         Message::Greeting(_) | Message::Command(_) => 0,
     }
 }

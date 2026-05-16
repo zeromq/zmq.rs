@@ -163,7 +163,7 @@ impl SocketRecv for RepSocket {
                             return Err(ZmqError::Other("Invalid message format"));
                         }
                         let mut at = 1;
-                        for (index, frame) in m.iter().enumerate() {
+                        for (index, frame) in m.frame_iter().enumerate() {
                             if frame.is_empty() {
                                 // Include delimiter in envelope.
                                 at = index + 1;
