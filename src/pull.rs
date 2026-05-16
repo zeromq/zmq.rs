@@ -16,6 +16,8 @@ use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+const PULL_RECV_CACHE_CAPACITY: usize = 64;
+
 pub struct PullSocket {
     backend: Arc<GenericSocketBackend>,
     fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
@@ -25,7 +27,7 @@ pub struct PullSocket {
 #[async_trait]
 impl Socket for PullSocket {
     fn with_options(options: SocketOptions) -> Self {
-        let mut fair_queue = FairQueue::new(true);
+        let mut fair_queue = FairQueue::with_recv_cache_capacity(true, PULL_RECV_CACHE_CAPACITY);
         let backend = Arc::new(GenericSocketBackend::with_options(
             Some(fair_queue.inner()),
             SocketType::PULL,

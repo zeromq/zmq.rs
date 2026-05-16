@@ -3,7 +3,7 @@ use futures::Stream;
 use parking_lot::Mutex;
 
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 use std::pin::Pin;
 use std::sync::atomic;
@@ -59,10 +59,14 @@ impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
     }
 }
 
-pub struct FairQueue<S, K: Clone> {
+pub struct FairQueue<S: Stream, K: Clone> {
     block_on_no_clients: bool,
     inner: Arc<Mutex<QueueInner<S, K>>>,
+    recv_cache: VecDeque<(K, S::Item)>,
+    recv_cache_capacity: usize,
 }
+
+impl<S: Stream, K: Clone> Unpin for FairQueue<S, K> {}
 
 #[derive(Clone)]
 struct ReadyEvent<K: Clone> {
@@ -118,6 +122,13 @@ where
     #[allow(clippy::needless_continue)]
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let fair_queue = self.get_mut();
+        if let Some(item) = fair_queue.recv_cache.pop_front() {
+            return Poll::Ready(Some(item));
+        }
+        if fair_queue.recv_cache_capacity > 0 {
+            return fair_queue.poll_next_cached(cx);
+        }
+
         let mut remaining_ready = {
             let mut inner = fair_queue.inner.lock();
             inner.waker = Some(cx.waker().clone());
@@ -201,8 +212,19 @@ where
     }
 }
 
-impl<S, K: Clone> FairQueue<S, K> {
+impl<S, K> FairQueue<S, K>
+where
+    S: Stream,
+    K: Clone + Eq + Hash,
+{
     pub fn new(block_on_no_clients: bool) -> Self {
+        Self::with_recv_cache_capacity(block_on_no_clients, 0)
+    }
+
+    pub(crate) fn with_recv_cache_capacity(
+        block_on_no_clients: bool,
+        recv_cache_capacity: usize,
+    ) -> Self {
         Self {
             block_on_no_clients,
             inner: Arc::new(Mutex::new(QueueInner {
@@ -213,6 +235,8 @@ impl<S, K: Clone> FairQueue<S, K> {
                 waker: None,
                 on_disconnect: None,
             })),
+            recv_cache: VecDeque::with_capacity(recv_cache_capacity),
+            recv_cache_capacity,
         }
     }
 
@@ -228,6 +252,102 @@ impl<S, K: Clone> FairQueue<S, K> {
 
     pub(crate) fn inner(&self) -> Arc<Mutex<QueueInner<S, K>>> {
         self.inner.clone()
+    }
+}
+
+impl<S, T, K> FairQueue<S, K>
+where
+    T: Send,
+    S: Stream<Item = T> + Send + 'static,
+    K: Eq + Hash + Unpin + Clone + Send + Sync + 'static,
+{
+    fn poll_next_cached(&mut self, cx: &mut Context<'_>) -> Poll<Option<(K, T)>> {
+        let mut local_ready = BinaryHeap::new();
+        {
+            let mut inner = self.inner.lock();
+            inner.waker = Some(cx.waker().clone());
+            while let Some(event) = inner.ready_queue.pop() {
+                inner.queued.remove(&event.key);
+                local_ready.push(event);
+            }
+        }
+
+        let cache_limit = self.recv_cache_capacity + 1;
+        while let Some(event) = local_ready.pop() {
+            let mut io_stream = {
+                let mut inner = self.inner.lock();
+                inner.waker = Some(cx.waker().clone());
+                match inner.streams.remove(&event.key) {
+                    Some(stream) => stream,
+                    None => continue,
+                }
+            };
+
+            let waker = Arc::new(StreamWaker {
+                inner: self.inner.clone(),
+                event: event.clone(),
+            });
+            let waker_ref = waker_ref(&waker);
+            let mut stream_cx = Context::from_waker(&waker_ref);
+            match io_stream.as_mut().poll_next(&mut stream_cx) {
+                Poll::Ready(Some(res)) => {
+                    let key = event.key.clone();
+                    self.recv_cache.push_back((key.clone(), res));
+                    let mut inner = self.inner.lock();
+                    inner.streams.insert(event.key, io_stream);
+                    if self.recv_cache.len() < cache_limit {
+                        local_ready.push(ReadyEvent {
+                            priority: inner.counter.fetch_add(1, atomic::Ordering::Relaxed),
+                            key,
+                        });
+                    } else {
+                        inner.push_ready(key);
+                        Self::restore_ready_events(&mut inner, local_ready);
+                        break;
+                    }
+                }
+                Poll::Ready(None) => {
+                    let callback = {
+                        let inner = self.inner.lock();
+                        inner.on_disconnect.clone()
+                    };
+                    if let Some(callback) = callback {
+                        callback(event.key.clone());
+                    }
+                }
+                Poll::Pending => {
+                    let mut inner = self.inner.lock();
+                    inner.streams.insert(event.key, io_stream);
+                }
+            }
+        }
+
+        if let Some(item) = self.recv_cache.pop_front() {
+            return Poll::Ready(Some(item));
+        }
+
+        let mut inner = self.inner.lock();
+        inner.waker = Some(cx.waker().clone());
+        let should_wake = !inner.ready_queue.is_empty();
+        let result = if !inner.streams.is_empty() || self.block_on_no_clients {
+            Poll::Pending
+        } else {
+            Poll::Ready(None)
+        };
+        drop(inner);
+
+        if should_wake {
+            cx.waker().wake_by_ref();
+        }
+        result
+    }
+
+    fn restore_ready_events(inner: &mut QueueInner<S, K>, local_ready: BinaryHeap<ReadyEvent<K>>) {
+        for event in local_ready {
+            if inner.streams.contains_key(&event.key) && inner.queued.insert(event.key.clone()) {
+                inner.ready_queue.push(event);
+            }
+        }
     }
 }
 
@@ -249,6 +369,11 @@ mod test {
 
     struct CountPendingStream {
         poll_count: usize,
+    }
+
+    struct CountReadyStream {
+        poll_count: usize,
+        messages: VecDeque<&'static str>,
     }
 
     struct WakePendingStream {
@@ -281,6 +406,25 @@ mod test {
         }
     }
 
+    impl CountReadyStream {
+        fn new(messages: &[&'static str]) -> Self {
+            Self {
+                poll_count: 0,
+                messages: messages.iter().copied().collect(),
+            }
+        }
+    }
+
+    impl Stream for CountReadyStream {
+        type Item = &'static str;
+
+        fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            let this = self.get_mut();
+            this.poll_count += 1;
+            Poll::Ready(this.messages.pop_front())
+        }
+    }
+
     impl Stream for WakePendingStream {
         type Item = &'static str;
 
@@ -307,6 +451,7 @@ mod test {
     enum UnifiedStream {
         Test(TestStream),
         CountPending(CountPendingStream),
+        CountReady(CountReadyStream),
         WakePending(WakePendingStream),
     }
 
@@ -317,6 +462,7 @@ mod test {
             match self.get_mut() {
                 UnifiedStream::Test(stream) => Pin::new(stream).poll_next(cx),
                 UnifiedStream::CountPending(stream) => Pin::new(stream).poll_next(cx),
+                UnifiedStream::CountReady(stream) => Pin::new(stream).poll_next(cx),
                 UnifiedStream::WakePending(stream) => Pin::new(stream).poll_next(cx),
             }
         }
@@ -576,6 +722,83 @@ mod test {
         assert_eq!(
             stream.poll_count, 1,
             "FairQueue should not consume same-poll wake events immediately"
+        );
+    }
+
+    #[test]
+    fn test_fair_queue_recv_cache_drains_bounded_burst() {
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        let mut fair_queue: FairQueue<UnifiedStream, &str> =
+            FairQueue::with_recv_cache_capacity(false, 3);
+        {
+            let inner = fair_queue.inner();
+            let mut lock = inner.lock();
+            lock.insert(
+                "peer",
+                UnifiedStream::CountReady(CountReadyStream::new(&["m1", "m2", "m3", "m4", "m5"])),
+            );
+        }
+
+        let result = Pin::new(&mut fair_queue).poll_next(&mut cx);
+        assert_eq!(result, Poll::Ready(Some(("peer", "m1"))));
+        assert_eq!(
+            fair_queue.recv_cache.len(),
+            3,
+            "cache should keep at most the configured number of prefetched messages"
+        );
+
+        let inner = fair_queue.inner();
+        let mut lock = inner.lock();
+        let stream = lock.streams.get_mut("peer").unwrap();
+        let UnifiedStream::CountReady(stream) = stream.as_mut().get_mut() else {
+            panic!("unexpected stream type");
+        };
+        assert_eq!(
+            stream.poll_count, 4,
+            "cache should poll one returned item plus the bounded cached burst"
+        );
+    }
+
+    #[test]
+    fn test_fair_queue_recv_cache_preserves_round_robin_order() {
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        let mut fair_queue: FairQueue<UnifiedStream, &str> =
+            FairQueue::with_recv_cache_capacity(false, 4);
+        {
+            let inner = fair_queue.inner();
+            let mut lock = inner.lock();
+            lock.insert(
+                "a",
+                UnifiedStream::CountReady(CountReadyStream::new(&["a1", "a2", "a3"])),
+            );
+            lock.insert(
+                "b",
+                UnifiedStream::CountReady(CountReadyStream::new(&["b1", "b2", "b3"])),
+            );
+        }
+
+        let mut results = Vec::new();
+        for _ in 0..6 {
+            match Pin::new(&mut fair_queue).poll_next(&mut cx) {
+                Poll::Ready(Some(item)) => results.push(item),
+                other => panic!("expected cached message, got {other:?}"),
+            }
+        }
+
+        assert_eq!(
+            results,
+            vec![
+                ("a", "a1"),
+                ("b", "b1"),
+                ("a", "a2"),
+                ("b", "b2"),
+                ("a", "a3"),
+                ("b", "b3")
+            ]
         );
     }
 }
