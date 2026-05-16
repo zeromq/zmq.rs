@@ -544,6 +544,42 @@ mod tests {
         assert_eq!(backend.round_robin.pop(), Some(peer_id));
     }
 
+    #[async_rt::test]
+    async fn flush_pending_push_messages_remain_byte_limited() {
+        let backend = push_backend();
+        let peer_id = PeerIdentity::try_from(b"peer-d".as_slice()).unwrap();
+
+        backend
+            .clone()
+            .peer_connected(&peer_id, framed_io(FlushPendingWrite))
+            .await;
+
+        let payload = vec![0xCD; 8192];
+        let mut blocked_at = None;
+        for seq in 0..PUSH_SEND_QUEUE_CAPACITY {
+            match async_rt::task::timeout(
+                Duration::from_secs(2),
+                backend.send_round_robin(Message::Message(ZmqMessage::from(payload.clone()))),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {}
+                Ok(Err(err)) => panic!("send failed before flush-pending queue filled: {err}"),
+                Err(_) => {
+                    blocked_at = Some(seq);
+                    break;
+                }
+            }
+        }
+
+        let blocked_at = blocked_at.expect("send never waited while writer flush was pending");
+        assert!(
+            blocked_at < PUSH_SEND_QUEUE_CAPACITY,
+            "byte HWM should still apply while writer flush is pending, blocked at {blocked_at}"
+        );
+        assert_eq!(backend.round_robin.pop(), Some(peer_id));
+    }
+
     fn push_backend() -> Arc<GenericSocketBackend> {
         Arc::new(GenericSocketBackend::with_options(
             None,
@@ -588,6 +624,26 @@ mod tests {
             _buf: &[u8],
         ) -> Poll<io::Result<usize>> {
             Poll::Pending
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Pending
+        }
+
+        fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    struct FlushPendingWrite;
+
+    impl AsyncWrite for FlushPendingWrite {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Poll::Ready(Ok(buf.len()))
         }
 
         fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
