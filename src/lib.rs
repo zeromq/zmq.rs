@@ -20,6 +20,7 @@ mod sub_backend;
 mod task_handle;
 mod transport;
 pub mod util;
+mod write_queue;
 mod xpub;
 mod xsub;
 
