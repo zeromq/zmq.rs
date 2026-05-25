@@ -1,5 +1,7 @@
 //! Pure codec microbenchmarks: no sockets, no I/O.
 
+mod bench_runtime;
+
 use asynchronous_codec::{Decoder, Encoder};
 use bytes::{Bytes, BytesMut};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -22,6 +24,7 @@ fn build_message(frame_count: usize, frame_size: usize) -> ZmqMessage {
 
 fn bench_encode(c: &mut Criterion) {
     let mut group = c.benchmark_group("codec/encode");
+    bench_runtime::configure_group(&mut group);
     for &frames in MULTIPART_FRAME_COUNTS {
         for &size in FRAME_SIZES {
             let m = build_message(frames, size);
@@ -48,6 +51,7 @@ fn bench_encode(c: &mut Criterion) {
 
 fn bench_decode(c: &mut Criterion) {
     let mut group = c.benchmark_group("codec/decode");
+    bench_runtime::configure_group(&mut group);
     for &frames in MULTIPART_FRAME_COUNTS {
         for &size in FRAME_SIZES {
             let m = build_message(frames, size);

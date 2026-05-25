@@ -3,14 +3,19 @@ use std::time::Duration;
 
 use criterion::{measurement::WallTime, BenchmarkGroup};
 
+#[allow(dead_code)]
+pub const DEFAULT_TRANSPORTS: &[&str] = &["tcp", "ipc"];
+
 #[cfg(feature = "tokio-runtime")]
 use tokio::runtime::{Builder, Runtime};
 
+#[allow(dead_code)]
 pub struct BenchRuntime {
     #[cfg(feature = "tokio-runtime")]
     inner: Runtime,
 }
 
+#[allow(dead_code)]
 impl BenchRuntime {
     pub fn new() -> Self {
         #[cfg(feature = "tokio-runtime")]
@@ -69,6 +74,33 @@ pub fn configure_group(group: &mut BenchmarkGroup<'_, WallTime>) {
         "ZMQRS_BENCH_WARMUP_MS",
         2_000,
     )));
+}
+
+#[allow(dead_code)]
+pub fn selected_transports(supported: &'static [&'static str]) -> Vec<&'static str> {
+    let Some(filter) = std::env::var("ZMQRS_BENCH_TRANSPORTS")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return supported.to_vec();
+    };
+
+    let selected: Vec<_> = supported
+        .iter()
+        .copied()
+        .filter(|transport| {
+            filter
+                .split(',')
+                .any(|candidate| candidate.trim() == *transport)
+        })
+        .collect();
+
+    assert!(
+        !selected.is_empty(),
+        "ZMQRS_BENCH_TRANSPORTS must include at least one of: {}",
+        supported.join(",")
+    );
+    selected
 }
 
 fn env_usize(name: &str, default: usize) -> usize {

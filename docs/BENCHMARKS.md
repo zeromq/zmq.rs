@@ -3,6 +3,8 @@
 Criterion benches live in [`benches/`](../benches/). This branch carries a
 master-compatible subset of the newer benchmark suite so local results can be
 compared against the performance branch without pulling in branch-only APIs.
+Where useful, the suite includes side-by-side `libzmq` baselines through the
+`zmq2` dev dependency.
 
 ## Performance Suite
 
@@ -58,16 +60,116 @@ cargo bench --bench throughput -- --sample-size 10
 
 Results land under `target/criterion/`.
 
-## Bench Shape
+Socket and codec benchmarks share these optional environment controls:
+
+- `ZMQRS_BENCH_SAMPLE_SIZE`, default `10`
+- `ZMQRS_BENCH_MEASUREMENT_MS`, default `10000`
+- `ZMQRS_BENCH_WARMUP_MS`, default `2000`
+- `ZMQRS_BENCH_TRANSPORTS`, optional comma-separated transport filter for
+  `throughput` and `compare_libzmq`; supported values are `tcp` and `ipc`.
+  Invalid values fail fast instead of silently skipping transport cases.
+
+For TCP-only smoke checks, use:
+
+```sh
+ZMQRS_BENCH_TRANSPORTS=tcp cargo bench --bench throughput -- --test
+ZMQRS_BENCH_TRANSPORTS=tcp cargo bench --bench compare_libzmq -- --test
+```
+
+## Bench Targets
 
 The master-compatible set includes:
 
-- `codec`: encode/decode microbenchmarks through the hidden `zeromq::__bench`
-  export.
-- `compare_libzmq`: latency-style PUB/SUB, REQ/REP, PUSH/PULL, and
-  DEALER/ROUTER cases, side-by-side with libzmq through `zmq2`.
-- `throughput`: batched PUB fanout and DEALER/ROUTER throughput cases.
+- `codec`: pure ZMTP codec encode/decode microbenchmarks through the hidden
+  `zeromq::__bench` export. These do not create sockets or perform network I/O.
+  The encode benchmark includes `ZmqMessage` cloning and destination buffer
+  construction; decode includes greeting decode and input buffer construction.
+- `compare_libzmq`: one-message latency-style PUB/SUB, REQ/REP, PUSH/PULL, and
+  DEALER/ROUTER cases over TCP and IPC, side-by-side with libzmq through
+  `zmq2`. It also hosts the native/libzmq socket-send and delivered-latency
+  groups so comparison code stays in one bench target.
+- `throughput`: batched pipeline throughput for PUB/SUB fanout and
+  DEALER/ROUTER, plus one-way DEALER/ROUTER and PUSH/PULL receive-path
+  isolation. Existing `pub_fanout/send_pressure` numbers are send-pressure
+  oriented: receiver timeout paths may stop early, so those numbers must not be
+  read as strict delivered throughput unless the benchmark name explicitly says
+  so.
+- `hotpath`: focused internal hot-path experiments. The diagnostic groups
+  `message_construct`, `runtime`, `backend_primitives`, and
+  `async_send_overhead` are calibration aids for interpreting send-only gaps.
 
 The suite intentionally excludes branch-only sockets, security builders,
 engine internals, and `inproc` transport. libzmq peers run on OS threads;
 `zeromq` peers run on a fixed 2-worker Tokio runtime.
+
+## Reading Results
+
+Sender-side hot-path groups measure local send admission only. A successful
+`send().await` on an optimized queued path is not a transport flush or delivery
+acknowledgement.
+
+Delivered-latency benchmarks require a receiver to observe the message. They
+include runtime scheduling, blocking peer threads, transport behavior, and
+receive-path overhead.
+
+Throughput benchmarks measure a sustained batch. They are the right tool for
+checking whether batching, writer queue design, and receive-path changes improve
+real pipeline behavior.
+
+Criterion throughput is computed from the bytes declared by each benchmark:
+
+- One-way send or receive benchmarks use `msg_size`.
+- Fanout delivered benchmarks use `msg_size * subscriber_count`.
+- Roundtrip DEALER/ROUTER delivered benchmarks use `2 * msg_size`.
+- Some historical one-message comparison groups keep the older request-payload
+  convention and use `msg_size` even when a reply is sent. Compare those groups
+  by latency first, not by aggregate MiB/s.
+
+Do not use a single benchmark family as the whole performance truth. The current
+suite intentionally keeps sender hot path, delivered latency, and batch
+throughput separate because they answer different questions.
+
+## Known Limits
+
+- `compare_libzmq` has a known IPC `REQ/REP` multi-case teardown issue in the
+  current benchmark harness. A single case such as
+  `zmqrs/req_rep/ipc/16 --test` exits normally, while the broader
+  `zmqrs/req_rep/ipc --test` filter can print all success lines and still not
+  exit. Use `ZMQRS_BENCH_TRANSPORTS=tcp` for full harness smoke checks when IPC
+  is not the target of the run.
+
+## Useful Commands
+
+Smoke compile:
+
+```sh
+cargo bench --no-run
+```
+
+Short hot-path socket-send run:
+
+```sh
+ZMQRS_BENCH_SAMPLE_SIZE=10 ZMQRS_BENCH_MEASUREMENT_MS=200 ZMQRS_BENCH_WARMUP_MS=50 \
+  cargo bench --bench compare_libzmq hotpath/native_socket_send/pub/subs=1/64
+```
+
+Longer native versus libzmq socket-send comparison:
+
+```sh
+ZMQRS_BENCH_SAMPLE_SIZE=20 ZMQRS_BENCH_MEASUREMENT_MS=3000 ZMQRS_BENCH_WARMUP_MS=1000 \
+  cargo bench --bench compare_libzmq hotpath/.+_socket_send
+```
+
+TCP-only throughput smoke:
+
+```sh
+ZMQRS_BENCH_TRANSPORTS=tcp ZMQRS_BENCH_SAMPLE_SIZE=10 \
+ZMQRS_BENCH_MEASUREMENT_MS=300 ZMQRS_BENCH_WARMUP_MS=100 \
+  cargo bench --bench throughput
+```
+
+Full TCP-only benchmark harness check without running measurements:
+
+```sh
+ZMQRS_BENCH_TRANSPORTS=tcp cargo bench --bench compare_libzmq -- --test
+```

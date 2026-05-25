@@ -3,22 +3,30 @@
 mod bench_runtime;
 
 use bench_runtime::BenchRuntime;
+use bytes::Bytes;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use futures::{channel::oneshot, select, FutureExt};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::Duration;
 
 use zeromq::{
-    __async_rt::task, prelude::*, DealerSocket, PubSocket, RouterSocket, SubSocket, ZmqMessage,
+    __async_rt::task, prelude::*, DealerSocket, PubSocket, PullSocket, PushSocket, RouterSocket,
+    SubSocket, ZmqMessage,
 };
 
 const BATCH_SIZE: usize = 1024;
 const PIPELINE_SIZES: &[usize] = &[256, 4096];
 const SUB_COUNTS: &[usize] = &[1, 8, 64];
-const TRANSPORTS: &[&str] = &["tcp", "ipc"];
 
 static IPC_SEQ: AtomicU64 = AtomicU64::new(0);
+
+struct SubHandle {
+    tx_drive: mpsc::Sender<usize>,
+    rx_done: mpsc::Receiver<usize>,
+    _thread: thread::JoinHandle<()>,
+}
 
 fn ipc_path(tag: &str) -> String {
     let n = IPC_SEQ.fetch_add(1, Ordering::Relaxed);
@@ -37,12 +45,73 @@ fn build_rt() -> BenchRuntime {
     BenchRuntime::new()
 }
 
+async fn drain_zmqrs_pub_sync_messages(subs: &mut [SubSocket]) {
+    for sub in subs {
+        loop {
+            match task::timeout(Duration::from_millis(5), sub.recv()).await {
+                Ok(Ok(message)) => {
+                    black_box(message);
+                }
+                Ok(Err(error)) => panic!("sub sync drain recv: {error:?}"),
+                Err(_) => break,
+            }
+        }
+    }
+}
+
+async fn sync_zmqrs_pub_subscribers(
+    pub_sock: &mut PubSocket,
+    mut subs: Vec<SubSocket>,
+) -> Vec<SubSocket> {
+    let sync = ZmqMessage::from(vec![0xFF]);
+    let mut ready = Vec::with_capacity(subs.len());
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !subs.is_empty() {
+        if std::time::Instant::now() > deadline {
+            panic!("zmqrs pub/sub sync timed out");
+        }
+        pub_sock.send(sync.clone()).await.expect("pub sync");
+        let mut waiting = Vec::new();
+        for mut sub in subs.drain(..) {
+            match task::timeout(Duration::from_millis(5), sub.recv()).await {
+                Ok(Ok(message)) => {
+                    black_box(message);
+                    ready.push(sub);
+                }
+                Ok(Err(error)) => panic!("sub sync recv: {error:?}"),
+                Err(_) => waiting.push(sub),
+            }
+        }
+        subs = waiting;
+    }
+
+    // Subscribers that are already ready may still receive later sync messages during subscription propagation.
+    // Drain those leftovers before the benchmark so old sync frames are not counted as payload.
+    drain_zmqrs_pub_sync_messages(&mut ready).await;
+    ready
+}
+
+fn drain_libzmq_pub_sync_messages(subs: &[SubHandle]) {
+    loop {
+        let mut drained_any = false;
+        for sub in subs {
+            sub.tx_drive.send(BATCH_SIZE).expect("drive sync drain sub");
+        }
+        for sub in subs {
+            drained_any |= sub.rx_done.recv().expect("sync drain sub done") > 0;
+        }
+        if !drained_any {
+            break;
+        }
+    }
+}
+
 fn bench_zmqrs_pub_pipelined(c: &mut Criterion) {
     let rt = build_rt();
-    for &transport in TRANSPORTS {
+    for transport in bench_runtime::selected_transports(bench_runtime::DEFAULT_TRANSPORTS) {
         for &n_subs in SUB_COUNTS {
             let mut group = c.benchmark_group(format!(
-                "zmqrs/throughput/pub_fanout/{transport}/subs={n_subs}"
+                "zmqrs/throughput/pub_fanout/send_pressure/{transport}/subs={n_subs}"
             ));
             bench_runtime::configure_group(&mut group);
             for &msg_size in PIPELINE_SIZES {
@@ -80,29 +149,11 @@ fn bench_zmqrs_pub_pipelined_one(
             subs.push(s);
         }
 
-        let sync = ZmqMessage::from(vec![0xFF]);
-        let mut remaining = subs;
-        let mut ready = Vec::with_capacity(n_subs);
-        let deadline = std::time::Instant::now() + Duration::from_secs(10);
-        while !remaining.is_empty() {
-            if std::time::Instant::now() > deadline {
-                panic!("zmqrs pub/sub sync timed out");
-            }
-            p.send(sync.clone()).await.expect("pub sync");
-            let mut waiting = Vec::new();
-            for mut s in remaining.drain(..) {
-                match task::timeout(Duration::from_millis(5), s.recv()).await {
-                    Ok(Ok(_)) => ready.push(s),
-                    Ok(Err(e)) => panic!("sub sync recv: {e:?}"),
-                    Err(_) => waiting.push(s),
-                }
-            }
-            remaining = waiting;
-        }
+        let ready = sync_zmqrs_pub_subscribers(&mut p, subs).await;
         (p, ready)
     });
 
-    let payload = vec![0xAB; msg_size];
+    let payload = Bytes::from(vec![0xAB; msg_size]);
     b.iter(|| {
         rt.block_on(async {
             let sub_handles: Vec<_> = subs
@@ -136,10 +187,10 @@ fn bench_zmqrs_pub_pipelined_one(
 }
 
 fn bench_libzmq_pub_pipelined(c: &mut Criterion) {
-    for &transport in TRANSPORTS {
+    for transport in bench_runtime::selected_transports(bench_runtime::DEFAULT_TRANSPORTS) {
         for &n_subs in SUB_COUNTS {
             let mut group = c.benchmark_group(format!(
-                "libzmq/throughput/pub_fanout/{transport}/subs={n_subs}"
+                "libzmq/throughput/pub_fanout/send_pressure/{transport}/subs={n_subs}"
             ));
             bench_runtime::configure_group(&mut group);
             for &msg_size in PIPELINE_SIZES {
@@ -176,12 +227,6 @@ fn bench_libzmq_pub_pipelined_one(
         .expect("last_endpoint")
         .unwrap();
 
-    struct SubHandle {
-        tx_drive: mpsc::Sender<usize>,
-        rx_done: mpsc::Receiver<()>,
-        _thread: thread::JoinHandle<()>,
-    }
-
     let mut subs = Vec::with_capacity(n_subs);
     for _ in 0..n_subs {
         let ctx = ctx.clone();
@@ -195,16 +240,18 @@ fn bench_libzmq_pub_pipelined_one(
             sub.connect(&bound).expect("sub connect");
             sub.set_subscribe(b"").expect("subscribe");
             while let Ok(n) = rx_drive.recv() {
+                let mut received = 0;
                 for _ in 0..n {
                     match sub.recv_bytes(0) {
                         Ok(m) => {
                             black_box(m);
+                            received += 1;
                         }
                         Err(zmq2::Error::EAGAIN) => break,
                         Err(e) => panic!("sub recv: {e:?}"),
                     }
                 }
-                if tx_done.send(()).is_err() {
+                if tx_done.send(received).is_err() {
                     break;
                 }
             }
@@ -216,7 +263,28 @@ fn bench_libzmq_pub_pipelined_one(
         });
     }
 
-    thread::sleep(Duration::from_millis(200));
+    let sync_payload = vec![0xFF];
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut ready = vec![false; subs.len()];
+    while ready.iter().any(|is_ready| !*is_ready) {
+        if std::time::Instant::now() > deadline {
+            panic!("libzmq pub/sub sync timed out");
+        }
+
+        for (index, sub) in subs.iter().enumerate() {
+            if !ready[index] {
+                sub.tx_drive.send(1).expect("drive sync sub");
+            }
+        }
+        pub_sock.send(&sync_payload, 0).expect("pub sync");
+        for (index, sub) in subs.iter().enumerate() {
+            if !ready[index] {
+                ready[index] = sub.rx_done.recv().expect("sync sub done") > 0;
+            }
+        }
+    }
+    drain_libzmq_pub_sync_messages(&subs);
+
     let payload = vec![0xAB; msg_size];
     b.iter(|| {
         for sub in &subs {
@@ -226,14 +294,14 @@ fn bench_libzmq_pub_pipelined_one(
             pub_sock.send(&payload, 0).expect("pub send");
         }
         for sub in &subs {
-            sub.rx_done.recv().expect("sub done");
+            black_box(sub.rx_done.recv().expect("sub done"));
         }
     });
 }
 
 fn bench_zmqrs_dealer_router_pipelined(c: &mut Criterion) {
     let rt = build_rt();
-    for &transport in TRANSPORTS {
+    for transport in bench_runtime::selected_transports(bench_runtime::DEFAULT_TRANSPORTS) {
         let mut group = c.benchmark_group(format!("zmqrs/throughput/dealer_router/{transport}"));
         bench_runtime::configure_group(&mut group);
         for &msg_size in PIPELINE_SIZES {
@@ -253,52 +321,163 @@ fn bench_zmqrs_dealer_router_one(
     transport: &str,
 ) {
     let endpoint = endpoint(&format!("zmqrs-dr-{msg_size}"), transport);
-    let (dealer_send, dealer_recv, router) = rt.block_on(async {
+    let (mut send, mut recv, router_task, stop_router) = rt.block_on(async {
         let mut r = RouterSocket::new();
         let bound = r.bind(&endpoint).await.expect("router bind").to_string();
         let mut d = DealerSocket::new();
         d.connect(bound.as_str()).await.expect("dealer connect");
         task::sleep(Duration::from_millis(50)).await;
         let (send, recv) = d.split();
-        (send, recv, r)
+
+        let (stop_router, stop_receiver) = oneshot::channel();
+        let router_task = task::spawn(async move {
+            let mut stop_receiver = stop_receiver.fuse();
+            loop {
+                select! {
+                    _ = stop_receiver => break,
+                    message = r.recv().fuse() => {
+                        match message {
+                            Ok(message) => {
+                                if r.send(message).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                }
+            }
+            r
+        });
+
+        (send, recv, router_task, stop_router)
     });
-    let mut dealer_send = Some(dealer_send);
-    let mut dealer_recv = Some(dealer_recv);
-    let mut router = Some(router);
-    let payload = vec![0xCD; msg_size];
+    let payload = Bytes::from(vec![0xCD; msg_size]);
 
     b.iter(|| {
-        let mut send = dealer_send.take().unwrap();
-        let mut recv = dealer_recv.take().unwrap();
-        let mut r = router.take().unwrap();
         rt.block_on(async {
-            let router_task = task::spawn(async move {
-                for _ in 0..BATCH_SIZE {
-                    let m = r.recv().await.expect("router recv");
-                    r.send(m).await.expect("router send");
-                }
-                r
-            });
-            let recv_task = task::spawn(async move {
-                for _ in 0..BATCH_SIZE {
-                    black_box(recv.recv().await.expect("dealer recv"));
-                }
-                recv
-            });
             for _ in 0..BATCH_SIZE {
                 send.send(ZmqMessage::from(payload.clone()))
                     .await
                     .expect("dealer send");
             }
-            dealer_recv.replace(recv_task.await.expect("dealer recv task"));
-            router.replace(router_task.await.expect("router task"));
-            dealer_send.replace(send);
+            for _ in 0..BATCH_SIZE {
+                black_box(recv.recv().await.expect("dealer recv"));
+            }
+        });
+    });
+
+    let _ = stop_router.send(());
+    rt.block_on(async {
+        let _ = router_task.await;
+    });
+}
+
+fn bench_zmqrs_dealer_router_one_way(c: &mut Criterion) {
+    let rt = build_rt();
+    for transport in bench_runtime::selected_transports(bench_runtime::DEFAULT_TRANSPORTS) {
+        let mut group = c.benchmark_group(format!(
+            "zmqrs/throughput/dealer_router_one_way/{transport}"
+        ));
+        bench_runtime::configure_group(&mut group);
+        for &msg_size in PIPELINE_SIZES {
+            group.throughput(Throughput::Bytes((BATCH_SIZE * msg_size) as u64));
+            group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {
+                bench_zmqrs_dealer_router_one_way_one(b, &rt, s, transport);
+            });
+        }
+        group.finish();
+    }
+}
+
+fn bench_zmqrs_dealer_router_one_way_one(
+    b: &mut criterion::Bencher<'_>,
+    rt: &BenchRuntime,
+    msg_size: usize,
+    transport: &str,
+) {
+    let endpoint = endpoint(&format!("zmqrs-dr-one-way-{msg_size}"), transport);
+    let (mut router, mut send) = rt.block_on(async {
+        let mut router = RouterSocket::new();
+        let bound = router
+            .bind(&endpoint)
+            .await
+            .expect("router bind")
+            .to_string();
+        let mut dealer = DealerSocket::new();
+        dealer
+            .connect(bound.as_str())
+            .await
+            .expect("dealer connect");
+        task::sleep(Duration::from_millis(50)).await;
+        let (send, _recv) = dealer.split();
+        (router, send)
+    });
+    let payload = Bytes::from(vec![0xCD; msg_size]);
+
+    b.iter(|| {
+        rt.block_on(async {
+            for _ in 0..BATCH_SIZE {
+                send.send(ZmqMessage::from(payload.clone()))
+                    .await
+                    .expect("dealer send");
+            }
+            for _ in 0..BATCH_SIZE {
+                black_box(router.recv().await.expect("router recv"));
+            }
+        });
+    });
+}
+
+fn bench_zmqrs_push_pull_one_way(c: &mut Criterion) {
+    let rt = build_rt();
+    for transport in bench_runtime::selected_transports(bench_runtime::DEFAULT_TRANSPORTS) {
+        let mut group =
+            c.benchmark_group(format!("zmqrs/throughput/push_pull_one_way/{transport}"));
+        bench_runtime::configure_group(&mut group);
+        for &msg_size in PIPELINE_SIZES {
+            group.throughput(Throughput::Bytes((BATCH_SIZE * msg_size) as u64));
+            group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {
+                bench_zmqrs_push_pull_one_way_one(b, &rt, s, transport);
+            });
+        }
+        group.finish();
+    }
+}
+
+fn bench_zmqrs_push_pull_one_way_one(
+    b: &mut criterion::Bencher<'_>,
+    rt: &BenchRuntime,
+    msg_size: usize,
+    transport: &str,
+) {
+    let endpoint = endpoint(&format!("zmqrs-pp-one-way-{msg_size}"), transport);
+    let (mut pull, mut push) = rt.block_on(async {
+        let mut pull = PullSocket::new();
+        let bound = pull.bind(&endpoint).await.expect("pull bind").to_string();
+        let mut push = PushSocket::new();
+        push.connect(bound.as_str()).await.expect("push connect");
+        task::sleep(Duration::from_millis(50)).await;
+        (pull, push)
+    });
+    let payload = Bytes::from(vec![0xEF; msg_size]);
+
+    b.iter(|| {
+        rt.block_on(async {
+            for _ in 0..BATCH_SIZE {
+                push.send(ZmqMessage::from(payload.clone()))
+                    .await
+                    .expect("push send");
+            }
+            for _ in 0..BATCH_SIZE {
+                black_box(pull.recv().await.expect("pull recv"));
+            }
         });
     });
 }
 
 fn bench_libzmq_dealer_router_pipelined(c: &mut Criterion) {
-    for &transport in TRANSPORTS {
+    for transport in bench_runtime::selected_transports(bench_runtime::DEFAULT_TRANSPORTS) {
         let mut group = c.benchmark_group(format!("libzmq/throughput/dealer_router/{transport}"));
         bench_runtime::configure_group(&mut group);
         for &msg_size in PIPELINE_SIZES {
@@ -362,11 +541,106 @@ fn bench_libzmq_dealer_router_one(
     thread.join().ok();
 }
 
+fn bench_libzmq_dealer_router_one_way(c: &mut Criterion) {
+    for transport in bench_runtime::selected_transports(bench_runtime::DEFAULT_TRANSPORTS) {
+        let mut group = c.benchmark_group(format!(
+            "libzmq/throughput/dealer_router_one_way/{transport}"
+        ));
+        bench_runtime::configure_group(&mut group);
+        for &msg_size in PIPELINE_SIZES {
+            group.throughput(Throughput::Bytes((BATCH_SIZE * msg_size) as u64));
+            group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {
+                bench_libzmq_dealer_router_one_way_one(b, s, transport);
+            });
+        }
+        group.finish();
+    }
+}
+
+fn bench_libzmq_dealer_router_one_way_one(
+    b: &mut criterion::Bencher<'_>,
+    msg_size: usize,
+    transport: &str,
+) {
+    let endpoint = endpoint(&format!("libzmq-dr-one-way-{msg_size}"), transport);
+    let ctx = zmq2::Context::new();
+    let router = ctx.socket(zmq2::ROUTER).expect("router socket");
+    let hwm = (BATCH_SIZE * 4) as i32;
+    router.set_rcvhwm(hwm).expect("router rcvhwm");
+    router.set_rcvtimeo(100).expect("router timeout");
+    router.bind(&endpoint).expect("router bind");
+    let bound = router.get_last_endpoint().expect("last_endpoint").unwrap();
+
+    let dealer = ctx.socket(zmq2::DEALER).expect("dealer socket");
+    dealer.set_sndhwm(hwm).expect("dealer sndhwm");
+    dealer.connect(&bound).expect("dealer connect");
+    thread::sleep(Duration::from_millis(50));
+    let payload = vec![0xCD; msg_size];
+
+    b.iter(|| {
+        for _ in 0..BATCH_SIZE {
+            dealer.send(&payload, 0).expect("dealer send");
+        }
+        for _ in 0..BATCH_SIZE {
+            black_box(router.recv_multipart(0).expect("router recv"));
+        }
+    });
+}
+
+fn bench_libzmq_push_pull_one_way(c: &mut Criterion) {
+    for transport in bench_runtime::selected_transports(bench_runtime::DEFAULT_TRANSPORTS) {
+        let mut group =
+            c.benchmark_group(format!("libzmq/throughput/push_pull_one_way/{transport}"));
+        bench_runtime::configure_group(&mut group);
+        for &msg_size in PIPELINE_SIZES {
+            group.throughput(Throughput::Bytes((BATCH_SIZE * msg_size) as u64));
+            group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {
+                bench_libzmq_push_pull_one_way_one(b, s, transport);
+            });
+        }
+        group.finish();
+    }
+}
+
+fn bench_libzmq_push_pull_one_way_one(
+    b: &mut criterion::Bencher<'_>,
+    msg_size: usize,
+    transport: &str,
+) {
+    let endpoint = endpoint(&format!("libzmq-pp-one-way-{msg_size}"), transport);
+    let ctx = zmq2::Context::new();
+    let pull = ctx.socket(zmq2::PULL).expect("pull socket");
+    let hwm = (BATCH_SIZE * 4) as i32;
+    pull.set_rcvhwm(hwm).expect("pull rcvhwm");
+    pull.set_rcvtimeo(100).expect("pull timeout");
+    pull.bind(&endpoint).expect("pull bind");
+    let bound = pull.get_last_endpoint().expect("last_endpoint").unwrap();
+
+    let push = ctx.socket(zmq2::PUSH).expect("push socket");
+    push.set_sndhwm(hwm).expect("push sndhwm");
+    push.connect(&bound).expect("push connect");
+    thread::sleep(Duration::from_millis(50));
+    let payload = vec![0xEF; msg_size];
+
+    b.iter(|| {
+        for _ in 0..BATCH_SIZE {
+            push.send(&payload, 0).expect("push send");
+        }
+        for _ in 0..BATCH_SIZE {
+            black_box(pull.recv_bytes(0).expect("pull recv"));
+        }
+    });
+}
+
 criterion_group!(
     benches,
     bench_zmqrs_pub_pipelined,
     bench_zmqrs_dealer_router_pipelined,
+    bench_zmqrs_dealer_router_one_way,
+    bench_zmqrs_push_pull_one_way,
     bench_libzmq_pub_pipelined,
     bench_libzmq_dealer_router_pipelined,
+    bench_libzmq_dealer_router_one_way,
+    bench_libzmq_push_pull_one_way,
 );
 criterion_main!(benches);
