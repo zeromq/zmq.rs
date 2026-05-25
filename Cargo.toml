@@ -64,6 +64,10 @@ name = "codec"
 harness = false
 
 [[bench]]
+name = "framed_read"
+harness = false
+
+[[bench]]
 name = "compare_libzmq"
 harness = false
 

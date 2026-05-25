@@ -9,8 +9,10 @@ pub(crate) mod mechanism;
 mod zmq_codec;
 
 pub(crate) use command::{ZmqCommand, ZmqCommandName};
-pub(crate) use error::{CodecError, CodecResult};
-pub(crate) use framed::{FrameableWrite, FramedIo, ZmqFramedRead, ZmqFramedWrite};
+pub use error::CodecError;
+pub(crate) use error::CodecResult;
+pub use framed::ZmqFramedRead;
+pub(crate) use framed::{FrameableWrite, FramedIo, ZmqFramedWrite};
 pub(crate) use greeting::{ZmqGreeting, ZmtpVersion};
 pub use zmq_codec::ZmqCodec;
 

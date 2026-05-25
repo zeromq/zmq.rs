@@ -42,6 +42,11 @@ impl ZmqCodec {
             buffered_message: None,
         }
     }
+
+    /// Returns the minimum additional bytes needed before decode can progress.
+    pub(crate) fn bytes_needed(&self, buffered_len: usize) -> usize {
+        self.waiting_for.saturating_sub(buffered_len)
+    }
 }
 
 impl Default for ZmqCodec {

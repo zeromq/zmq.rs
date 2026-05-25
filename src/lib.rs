@@ -32,7 +32,14 @@ pub mod __async_rt {
 #[doc(hidden)]
 pub mod __bench {
     //! DO NOT USE! PRIVATE IMPLEMENTATION, EXPOSED ONLY FOR BENCHMARKS.
-    pub use super::codec::{Message, ZmqCodec};
+    pub use super::codec::{CodecError, Message, ZmqCodec, ZmqFramedRead};
+
+    pub fn zmq_framed_read<T>(inner: T) -> ZmqFramedRead
+    where
+        T: futures::AsyncRead + Unpin + Send + Sync + 'static,
+    {
+        ZmqFramedRead::new(Box::new(inner))
+    }
 }
 
 pub use crate::dealer::*;
