@@ -4,7 +4,7 @@
 //! after the peer restarts.
 
 mod compliance;
-use compliance::setup_monitor;
+use compliance::{recv_string_on_thread, setup_monitor};
 
 use zeromq::__async_rt as async_rt;
 use zeromq::prelude::*;
@@ -201,10 +201,8 @@ mod test {
             .await
             .expect("Failed to send");
 
-        let msg = their_sub
-            .recv_string(0)
-            .expect("Failed to recv")
-            .expect("Invalid UTF8");
+        let (their_sub, msg) =
+            recv_string_on_thread(their_sub, Duration::from_secs(5), "initial SUB recv").await;
         assert_eq!(msg, "initial-message");
         println!("Phase 2: Initial communication verified");
 
@@ -273,10 +271,12 @@ mod test {
             .await
             .expect("Failed to send");
 
-        let msg = their_sub_fresh
-            .recv_string(0)
-            .expect("Failed to recv with fresh SUB - our PUB may have a bug")
-            .expect("Invalid UTF8");
+        let (_their_sub_fresh, msg) = recv_string_on_thread(
+            their_sub_fresh,
+            Duration::from_secs(5),
+            "fresh SUB recv after PUB restart",
+        )
+        .await;
         assert_eq!(msg, "reconnected-message");
         println!("Phase 6: Fresh SUB received message!");
 

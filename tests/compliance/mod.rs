@@ -65,3 +65,21 @@ where
         Err(payload) => panic::resume_unwind(payload),
     }
 }
+
+#[allow(dead_code)]
+pub async fn recv_string_on_thread(
+    socket: zmq2::Socket,
+    timeout: Duration,
+    label: &'static str,
+) -> (zmq2::Socket, String) {
+    let handle = thread::spawn(move || {
+        let received = socket.recv_string(0);
+        (socket, received)
+    });
+    let (socket, received) = join_thread(handle, timeout, label).await;
+    let message = received
+        .unwrap_or_else(|error| panic!("{label}: failed to recv: {error}"))
+        .unwrap_or_else(|bytes| panic!("{label}: invalid UTF-8: {bytes:?}"));
+
+    (socket, message)
+}
