@@ -1,5 +1,3 @@
-#![allow(dead_code)] // TODO: remove when follow-up PRs wire this helper into socket writer tasks.
-
 use crate::codec::{Message, ZmqFramedWrite};
 
 use futures::channel::mpsc;

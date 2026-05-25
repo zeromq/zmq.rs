@@ -1,4 +1,10 @@
 use std::convert::TryInto;
+use std::panic;
+use std::thread;
+use std::time::Duration;
+
+use futures::channel::oneshot;
+use zeromq::__async_rt as async_rt;
 
 /// NOTE: This will block. Careful when using in async code.
 #[allow(dead_code)]
@@ -33,4 +39,29 @@ pub fn setup_monitor(
         .connect(monitor_endpoint)
         .expect("Failed to connect monitor");
     their_monitor
+}
+
+#[allow(dead_code)]
+pub async fn join_thread<T>(
+    handle: thread::JoinHandle<T>,
+    timeout: Duration,
+    label: &'static str,
+) -> T
+where
+    T: Send + 'static,
+{
+    let (sender, receiver) = oneshot::channel();
+    thread::spawn(move || {
+        let _ = sender.send(handle.join());
+    });
+
+    let joined = async_rt::task::timeout(timeout, receiver)
+        .await
+        .unwrap_or_else(|_| panic!("{label}: thread join timed out"))
+        .unwrap_or_else(|_| panic!("{label}: join relay dropped"));
+
+    match joined {
+        Ok(value) => value,
+        Err(payload) => panic::resume_unwind(payload),
+    }
 }

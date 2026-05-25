@@ -3,6 +3,7 @@
 //! Tests that our zmq.rs PUB socket correctly broadcasts to libzmq SUB sockets.
 
 mod compliance;
+use compliance::join_thread;
 
 use zeromq::__async_rt as async_rt;
 use zeromq::prelude::*;
@@ -85,12 +86,10 @@ mod test {
                 our_pub.send(msg).await.expect("Failed to send");
             }
 
-            // Wait a bit for messages to propagate, then verify
-            async_rt::task::sleep(Duration::from_millis(500)).await;
-
             // Join all subscriber threads and verify they received messages
             for handle in sub_handles {
-                let (idx, received) = handle.join().expect("Sub thread panicked");
+                let (idx, received) =
+                    join_thread(handle, Duration::from_secs(5), "subscriber receiver").await;
                 // Each sub should receive at least some messages (slow joiner may miss early ones)
                 assert!(!received.is_empty(), "Sub {} received no messages", idx);
                 println!("Sub {} received {} messages", idx, received.len());
@@ -195,9 +194,11 @@ mod test {
         }
 
         // Wait and check results
-        let topic1_msgs = topic1_handle.join().expect("topic1 thread panicked");
-        let topic2_msgs = topic2_handle.join().expect("topic2 thread panicked");
-        let all_msgs = all_handle.join().expect("all thread panicked");
+        let topic1_msgs =
+            join_thread(topic1_handle, Duration::from_secs(3), "topic1 receiver").await;
+        let topic2_msgs =
+            join_thread(topic2_handle, Duration::from_secs(3), "topic2 receiver").await;
+        let all_msgs = join_thread(all_handle, Duration::from_secs(3), "all receiver").await;
 
         assert_eq!(
             topic1_msgs,
