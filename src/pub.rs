@@ -27,29 +27,20 @@ fn subscription_matches(subscriptions: &[Vec<u8>], first_frame: &Bytes) -> bool 
     })
 }
 
-async fn send_to_subscriber(
-    backend: &PubSocketBackend,
-    peer_id: PeerIdentity,
-    mut send_queue: PubSendQueue,
-    message: &ZmqMessage,
-) -> ZmqResult<()> {
+fn send_to_subscriber(mut send_queue: PubSendQueue, message: &ZmqMessage) {
     let message = Message::Message(message.clone());
-    let result = match send_queue.try_send(message) {
-        Ok(()) => Ok(()),
+    match send_queue.try_send(message) {
+        Ok(()) => {}
         Err(error) if error.is_full() => {
             // PUB drops messages for slow subscribers so one full queue does not backpressure all publishers.
             drop(error.into_inner());
-            Ok(())
         }
-        Err(error) => Err(error.into_send_error()),
-    };
-    if result.is_err() {
-        // Sending to a disconnected subscriber is equivalent to dropping the message and pruning the stale link.
-        // One stale subscriber must not interrupt fanout of the current message to other subscribers.
-        backend.peer_disconnected(&peer_id);
+        Err(error) => {
+            // The writer task owns transport error detection and subscriber cleanup.
+            // A closed local queue is treated as a dropped PUB message on this send path.
+            drop(error.into_inner());
+        }
     }
-
-    Ok(())
 }
 
 pub(crate) struct Subscriber {
@@ -140,7 +131,18 @@ impl MultiPeerBackend for PubSocketBackend {
                 },
             )
             .await;
-        async_rt::task::spawn(write_message_queue(queue_receiver, send_queue));
+        let writer_backend = self.clone();
+        let writer_peer_id = peer_id.clone();
+        async_rt::task::spawn(async move {
+            if let Err(error) = write_message_queue(queue_receiver, send_queue).await {
+                log::debug!(
+                    "Error sending message to subscriber {:?}: {:?}",
+                    writer_peer_id,
+                    error
+                );
+                writer_backend.peer_disconnected(&writer_peer_id);
+            }
+        });
         let backend = self;
         let peer_id = peer_id.clone();
         async_rt::task::spawn(async move {
@@ -197,17 +199,12 @@ impl SocketSend for PubSocket {
             Some(frame) => frame,
             None => return Ok(()), // Empty message, nothing to publish
         };
-        let mut targets = Vec::new();
         let mut iter = self.backend.subscribers.begin_async().await;
         while let Some(subscriber) = iter {
             if subscription_matches(&subscriber.subscriptions, first_frame) {
-                targets.push((subscriber.key().clone(), subscriber.send_queue.clone()));
+                send_to_subscriber(subscriber.send_queue.clone(), &message);
             }
             iter = subscriber.next_async().await;
-        }
-
-        for (peer_id, send_queue) in targets {
-            send_to_subscriber(self.backend.as_ref(), peer_id, send_queue, &message).await?;
         }
         Ok(())
     }
@@ -322,7 +319,7 @@ mod tests {
     }
 
     #[async_rt::test]
-    async fn test_stale_subscriber_does_not_interrupt_fanout_to_matching_peer() {
+    async fn test_closed_subscriber_queue_does_not_interrupt_fanout_to_matching_peer() {
         let mut socket = PubSocket::new();
         let stale_peer = PeerIdentity::new();
         let live_peer = PeerIdentity::new();
@@ -358,7 +355,7 @@ mod tests {
         };
         assert_eq!(message.get(0), Some(&Bytes::from_static(b"payload")));
 
-        assert!(socket.backend.subscribers.get_sync(&stale_peer).is_none());
+        assert!(socket.backend.subscribers.get_sync(&stale_peer).is_some());
         assert!(socket.backend.subscribers.get_sync(&live_peer).is_some());
     }
 
@@ -392,15 +389,8 @@ mod tests {
         }
         assert!(prefilled_count > 0);
 
-        let result = send_to_subscriber(
-            &backend,
-            peer_id.clone(),
-            queue_sender,
-            &ZmqMessage::from("dropped payload"),
-        )
-        .await;
+        send_to_subscriber(queue_sender, &ZmqMessage::from("dropped payload"));
 
-        assert!(result.is_ok());
         assert!(backend.subscribers.get_sync(&peer_id).is_some());
 
         let mut queued_messages = Vec::new();
@@ -421,7 +411,7 @@ mod tests {
     }
 
     #[async_rt::test]
-    async fn test_send_to_subscriber_prunes_disconnected_sender() {
+    async fn test_send_to_subscriber_drops_closed_queue_without_disconnect() {
         let backend = test_backend();
         let peer_id = PeerIdentity::new();
         let (queue_sender, queue_receiver) = mpsc::channel(1);
@@ -435,16 +425,9 @@ mod tests {
         )
         .await;
 
-        send_to_subscriber(
-            &backend,
-            peer_id.clone(),
-            queue_sender,
-            &ZmqMessage::from("payload"),
-        )
-        .await
-        .expect("send to disconnected subscriber");
+        send_to_subscriber(queue_sender, &ZmqMessage::from("payload"));
 
-        assert!(backend.subscribers.get_sync(&peer_id).is_none());
+        assert!(backend.subscribers.get_sync(&peer_id).is_some());
     }
 
     #[async_rt::test]
