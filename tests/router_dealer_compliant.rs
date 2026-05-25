@@ -3,7 +3,7 @@
 //! Tests identity-based routing between zmq.rs and libzmq implementations.
 
 mod compliance;
-use compliance::{get_monitor_event, setup_monitor};
+use compliance::{get_monitor_event, join_thread, setup_monitor};
 
 use zeromq::__async_rt as async_rt;
 use zeromq::prelude::*;
@@ -98,7 +98,7 @@ mod test {
             our_router.send(reply).await.expect("Failed to send");
         }
 
-        dealer_handle.join().expect("Dealer thread panicked");
+        join_thread(dealer_handle, Duration::from_secs(5), "dealer thread").await;
     }
 
     // =========================================================================
@@ -179,7 +179,7 @@ mod test {
             assert_eq!(reply_str, format!("Reply: {}", i));
         }
 
-        router_handle.join().expect("Router thread panicked");
+        join_thread(router_handle, Duration::from_secs(5), "router thread").await;
     }
 
     // =========================================================================
@@ -244,7 +244,7 @@ mod test {
         }
 
         for handle in dealer_handles {
-            handle.join().expect("Dealer thread panicked");
+            join_thread(handle, Duration::from_secs(5), "dealer thread").await;
         }
     }
 }
