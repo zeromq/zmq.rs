@@ -14,6 +14,7 @@ use futures::SinkExt;
 use parking_lot::Mutex;
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 /// Sender for notifying reconnection tasks when a peer disconnects.
@@ -24,6 +25,31 @@ pub(crate) struct Peer {
     pub(crate) send_queue: mpsc::Sender<Message>,
 }
 
+#[derive(Clone)]
+struct SinglePeer {
+    peer_id: PeerIdentity,
+    send_queue: mpsc::Sender<Message>,
+}
+
+enum CachedSend {
+    Sent,
+    Full {
+        peer_id: PeerIdentity,
+        send_queue: mpsc::Sender<Message>,
+        message: Message,
+    },
+    Disconnected {
+        peer_id: PeerIdentity,
+        error: mpsc::SendError,
+    },
+    Miss(Message),
+}
+
+enum SendResolution {
+    Sent,
+    Miss(Message),
+}
+
 pub(crate) struct GenericSocketBackend {
     pub(crate) peers: scc::HashMap<PeerIdentity, Peer>,
     fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
@@ -31,6 +57,8 @@ pub(crate) struct GenericSocketBackend {
     socket_type: SocketType,
     socket_options: SocketOptions,
     pub(crate) socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
+    single_peer: Mutex<Option<SinglePeer>>,
+    peer_count: AtomicUsize,
     /// Notifiers for reconnection tasks - keyed by `peer_id`
     disconnect_notifiers: Mutex<HashMap<PeerIdentity, DisconnectNotifier>>,
 }
@@ -48,6 +76,8 @@ impl GenericSocketBackend {
             socket_type,
             socket_options: options,
             socket_monitor: Mutex::new(None),
+            single_peer: Mutex::new(None),
+            peer_count: AtomicUsize::new(0),
             disconnect_notifiers: Mutex::new(HashMap::new()),
         }
     }
@@ -70,7 +100,15 @@ impl GenericSocketBackend {
         self.disconnect_notifiers.lock().remove(peer_id);
     }
 
-    pub(crate) async fn send_round_robin(&self, message: Message) -> ZmqResult<PeerIdentity> {
+    pub(crate) async fn send_round_robin(&self, message: Message) -> ZmqResult<()> {
+        let message = match self
+            .finish_cached_send(self.try_send_cached_single_peer(message, None))
+            .await?
+        {
+            SendResolution::Sent => return Ok(()),
+            SendResolution::Miss(message) => message,
+        };
+
         // In normal scenario this will always be only 1 iteration
         // There can be special case when peer has disconnected and his id is still in
         // RR queue This happens because SegQueue don't have an api to delete
@@ -100,14 +138,111 @@ impl GenericSocketBackend {
             };
             return match send_result {
                 Ok(()) => {
-                    self.round_robin.push(next_peer_id.clone());
-                    Ok(next_peer_id)
+                    self.round_robin.push(next_peer_id);
+                    Ok(())
                 }
                 Err(e) => {
                     self.peer_disconnected(&next_peer_id);
                     Err(e.into())
                 }
             };
+        }
+    }
+
+    pub(crate) async fn send_to_peer(
+        &self,
+        peer_id: &PeerIdentity,
+        message: Message,
+    ) -> ZmqResult<()> {
+        let message = match self
+            .finish_cached_send(self.try_send_cached_single_peer(message, Some(peer_id)))
+            .await?
+        {
+            SendResolution::Sent => return Ok(()),
+            SendResolution::Miss(message) => message,
+        };
+
+        let send_result = match self.peers.get_async(peer_id).await {
+            Some(mut peer) => send_to_peer_queue(&mut peer.send_queue, message).await,
+            None => return Err(ZmqError::Other("Destination client not found by identity")),
+        };
+        match send_result {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                self.peer_disconnected(peer_id);
+                Err(e.into())
+            }
+        }
+    }
+
+    fn try_send_cached_single_peer(
+        &self,
+        message: Message,
+        expected_peer_id: Option<&PeerIdentity>,
+    ) -> CachedSend {
+        if self.peer_count.load(Ordering::Acquire) != 1 {
+            return CachedSend::Miss(message);
+        }
+
+        let mut single_peer = self.single_peer.lock();
+        let Some(single_peer) = single_peer.as_mut() else {
+            return CachedSend::Miss(message);
+        };
+
+        if let Some(expected_peer_id) = expected_peer_id {
+            if single_peer.peer_id != *expected_peer_id {
+                return CachedSend::Miss(message);
+            }
+        }
+
+        match single_peer.send_queue.try_send(message) {
+            Ok(()) => CachedSend::Sent,
+            Err(error) if error.is_full() => CachedSend::Full {
+                peer_id: single_peer.peer_id.clone(),
+                send_queue: single_peer.send_queue.clone(),
+                message: error.into_inner(),
+            },
+            Err(error) => CachedSend::Disconnected {
+                peer_id: single_peer.peer_id.clone(),
+                error: error.into_send_error(),
+            },
+        }
+    }
+
+    async fn finish_cached_send(&self, cached_send: CachedSend) -> ZmqResult<SendResolution> {
+        match cached_send {
+            CachedSend::Sent => Ok(SendResolution::Sent),
+            CachedSend::Full {
+                peer_id,
+                mut send_queue,
+                message,
+            } => match send_queue.send(message).await {
+                Ok(()) => Ok(SendResolution::Sent),
+                Err(e) => {
+                    self.peer_disconnected(&peer_id);
+                    Err(e.into())
+                }
+            },
+            CachedSend::Disconnected { peer_id, error } => {
+                self.peer_disconnected(&peer_id);
+                Err(error.into())
+            }
+            CachedSend::Miss(message) => Ok(SendResolution::Miss(message)),
+        }
+    }
+
+    fn refresh_single_peer_cache(&self) {
+        let peer_count = self.peers.len();
+        self.peer_count.store(peer_count, Ordering::Release);
+
+        let mut single_peer = self.single_peer.lock();
+        if peer_count == 1 {
+            *single_peer = self.peers.begin_sync().map(|peer| SinglePeer {
+                peer_id: peer.key().clone(),
+                send_queue: peer.send_queue.clone(),
+            });
+        } else {
+            *single_peer = None;
         }
     }
 }
@@ -134,6 +269,8 @@ impl SocketBackend for GenericSocketBackend {
 
     fn shutdown(&self) {
         self.peers.clear_sync();
+        self.single_peer.lock().take();
+        self.peer_count.store(0, Ordering::Release);
         // Clear fair_queue streams to ensure TCP connections are closed
         // even when reconnect tasks still hold Arc references to the backend
         if let Some(inner) = &self.fair_queue_inner {
@@ -159,6 +296,7 @@ impl MultiPeerBackend for GenericSocketBackend {
                 },
             )
             .await;
+        self.refresh_single_peer_cache();
         let writer_backend = self.clone();
         let writer_peer_id = peer_id.clone();
         async_rt::task::spawn(async move {
@@ -182,6 +320,7 @@ impl MultiPeerBackend for GenericSocketBackend {
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         self.peers.remove_sync(peer_id);
+        self.refresh_single_peer_cache();
         match &self.fair_queue_inner {
             None => {}
             Some(inner) => {
@@ -226,29 +365,79 @@ mod tests {
             .peers
             .upsert_async(peer_id.clone(), Peer { send_queue })
             .await;
+        backend.refresh_single_peer_cache();
         backend.round_robin.push(peer_id.clone());
         (peer_id, recv_queue)
     }
 
     #[crate::async_rt::test]
-    async fn test_send_round_robin_enqueues_into_peer_queue() {
+    async fn test_send_round_robin_uses_single_peer_cache() {
         let backend =
             GenericSocketBackend::with_options(None, SocketType::PUSH, SocketOptions::default());
-        let (peer_id, mut recv_queue) =
+        let (_peer_id, mut recv_queue) =
             insert_peer(&backend, "peer-a".parse().expect("peer id")).await;
 
-        let queued_peer = backend
+        assert_eq!(1, backend.peer_count.load(Ordering::Acquire));
+        assert!(backend.single_peer.lock().is_some());
+
+        backend
             .send_round_robin(message_with_frame(b"payload"))
             .await
-            .expect("send to peer queue");
+            .expect("send through single peer cache");
 
-        assert_eq!(peer_id, queued_peer);
         let queued = recv_queue.next().await.expect("queued message");
         assert_eq!(Bytes::from_static(b"payload"), first_frame(queued));
     }
 
     #[crate::async_rt::test]
-    async fn test_send_round_robin_waits_when_peer_queue_is_full() {
+    async fn test_send_to_peer_uses_single_peer_cache_for_matching_identity() {
+        let backend =
+            GenericSocketBackend::with_options(None, SocketType::ROUTER, SocketOptions::default());
+        let (peer_id, mut recv_queue) =
+            insert_peer(&backend, "router-peer".parse().expect("peer id")).await;
+
+        assert_eq!(
+            Some(peer_id.clone()),
+            backend
+                .single_peer
+                .lock()
+                .as_ref()
+                .map(|peer| peer.peer_id.clone())
+        );
+
+        backend
+            .send_to_peer(&peer_id, message_with_frame(b"routed"))
+            .await
+            .expect("send to cached peer");
+
+        let queued = recv_queue.next().await.expect("queued message");
+        assert_eq!(Bytes::from_static(b"routed"), first_frame(queued));
+    }
+
+    #[crate::async_rt::test]
+    async fn test_send_to_peer_routes_by_identity_with_multiple_peers() {
+        let backend =
+            GenericSocketBackend::with_options(None, SocketType::ROUTER, SocketOptions::default());
+        let (_first_peer_id, mut first_recv_queue) =
+            insert_peer(&backend, "router-peer-a".parse().expect("peer id")).await;
+        let (second_peer_id, mut second_recv_queue) =
+            insert_peer(&backend, "router-peer-b".parse().expect("peer id")).await;
+
+        assert_eq!(2, backend.peer_count.load(Ordering::Acquire));
+        assert!(backend.single_peer.lock().is_none());
+
+        backend
+            .send_to_peer(&second_peer_id, message_with_frame(b"routed-b"))
+            .await
+            .expect("send to selected peer");
+
+        assert!(first_recv_queue.try_recv().is_err());
+        let queued = second_recv_queue.next().await.expect("queued message");
+        assert_eq!(Bytes::from_static(b"routed-b"), first_frame(queued));
+    }
+
+    #[crate::async_rt::test]
+    async fn test_send_round_robin_waits_when_cached_sender_is_full() {
         let backend =
             GenericSocketBackend::with_options(None, SocketType::PUSH, SocketOptions::default());
         let peer_id: PeerIdentity = "full-peer".parse().expect("peer id");
@@ -260,6 +449,7 @@ mod tests {
             .peers
             .upsert_async(peer_id.clone(), Peer { send_queue })
             .await;
+        backend.refresh_single_peer_cache();
         backend.round_robin.push(peer_id.clone());
 
         let send_future = backend.send_round_robin(message_with_frame(b"after-full"));
@@ -274,13 +464,13 @@ mod tests {
 
         let (send_result, (first, second)) = futures::join!(send_future, recv_future);
 
-        assert_eq!(peer_id, send_result.expect("send waits for capacity"));
+        send_result.expect("send waits for cached sender capacity");
         assert_eq!(Bytes::from_static(b"prefilled"), first_frame(first));
         assert_eq!(Bytes::from_static(b"after-full"), first_frame(second));
     }
 
     #[crate::async_rt::test]
-    async fn test_send_round_robin_disconnects_closed_peer_queue() {
+    async fn test_single_peer_cache_is_cleared_when_cached_sender_is_disconnected() {
         let backend =
             GenericSocketBackend::with_options(None, SocketType::PUSH, SocketOptions::default());
         let peer_id: PeerIdentity = "closed-peer".parse().expect("peer id");
@@ -290,14 +480,17 @@ mod tests {
             .peers
             .upsert_async(peer_id.clone(), Peer { send_queue })
             .await;
+        backend.refresh_single_peer_cache();
         backend.round_robin.push(peer_id.clone());
 
         let error = backend
             .send_round_robin(message_with_frame(b"lost"))
             .await
-            .expect_err("closed peer queue should fail");
+            .expect_err("closed cached sender should fail");
 
         assert!(matches!(error, ZmqError::BufferFull(_)));
+        assert_eq!(0, backend.peer_count.load(Ordering::Acquire));
+        assert!(backend.single_peer.lock().is_none());
         assert!(backend.peers.get_async(&peer_id).await.is_none());
     }
 }
