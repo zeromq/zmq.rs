@@ -35,11 +35,156 @@ pub mod __bench {
     //! DO NOT USE! PRIVATE IMPLEMENTATION, EXPOSED ONLY FOR BENCHMARKS.
     pub use super::codec::{CodecError, Message, ZmqCodec, ZmqFramedRead};
 
+    use super::backend::{GenericSocketBackend, Peer};
+    use super::codec::ZmqFramedWrite;
+    use super::r#pub::{PubSocketBackend, Subscriber};
+    use super::util::PeerIdentity;
+    use super::write_queue::write_message_queue;
+    use super::{SocketOptions, SocketType, ZmqMessage, ZmqResult};
+    use futures::channel::{mpsc, oneshot};
+    use futures::AsyncWrite;
+    use parking_lot::Mutex;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::Arc;
+
+    pub use super::fair_queue::FairQueue;
+
+    pub struct BenchRoundRobinBackend {
+        backend: GenericSocketBackend,
+        receivers: Vec<mpsc::Receiver<Message>>,
+    }
+
+    impl BenchRoundRobinBackend {
+        pub async fn new(peer_count: usize, queue_capacity: usize) -> Self {
+            let backend = GenericSocketBackend::with_options(
+                None,
+                SocketType::PUSH,
+                SocketOptions::default(),
+            );
+            let mut receivers = Vec::with_capacity(peer_count);
+
+            for peer_index in 0..peer_count {
+                let peer_id: PeerIdentity = format!("bench-peer-{peer_index}")
+                    .parse()
+                    .expect("valid peer identity");
+                let (send_queue, recv_queue) = mpsc::channel(queue_capacity);
+                backend
+                    .peers
+                    .upsert_async(peer_id.clone(), Peer { send_queue })
+                    .await;
+                backend.round_robin.push(peer_id);
+                receivers.push(recv_queue);
+            }
+
+            Self { backend, receivers }
+        }
+
+        pub async fn send_round_robin(&self, message: Message) -> ZmqResult<()> {
+            self.backend.send_round_robin(message).await
+        }
+
+        pub fn drain_ready(&mut self) -> usize {
+            self.receivers
+                .iter_mut()
+                .filter_map(|receiver| receiver.try_recv().ok())
+                .count()
+        }
+    }
+
+    pub struct BenchPubFanoutBackend {
+        backend: Arc<PubSocketBackend>,
+        receivers: Vec<mpsc::Receiver<Message>>,
+    }
+
+    impl BenchPubFanoutBackend {
+        pub async fn new(subscriber_count: usize, subscription: Vec<u8>) -> Self {
+            Self::new_with_subscriptions(subscriber_count, vec![subscription]).await
+        }
+
+        pub async fn new_with_subscriptions(
+            subscriber_count: usize,
+            subscriptions: Vec<Vec<u8>>,
+        ) -> Self {
+            let backend = Arc::new(PubSocketBackend {
+                subscribers: scc::HashMap::new(),
+                subscriber_count: AtomicUsize::new(0),
+                socket_monitor: Mutex::new(None),
+                socket_options: SocketOptions::default(),
+            });
+            let mut receivers = Vec::with_capacity(subscriber_count);
+
+            for subscriber_index in 0..subscriber_count {
+                let peer_id: PeerIdentity = format!("bench-sub-{subscriber_index}")
+                    .parse()
+                    .expect("valid peer identity");
+                let (send_queue, recv_queue) = mpsc::channel(1024);
+                let (stop_sender, _stop_receiver) = oneshot::channel();
+                backend
+                    .subscribers
+                    .upsert_async(
+                        peer_id,
+                        Subscriber {
+                            subscriptions: subscriptions.clone(),
+                            send_queue,
+                            _subscription_coro_stop: stop_sender,
+                        },
+                    )
+                    .await;
+                backend
+                    .subscriber_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                receivers.push(recv_queue);
+            }
+
+            Self { backend, receivers }
+        }
+
+        pub async fn fanout_message(&self, message: ZmqMessage) {
+            self.backend.fanout_message(message).await;
+        }
+
+        pub fn drain_ready(&mut self) -> usize {
+            self.receivers
+                .iter_mut()
+                .filter_map(|receiver| receiver.try_recv().ok())
+                .count()
+        }
+    }
+
     pub fn zmq_framed_read<T>(inner: T) -> ZmqFramedRead
     where
         T: futures::AsyncRead + Unpin + Send + Sync + 'static,
     {
         ZmqFramedRead::new(Box::new(inner))
+    }
+
+    pub fn fair_queue_insert<S, K>(queue: &mut FairQueue<S, K>, key: K, stream: S)
+    where
+        K: Clone + Eq + std::hash::Hash,
+    {
+        queue.inner().lock().insert(key, stream);
+    }
+
+    pub fn fair_queue<S, K>(block_on_no_clients: bool) -> FairQueue<S, K>
+    where
+        K: Clone,
+    {
+        FairQueue::new(block_on_no_clients)
+    }
+
+    pub fn message_pop_front(message: &mut ZmqMessage) -> Option<bytes::Bytes> {
+        message.pop_front()
+    }
+
+    pub async fn write_message_queue_to_writer<W>(
+        receiver: mpsc::Receiver<Message>,
+        writer: W,
+    ) -> Result<(), CodecError>
+    where
+        W: AsyncWrite + Unpin + Send + Sync + 'static,
+    {
+        let send_queue = ZmqFramedWrite::new(Box::new(writer), ZmqCodec::new());
+        write_message_queue(receiver, send_queue).await
     }
 }
 

@@ -5,7 +5,7 @@ use super::Message;
 use crate::ZmqMessage;
 
 use asynchronous_codec::{Decoder, Encoder};
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, Bytes, BytesMut};
 
 use std::convert::TryFrom;
 
@@ -134,14 +134,13 @@ fn encode_frame(frame: &Bytes, dst: &mut BytesMut, more: bool) {
     if len > 255 {
         flags |= 0b0000_0010;
         dst.reserve(len + 9);
+        let mut header = [0u8; 9];
+        header[0] = flags;
+        header[1..].copy_from_slice(&(len as u64).to_be_bytes());
+        dst.extend_from_slice(&header);
     } else {
         dst.reserve(len + 2);
-    }
-    dst.put_u8(flags);
-    if len > 255 {
-        dst.put_u64(len as u64);
-    } else {
-        dst.put_u8(len as u8);
+        dst.extend_from_slice(&[flags, len as u8]);
     }
     dst.extend_from_slice(frame.as_ref());
 }

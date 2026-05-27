@@ -23,10 +23,25 @@ const PUB_SEND_QUEUE_CAPACITY: usize = 100_000;
 type PubSendQueue = mpsc::Sender<Message>;
 
 fn subscription_matches(subscriptions: &[Vec<u8>], first_frame: &Bytes) -> bool {
-    subscriptions.iter().any(|sub_filter| {
-        sub_filter.len() <= first_frame.len()
-            && sub_filter.as_slice() == &first_frame[0..sub_filter.len()]
-    })
+    // Single-subscription PUB fanout is common, so keep its comparison shape unchanged.
+    // Only use first-byte filtering for multiple subscriptions, where it avoids extra scans.
+    if subscriptions.len() <= 1 {
+        return subscriptions.iter().any(|sub_filter| {
+            sub_filter.len() <= first_frame.len()
+                && sub_filter.as_slice() == &first_frame[0..sub_filter.len()]
+        });
+    }
+
+    let first_byte = first_frame.first().copied();
+    subscriptions
+        .iter()
+        .any(|sub_filter| match sub_filter.first().copied() {
+            Some(prefix_first) if Some(prefix_first) != first_byte => false,
+            _ => {
+                sub_filter.len() <= first_frame.len()
+                    && sub_filter.as_slice() == &first_frame[0..sub_filter.len()]
+            }
+        })
 }
 
 fn send_to_subscriber(mut send_queue: PubSendQueue, message: &ZmqMessage) {
@@ -48,14 +63,14 @@ fn send_to_subscriber(mut send_queue: PubSendQueue, message: &ZmqMessage) {
 pub(crate) struct Subscriber {
     pub(crate) subscriptions: Vec<Vec<u8>>,
     pub(crate) send_queue: PubSendQueue,
-    _subscription_coro_stop: oneshot::Sender<()>,
+    pub(crate) _subscription_coro_stop: oneshot::Sender<()>,
 }
 
 pub(crate) struct PubSocketBackend {
-    subscribers: scc::HashMap<PeerIdentity, Subscriber>,
-    subscriber_count: AtomicUsize,
-    socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
-    socket_options: SocketOptions,
+    pub(crate) subscribers: scc::HashMap<PeerIdentity, Subscriber>,
+    pub(crate) subscriber_count: AtomicUsize,
+    pub(crate) socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
+    pub(crate) socket_options: SocketOptions,
 }
 
 struct PubFanoutQueue {
@@ -113,7 +128,7 @@ fn spawn_pub_fanout_queue(backend: Arc<PubSocketBackend>) -> PubFanoutQueue {
 }
 
 impl PubSocketBackend {
-    async fn fanout_message(&self, message: ZmqMessage) {
+    pub(crate) async fn fanout_message(&self, message: ZmqMessage) {
         let first_frame = match message.get(0) {
             Some(frame) => frame,
             None => return,

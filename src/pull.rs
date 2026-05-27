@@ -63,6 +63,7 @@ impl Socket for PullSocket {
 
 #[async_trait]
 impl SocketRecv for PullSocket {
+    #[inline]
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {

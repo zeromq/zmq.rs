@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use zeromq::{
     __async_rt::task, prelude::*, DealerSocket, PubSocket, PullSocket, PushSocket, RepSocket,
-    ReqSocket, RouterSocket, SubSocket, ZmqMessage,
+    ReqSocket, RouterSocket, SubSocket, XPubSocket, XSubSocket, ZmqMessage,
 };
 
 const MSG_SIZES: &[usize] = &[16, 256, 4096, 65536];
@@ -580,6 +580,26 @@ fn bench_native_delivered_latency(c: &mut Criterion) {
         });
     }
     group.finish();
+
+    let mut group = c.benchmark_group("hotpath/native_delivered_latency/xpub_xsub_downstream");
+    bench_runtime::configure_group(&mut group);
+    for &msg_size in HOTPATH_MSG_SIZES {
+        group.throughput(Throughput::Bytes(msg_size as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {
+            bench_native_xpub_to_xsub_delivered_one(b, &rt, s);
+        });
+    }
+    group.finish();
+
+    let mut group = c.benchmark_group("hotpath/native_delivered_latency/xsub_xpub_upstream");
+    bench_runtime::configure_group(&mut group);
+    for &msg_size in HOTPATH_MSG_SIZES {
+        group.throughput(Throughput::Bytes(msg_size as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(msg_size), &msg_size, |b, &s| {
+            bench_native_xsub_to_xpub_delivered_one(b, &rt, s);
+        });
+    }
+    group.finish();
 }
 
 fn bench_native_pub_delivered_one(
@@ -684,6 +704,69 @@ fn bench_native_dealer_delivered_one(
             let message = router.recv().await.expect("router recv");
             router.send(message).await.expect("router send");
             black_box(dealer.recv().await.expect("dealer recv"));
+        });
+    });
+}
+
+fn bench_native_xpub_to_xsub_delivered_one(
+    b: &mut criterion::Bencher<'_>,
+    rt: &BenchRuntime,
+    msg_size: usize,
+) {
+    let (mut xpub, mut xsub) = rt.block_on(async {
+        let mut xpub = XPubSocket::new();
+        let bound = xpub
+            .bind(hotpath_native_endpoint())
+            .await
+            .expect("xpub bind")
+            .to_string();
+        let mut xsub = XSubSocket::new();
+        xsub.connect(bound.as_str()).await.expect("xsub connect");
+        xsub.subscribe("").await.expect("xsub subscribe");
+        task::timeout(Duration::from_secs(2), xpub.recv())
+            .await
+            .expect("xpub subscription timeout")
+            .expect("xpub subscription recv");
+        task::sleep(Duration::from_millis(50)).await;
+        (xpub, xsub)
+    });
+    let payload = hotpath_payload(msg_size, 0xA7);
+
+    b.iter(|| {
+        rt.block_on(async {
+            xpub.send(ZmqMessage::from(payload.clone()))
+                .await
+                .expect("xpub send");
+            black_box(xsub.recv().await.expect("xsub recv"));
+        });
+    });
+}
+
+fn bench_native_xsub_to_xpub_delivered_one(
+    b: &mut criterion::Bencher<'_>,
+    rt: &BenchRuntime,
+    msg_size: usize,
+) {
+    let (mut xsub, mut xpub) = rt.block_on(async {
+        let mut xpub = XPubSocket::new();
+        let bound = xpub
+            .bind(hotpath_native_endpoint())
+            .await
+            .expect("xpub bind")
+            .to_string();
+        let mut xsub = XSubSocket::new();
+        xsub.connect(bound.as_str()).await.expect("xsub connect");
+        task::sleep(Duration::from_millis(50)).await;
+        (xsub, xpub)
+    });
+    let payload = hotpath_payload(msg_size, 0xA8);
+
+    b.iter(|| {
+        rt.block_on(async {
+            xsub.send(ZmqMessage::from(payload.clone()))
+                .await
+                .expect("xsub send");
+            black_box(xpub.recv().await.expect("xpub recv"));
         });
     });
 }

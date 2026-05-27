@@ -27,6 +27,7 @@ impl ZmqMessage {
         self.frames.push_front(frame);
     }
 
+    #[inline]
     pub fn iter(&self) -> Iter<'_, Bytes> {
         self.frames.iter()
     }
@@ -80,6 +81,7 @@ impl TryFrom<Vec<Bytes>> for ZmqMessage {
 
 impl TryFrom<VecDeque<Bytes>> for ZmqMessage {
     type Error = ZmqEmptyMessageError;
+    #[inline]
     fn try_from(v: VecDeque<Bytes>) -> Result<Self, Self::Error> {
         if v.is_empty() {
             Err(ZmqEmptyMessageError)
@@ -96,6 +98,7 @@ impl From<Vec<u8>> for ZmqMessage {
 }
 
 impl From<Bytes> for ZmqMessage {
+    #[inline]
     fn from(b: Bytes) -> Self {
         Self {
             frames: vec![b].into(),

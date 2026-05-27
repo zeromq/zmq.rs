@@ -6,6 +6,7 @@ use futures::{SinkExt, StreamExt};
 const WRITE_BATCH_LIMIT: usize = 128;
 
 /// Writes queued socket messages into the underlying framed sink in small batches.
+#[inline]
 pub(crate) async fn write_message_queue(
     mut queue_receiver: mpsc::Receiver<Message>,
     mut send_queue: ZmqFramedWrite,

@@ -19,7 +19,7 @@ impl<T> FrameableWrite for T where T: AsyncWrite + Unpin + Send + Sync {}
 
 pub(crate) type ZmqFramedWrite = asynchronous_codec::FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>;
 
-const INITIAL_READ_CHUNK_SIZE: usize = 64;
+const INITIAL_READ_CHUNK_SIZE: usize = 128;
 const MAX_READ_CHUNK_SIZE: usize = 64 * 1024;
 
 /// ZMTP framed reader with an adaptive read chunk.

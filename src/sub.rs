@@ -111,6 +111,7 @@ impl Socket for SubSocket {
 
 #[async_trait]
 impl SocketRecv for SubSocket {
+    #[inline]
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
         loop {
             match self.fair_queue.next().await {
