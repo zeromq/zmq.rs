@@ -83,7 +83,7 @@ jobs:
           path: ~/.cargo/
           key: cache-cargo-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
       - name: Compile benchmark targets
-        run: cargo bench --no-run
+        run: cargo bench --no-run --features bench-internals
       - name: Check perf suite dry run
         run: python3 scripts/run_perf_suite.py --profile smoke --impl zmqrs,libzmq --transport tcp --run-id ci-dry-run --dry-run
       - name: Run perf suite smoke

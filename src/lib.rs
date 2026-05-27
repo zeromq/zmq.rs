@@ -30,6 +30,7 @@ pub mod __async_rt {
     pub use super::async_rt::*;
 }
 
+#[cfg(feature = "bench-internals")]
 #[doc(hidden)]
 pub mod __bench {
     //! DO NOT USE! PRIVATE IMPLEMENTATION, EXPOSED ONLY FOR BENCHMARKS.

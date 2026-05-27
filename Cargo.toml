@@ -21,6 +21,7 @@ async-dispatcher-macros = ["async-dispatcher/macros"]
 all-transport = ["ipc-transport", "tcp-transport"]
 ipc-transport = ["dep:win_uds"]
 tcp-transport = []
+bench-internals = []
 
 [dependencies]
 async-dispatcher = { version = "0.1", optional = true }
@@ -62,10 +63,12 @@ bench = false
 [[bench]]
 name = "codec"
 harness = false
+required-features = ["bench-internals"]
 
 [[bench]]
 name = "framed_read"
 harness = false
+required-features = ["bench-internals"]
 
 [[bench]]
 name = "compare_libzmq"
@@ -78,6 +81,7 @@ harness = false
 [[bench]]
 name = "hotpath"
 harness = false
+required-features = ["bench-internals"]
 
 [[bench]]
 name = "fanout_queue"
