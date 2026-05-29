@@ -4,10 +4,11 @@ mod bench_runtime;
 
 use bench_runtime::BenchRuntime;
 use bytes::Bytes;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use crossbeam_queue::ArrayQueue;
 use futures::channel::mpsc;
 use futures::StreamExt;
+use std::hint::black_box;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;

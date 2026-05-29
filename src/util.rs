@@ -3,7 +3,7 @@ use crate::*;
 
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
-use rand::Rng;
+use rand::RngExt;
 
 use std::convert::{TryFrom, TryInto};
 use std::future::Future;

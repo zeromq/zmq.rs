@@ -17,7 +17,7 @@ pub use transport::Transport;
 pub type Port = u16;
 
 static TRANSPORT_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^([[:lower:]]+)://(.+)$").unwrap());
-static HOST_PORT_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(.+):(\d+)$").unwrap());
+static HOST_PORT_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(.+):([0-9]+)$").unwrap());
 
 /// Represents a ZMQ Endpoint.
 ///

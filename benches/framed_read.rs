@@ -5,8 +5,9 @@ mod bench_runtime;
 
 use asynchronous_codec::{Encoder, FramedRead};
 use bytes::{Bytes, BytesMut};
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 use futures::{executor::block_on, io::Cursor, Stream, StreamExt};
+use std::hint::black_box;
 
 use zeromq::{
     __bench::{zmq_framed_read, Message, ZmqCodec, ZmqFramedRead},

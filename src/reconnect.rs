@@ -13,7 +13,7 @@ use crate::MultiPeerBackend;
 
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
-use rand::Rng;
+use rand::RngExt;
 
 use std::sync::Arc;
 use std::time::Duration;

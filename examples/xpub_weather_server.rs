@@ -1,6 +1,6 @@
 mod async_helpers;
 
-use rand::Rng;
+use rand::RngExt;
 use std::sync::Arc;
 use std::time::Duration;
 

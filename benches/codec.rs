@@ -4,7 +4,8 @@ mod bench_runtime;
 
 use asynchronous_codec::{Decoder, Encoder};
 use bytes::{Bytes, BytesMut};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 use zeromq::{
     __bench::{Message, ZmqCodec},
