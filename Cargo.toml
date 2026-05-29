@@ -27,6 +27,9 @@ bench-internals = []
 async-dispatcher = { version = "0.1", optional = true }
 thiserror = "1"
 futures = "0.3"
+# write_queue.rs uses mpsc::Receiver::try_recv, added in futures-channel 0.3.32.
+# The futures meta-crate's "0.3" range would otherwise allow 0.3.31, which lacks it.
+futures-channel = "0.3.32"
 async-trait = "0.1"
 parking_lot = "0.12"
 rand = "0.9"
