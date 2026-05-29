@@ -6,6 +6,45 @@ use criterion::{measurement::WallTime, BenchmarkGroup};
 #[allow(dead_code)]
 pub const DEFAULT_TRANSPORTS: &[&str] = &["tcp", "ipc"];
 
+// libzmq comparison parity. zmq.rs requests 4 MiB TCP send/recv buffers on
+// every connection (PR #281) and runs its bench I/O on a 2-worker Tokio
+// runtime, so the libzmq baseline has to be given the same buffers and io
+// threads or the comparison is skewed in zmq.rs's favor.
+#[allow(dead_code)]
+pub const LIBZMQ_TCP_BUFFER_BYTES: i32 = 4 * 1024 * 1024;
+/// Match the 2-worker bench Tokio runtime.
+#[allow(dead_code)]
+pub const LIBZMQ_IO_THREADS: i32 = 2;
+/// Generous shared high-water mark so a small in-flight window is never the
+/// bottleneck on either side. zmq.rs has no public HWM knob; its internal
+/// queues are large, so libzmq gets a large HWM to match the intent.
+#[allow(dead_code)]
+pub const LIBZMQ_HWM: i32 = 100_000;
+
+/// libzmq context with io threads matched to the bench Tokio worker count.
+#[allow(dead_code)]
+pub fn libzmq_context() -> zmq2::Context {
+    let ctx = zmq2::Context::new();
+    ctx.set_io_threads(LIBZMQ_IO_THREADS)
+        .expect("set libzmq io_threads");
+    ctx
+}
+
+/// Apply TCP buffer and HWM parity to a libzmq socket so it is tuned
+/// comparably to a zmq.rs socket. The buffer size is a request that ipc
+/// ignores; it only bites on tcp, which is where zmq.rs tunes too.
+#[allow(dead_code)]
+pub fn tune_libzmq_socket(socket: &zmq2::Socket) {
+    socket
+        .set_sndbuf(LIBZMQ_TCP_BUFFER_BYTES)
+        .expect("set libzmq sndbuf");
+    socket
+        .set_rcvbuf(LIBZMQ_TCP_BUFFER_BYTES)
+        .expect("set libzmq rcvbuf");
+    socket.set_sndhwm(LIBZMQ_HWM).expect("set libzmq sndhwm");
+    socket.set_rcvhwm(LIBZMQ_HWM).expect("set libzmq rcvhwm");
+}
+
 #[cfg(feature = "tokio-runtime")]
 use tokio::runtime::{Builder, Runtime};
 

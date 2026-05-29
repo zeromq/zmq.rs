@@ -26,7 +26,6 @@ const SUB_COUNTS: &[usize] = &[1, 8, 64];
 const HOTPATH_MSG_SIZES: &[usize] = &[64, 256, 1024];
 const HOTPATH_PUB_SUB_COUNTS: &[usize] = &[0, 1, 4];
 const HOTPATH_DELIVERED_PUB_SUB_COUNTS: &[usize] = &[1, 4];
-const HOTPATH_ZMQ2_HWM: i32 = 100_000;
 
 type NativeJoinHandle = task::JoinHandle<()>;
 
@@ -113,8 +112,7 @@ fn stop_native_drains(rt: &BenchRuntime, stop: Arc<AtomicBool>, handles: Vec<Nat
 
 fn configure_libzmq_socket(socket: &zmq2::Socket) {
     socket.set_linger(0).expect("linger");
-    socket.set_sndhwm(HOTPATH_ZMQ2_HWM).expect("sndhwm");
-    socket.set_rcvhwm(HOTPATH_ZMQ2_HWM).expect("rcvhwm");
+    bench_runtime::tune_libzmq_socket(socket);
 }
 
 fn libzmq_send_retry(socket: &zmq2::Socket, payload: &[u8]) {
@@ -428,7 +426,7 @@ fn bench_libzmq_socket_send(c: &mut Criterion) {
 }
 
 fn bench_libzmq_pub_send_one(b: &mut criterion::Bencher<'_>, n_subs: usize, msg_size: usize) {
-    let ctx = zmq2::Context::new();
+    let ctx = bench_runtime::libzmq_context();
     let pub_sock = ctx.socket(zmq2::PUB).expect("pub socket");
     configure_libzmq_socket(&pub_sock);
     pub_sock.bind(hotpath_native_endpoint()).expect("pub bind");
@@ -473,7 +471,7 @@ fn bench_libzmq_pub_send_one(b: &mut criterion::Bencher<'_>, n_subs: usize, msg_
 }
 
 fn bench_libzmq_push_send_one(b: &mut criterion::Bencher<'_>, msg_size: usize) {
-    let ctx = zmq2::Context::new();
+    let ctx = bench_runtime::libzmq_context();
     let pull = ctx.socket(zmq2::PULL).expect("pull socket");
     configure_libzmq_socket(&pull);
     pull.set_rcvtimeo(20).expect("rcvtimeo");
@@ -509,7 +507,7 @@ fn bench_libzmq_push_send_one(b: &mut criterion::Bencher<'_>, msg_size: usize) {
 }
 
 fn bench_libzmq_dealer_send_one(b: &mut criterion::Bencher<'_>, msg_size: usize) {
-    let ctx = zmq2::Context::new();
+    let ctx = bench_runtime::libzmq_context();
     let router = ctx.socket(zmq2::ROUTER).expect("router socket");
     configure_libzmq_socket(&router);
     router.set_rcvtimeo(20).expect("rcvtimeo");
@@ -808,7 +806,7 @@ fn bench_libzmq_delivered_latency(c: &mut Criterion) {
 }
 
 fn bench_libzmq_pub_delivered_one(b: &mut criterion::Bencher<'_>, n_subs: usize, msg_size: usize) {
-    let ctx = zmq2::Context::new();
+    let ctx = bench_runtime::libzmq_context();
     let pub_sock = ctx.socket(zmq2::PUB).expect("pub socket");
     configure_libzmq_socket(&pub_sock);
     pub_sock.bind(hotpath_native_endpoint()).expect("pub bind");
@@ -838,7 +836,7 @@ fn bench_libzmq_pub_delivered_one(b: &mut criterion::Bencher<'_>, n_subs: usize,
 }
 
 fn bench_libzmq_push_delivered_one(b: &mut criterion::Bencher<'_>, msg_size: usize) {
-    let ctx = zmq2::Context::new();
+    let ctx = bench_runtime::libzmq_context();
     let pull = ctx.socket(zmq2::PULL).expect("pull socket");
     configure_libzmq_socket(&pull);
     pull.bind(hotpath_native_endpoint()).expect("pull bind");
@@ -859,7 +857,7 @@ fn bench_libzmq_push_delivered_one(b: &mut criterion::Bencher<'_>, msg_size: usi
 }
 
 fn bench_libzmq_dealer_delivered_one(b: &mut criterion::Bencher<'_>, msg_size: usize) {
-    let ctx = zmq2::Context::new();
+    let ctx = bench_runtime::libzmq_context();
     let router = ctx.socket(zmq2::ROUTER).expect("router socket");
     configure_libzmq_socket(&router);
     router.bind(hotpath_native_endpoint()).expect("router bind");
@@ -914,8 +912,9 @@ fn bench_libzmq_pub_sub_one(
     msg_size: usize,
     endpoint: &str,
 ) {
-    let ctx = zmq2::Context::new();
+    let ctx = bench_runtime::libzmq_context();
     let pub_sock = ctx.socket(zmq2::PUB).expect("pub socket");
+    bench_runtime::tune_libzmq_socket(&pub_sock);
     pub_sock.bind(endpoint).expect("pub bind");
     let bound = pub_sock
         .get_last_endpoint()
@@ -936,6 +935,7 @@ fn bench_libzmq_pub_sub_one(
         let (tx_done, rx_done) = mpsc::channel();
         let thread = thread::spawn(move || {
             let sub = ctx.socket(zmq2::SUB).expect("sub socket");
+            bench_runtime::tune_libzmq_socket(&sub);
             sub.set_rcvtimeo(20).expect("sub rcvtimeo");
             sub.connect(&bound).expect("sub connect");
             sub.set_subscribe(b"").expect("subscribe");
@@ -1077,8 +1077,9 @@ fn bench_libzmq_req_rep(c: &mut Criterion) {
 }
 
 fn bench_libzmq_req_rep_one(b: &mut criterion::Bencher<'_>, msg_size: usize, endpoint: &str) {
-    let ctx = zmq2::Context::new();
+    let ctx = bench_runtime::libzmq_context();
     let rep = ctx.socket(zmq2::REP).expect("rep socket");
+    bench_runtime::tune_libzmq_socket(&rep);
     rep.bind(endpoint).expect("rep bind");
     let bound = rep.get_last_endpoint().expect("last_endpoint").unwrap();
     rep.set_rcvtimeo(100).expect("rep timeout");
@@ -1100,6 +1101,7 @@ fn bench_libzmq_req_rep_one(b: &mut criterion::Bencher<'_>, msg_size: usize, end
     });
 
     let req = ctx.socket(zmq2::REQ).expect("req socket");
+    bench_runtime::tune_libzmq_socket(&req);
     req.connect(&bound).expect("req connect");
     thread::sleep(Duration::from_millis(50));
     let request = vec![0xCD; msg_size];
@@ -1185,11 +1187,13 @@ fn bench_libzmq_push_pull(c: &mut Criterion) {
 }
 
 fn bench_libzmq_push_pull_one(b: &mut criterion::Bencher<'_>, msg_size: usize, endpoint: &str) {
-    let ctx = zmq2::Context::new();
+    let ctx = bench_runtime::libzmq_context();
     let pull = ctx.socket(zmq2::PULL).expect("pull socket");
+    bench_runtime::tune_libzmq_socket(&pull);
     pull.bind(endpoint).expect("pull bind");
     let bound = pull.get_last_endpoint().expect("last_endpoint").unwrap();
     let push = ctx.socket(zmq2::PUSH).expect("push socket");
+    bench_runtime::tune_libzmq_socket(&push);
     push.connect(&bound).expect("push connect");
     thread::sleep(Duration::from_millis(50));
     let payload = vec![0xCD; msg_size];
@@ -1267,8 +1271,9 @@ fn bench_libzmq_dealer_router(c: &mut Criterion) {
 }
 
 fn bench_libzmq_dealer_router_one(b: &mut criterion::Bencher<'_>, msg_size: usize, endpoint: &str) {
-    let ctx = zmq2::Context::new();
+    let ctx = bench_runtime::libzmq_context();
     let router = ctx.socket(zmq2::ROUTER).expect("router socket");
+    bench_runtime::tune_libzmq_socket(&router);
     router.bind(endpoint).expect("router bind");
     let bound = router.get_last_endpoint().expect("last_endpoint").unwrap();
     router.set_rcvtimeo(100).expect("router timeout");
@@ -1287,6 +1292,7 @@ fn bench_libzmq_dealer_router_one(b: &mut criterion::Bencher<'_>, msg_size: usiz
         }
     });
     let dealer = ctx.socket(zmq2::DEALER).expect("dealer socket");
+    bench_runtime::tune_libzmq_socket(&dealer);
     dealer.connect(&bound).expect("dealer connect");
     thread::sleep(Duration::from_millis(50));
     let payload = vec![0xCD; msg_size];
