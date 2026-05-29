@@ -17,7 +17,10 @@ use zeromq::{
 };
 
 const BATCH_SIZE: usize = 1024;
+const PUSH_PULL_BATCH_SIZE: usize = 8192;
 const PIPELINE_SIZES: &[usize] = &[256, 4096];
+const PUSH_PULL_SIZES: &[usize] = &[128, 2048, 8192];
+const PEER_COUNTS: &[usize] = &[1, 8];
 const SUB_COUNTS: &[usize] = &[1, 8, 64];
 
 static IPC_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -296,6 +299,92 @@ fn bench_libzmq_pub_pipelined_one(
         for sub in &subs {
             black_box(sub.rx_done.recv().expect("sub done"));
         }
+    });
+}
+
+fn bench_zmqrs_push_pull_pipelined(c: &mut Criterion) {
+    let rt = build_rt();
+    for transport in bench_runtime::selected_transports(bench_runtime::DEFAULT_TRANSPORTS) {
+        for &peers in PEER_COUNTS {
+            let mut group = c.benchmark_group(format!(
+                "zmqrs/throughput/push_pull/{transport}/peers={peers}"
+            ));
+            bench_runtime::configure_group(&mut group);
+            for &msg_size in PUSH_PULL_SIZES {
+                group.throughput(Throughput::Bytes((PUSH_PULL_BATCH_SIZE * msg_size) as u64));
+                group.bench_with_input(
+                    BenchmarkId::from_parameter(msg_size),
+                    &msg_size,
+                    |b, &s| {
+                        bench_zmqrs_push_pull_pipelined_one(b, &rt, peers, s, transport);
+                    },
+                );
+            }
+            group.finish();
+        }
+    }
+}
+
+fn bench_zmqrs_push_pull_pipelined_one(
+    b: &mut criterion::Bencher<'_>,
+    rt: &BenchRuntime,
+    peers: usize,
+    msg_size: usize,
+    transport: &str,
+) {
+    let endpoint = endpoint(&format!("zmqrs-pushpull-{peers}-{msg_size}"), transport);
+    let (mut pull, pushes) = rt.block_on(async {
+        let mut pull = PullSocket::new();
+        let bound = pull.bind(&endpoint).await.expect("pull bind").to_string();
+        let mut pushes = Vec::with_capacity(peers);
+        for _ in 0..peers {
+            let mut push = PushSocket::new();
+            push.connect(bound.as_str()).await.expect("push connect");
+            pushes.push(push);
+        }
+
+        let sync = ZmqMessage::from(Bytes::from_static(b"sync"));
+        for push in &mut pushes {
+            push.send(sync.clone()).await.expect("push sync");
+        }
+        for _ in 0..peers {
+            black_box(pull.recv().await.expect("pull sync"));
+        }
+        (pull, pushes)
+    });
+
+    let mut pushes = Some(pushes);
+    let payload = Bytes::from(vec![0xCD; msg_size]);
+    b.iter(|| {
+        let mut active_pushes = pushes.take().expect("push sockets");
+        rt.block_on(async {
+            let per_peer = PUSH_PULL_BATCH_SIZE / active_pushes.len();
+            let recv_count = per_peer * active_pushes.len();
+            let send_handles: Vec<_> = active_pushes
+                .drain(..)
+                .map(|mut push| {
+                    let payload = payload.clone();
+                    task::spawn(async move {
+                        for _ in 0..per_peer {
+                            push.send(ZmqMessage::from(payload.clone()))
+                                .await
+                                .expect("push send");
+                        }
+                        push
+                    })
+                })
+                .collect();
+
+            for _ in 0..recv_count {
+                black_box(pull.recv().await.expect("pull recv"));
+            }
+
+            let mut returned_pushes = Vec::with_capacity(send_handles.len());
+            for handle in send_handles {
+                returned_pushes.push(handle.await.expect("push task"));
+            }
+            pushes.replace(returned_pushes);
+        });
     });
 }
 
@@ -632,13 +721,116 @@ fn bench_libzmq_push_pull_one_way_one(
     });
 }
 
+fn bench_libzmq_push_pull_pipelined(c: &mut Criterion) {
+    for transport in bench_runtime::selected_transports(bench_runtime::DEFAULT_TRANSPORTS) {
+        for &peers in PEER_COUNTS {
+            let mut group = c.benchmark_group(format!(
+                "libzmq/throughput/push_pull/{transport}/peers={peers}"
+            ));
+            bench_runtime::configure_group(&mut group);
+            for &msg_size in PUSH_PULL_SIZES {
+                group.throughput(Throughput::Bytes((PUSH_PULL_BATCH_SIZE * msg_size) as u64));
+                group.bench_with_input(
+                    BenchmarkId::from_parameter(msg_size),
+                    &msg_size,
+                    |b, &s| {
+                        bench_libzmq_push_pull_pipelined_one(b, peers, s, transport);
+                    },
+                );
+            }
+            group.finish();
+        }
+    }
+}
+
+fn bench_libzmq_push_pull_pipelined_one(
+    b: &mut criterion::Bencher<'_>,
+    peers: usize,
+    msg_size: usize,
+    transport: &str,
+) {
+    let endpoint = endpoint(&format!("libzmq-pushpull-{peers}-{msg_size}"), transport);
+    let ctx = zmq2::Context::new();
+    let pull = ctx.socket(zmq2::PULL).expect("pull socket");
+    let hwm = (PUSH_PULL_BATCH_SIZE * 4) as i32;
+    pull.set_rcvhwm(hwm).expect("pull rcvhwm");
+    pull.set_rcvtimeo(100).expect("pull timeout");
+    pull.bind(&endpoint).expect("pull bind");
+    let bound = pull.get_last_endpoint().expect("last_endpoint").unwrap();
+
+    struct PushHandle {
+        tx_drive: mpsc::Sender<usize>,
+        rx_done: mpsc::Receiver<()>,
+        thread: thread::JoinHandle<()>,
+    }
+
+    impl PushHandle {
+        fn stop(self) {
+            let Self {
+                tx_drive,
+                rx_done: _rx_done,
+                thread,
+            } = self;
+            drop(tx_drive);
+            thread.join().expect("push thread");
+        }
+    }
+
+    let mut pushes = Vec::with_capacity(peers);
+    for _ in 0..peers {
+        let ctx = ctx.clone();
+        let bound = bound.clone();
+        let payload = vec![0xCD; msg_size];
+        let (tx_drive, rx_drive) = mpsc::channel();
+        let (tx_done, rx_done) = mpsc::channel();
+        let thread = thread::spawn(move || {
+            let push = ctx.socket(zmq2::PUSH).expect("push socket");
+            push.set_sndhwm(hwm).expect("push sndhwm");
+            push.connect(&bound).expect("push connect");
+            while let Ok(n) = rx_drive.recv() {
+                for _ in 0..n {
+                    push.send(&payload, 0).expect("push send");
+                }
+                if tx_done.send(()).is_err() {
+                    break;
+                }
+            }
+        });
+        pushes.push(PushHandle {
+            tx_drive,
+            rx_done,
+            thread,
+        });
+    }
+
+    thread::sleep(Duration::from_millis(200));
+    let per_peer = PUSH_PULL_BATCH_SIZE / peers;
+    b.iter(|| {
+        for push in &pushes {
+            push.tx_drive.send(per_peer).expect("drive push");
+        }
+        for _ in 0..(per_peer * peers) {
+            black_box(pull.recv_bytes(0).expect("pull recv"));
+        }
+        for push in &pushes {
+            push.rx_done.recv().expect("push done");
+        }
+    });
+
+    for push in pushes {
+        push.stop();
+    }
+}
+
 criterion_group!(
     benches,
     bench_zmqrs_pub_pipelined,
+    bench_zmqrs_push_pull_pipelined,
     bench_zmqrs_dealer_router_pipelined,
     bench_zmqrs_dealer_router_one_way,
     bench_zmqrs_push_pull_one_way,
     bench_libzmq_pub_pipelined,
+    bench_libzmq_push_pull_pipelined,
     bench_libzmq_dealer_router_pipelined,
     bench_libzmq_dealer_router_one_way,
     bench_libzmq_push_pull_one_way,
