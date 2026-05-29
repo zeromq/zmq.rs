@@ -71,36 +71,36 @@ impl SocketSend for ReqSocket {
 #[async_trait]
 impl SocketRecv for ReqSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
-        match self.current_request.take() {
-            Some(peer_id) => {
-                if let Some(mut peer) = self.backend.peers.get_async(&peer_id).await {
-                    match peer.recv_queue.next().await {
-                        Some(Ok(Message::Message(mut m))) => {
-                            if m.len() < 2 {
-                                return Err(ZmqError::Other(
-                                    "Invalid message format: too few frames",
-                                ));
-                            }
-                            if !m.pop_front().unwrap().is_empty() {
-                                return Err(ZmqError::Other(
-                                    "Invalid message format: missing delimiter",
-                                ));
-                            }
-                            Ok(m)
-                        }
-                        Some(Ok(_)) => {
-                            // Non-message frames should be ignored by the caller
-                            Err(ZmqError::Other("Received non-message frame"))
-                        }
-                        Some(Err(error)) => Err(error.into()),
-                        None => Err(ZmqError::NoMessage),
-                    }
+        let peer_id = match self.current_request.clone() {
+            Some(peer_id) => peer_id,
+            None => return Err(ZmqError::Other("Unable to recv. No request in progress")),
+        };
+
+        let Some(mut peer) = self.backend.peers.get_async(&peer_id).await else {
+            self.current_request = None;
+            return Err(ZmqError::Other("Server disconnected"));
+        };
+
+        let result = match peer.recv_queue.next().await {
+            Some(Ok(Message::Message(mut m))) => {
+                if m.len() < 2 {
+                    Err(ZmqError::Other("Invalid message format: too few frames"))
+                } else if !m.pop_front().unwrap().is_empty() {
+                    Err(ZmqError::Other("Invalid message format: missing delimiter"))
                 } else {
-                    Err(ZmqError::Other("Server disconnected"))
+                    Ok(m)
                 }
             }
-            None => Err(ZmqError::Other("Unable to recv. No request in progress")),
-        }
+            Some(Ok(_)) => {
+                // Non-message frames should be ignored by the caller
+                Err(ZmqError::Other("Received non-message frame"))
+            }
+            Some(Err(error)) => Err(error.into()),
+            None => Err(ZmqError::NoMessage),
+        };
+
+        self.current_request = None;
+        result
     }
 }
 

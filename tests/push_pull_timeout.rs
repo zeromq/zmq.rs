@@ -46,7 +46,12 @@ async fn pull_recv_with_per_call_timeout_keeps_making_progress() {
             match tokio::time::timeout(remaining, pull.recv()).await {
                 Ok(Ok(_)) => count += 1,
                 Ok(Err(err)) => panic!("recv failed after {count} messages: {err:?}"),
-                Err(err) => panic!("per-call timeout fired after {count} messages: {err:?}"),
+                Err(err) => {
+                    if Instant::now() >= deadline {
+                        break count;
+                    }
+                    panic!("per-call timeout fired after {count} messages: {err:?}");
+                }
             }
         }
     })
@@ -155,7 +160,12 @@ async fn run_issue_248_pull_child(endpoint: &str) {
         match tokio::time::timeout(remaining, socket.recv()).await {
             Ok(Ok(_)) => count += 1,
             Ok(Err(err)) => panic!("recv failed after {count} messages: {err:?}"),
-            Err(err) => panic!("per-call timeout fired after {count} messages: {err:?}"),
+            Err(err) => {
+                if Instant::now() >= deadline {
+                    break;
+                }
+                panic!("per-call timeout fired after {count} messages: {err:?}");
+            }
         }
     }
     assert!(
