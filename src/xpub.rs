@@ -3,6 +3,9 @@ use crate::endpoint::Endpoint;
 use crate::error::ZmqResult;
 use crate::fair_queue::{FairQueue, QueueInner};
 use crate::message::*;
+use crate::pub_fanout::{
+    subscription_change, FanoutEvent, FanoutEventReceiver, FanoutEventSender, FanoutState,
+};
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{CaptureSocket, SocketOptions};
@@ -13,62 +16,17 @@ use crate::{
 
 use async_trait::async_trait;
 use futures::channel::mpsc;
-use futures::lock::Mutex as AsyncMutex;
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use parking_lot::Mutex;
 
 use std::collections::HashMap;
-use std::io::ErrorKind;
-use std::pin::Pin;
 use std::sync::Arc;
 
-pub(crate) struct XPubSubscriber {
-    pub(crate) subscriptions: Vec<Vec<u8>>,
-    pub(crate) send_queue: Arc<AsyncMutex<Pin<Box<ZmqFramedWrite>>>>,
-}
-
 pub(crate) struct XPubSocketBackend {
-    subscribers: scc::HashMap<PeerIdentity, XPubSubscriber>,
+    fanout_events: FanoutEventSender,
     fair_queue_inner: Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
     socket_options: SocketOptions,
-}
-
-impl XPubSocketBackend {
-    fn message_received(&self, peer_id: &PeerIdentity, message: Message) {
-        let data = match message {
-            Message::Message(m) => {
-                if m.len() != 1 {
-                    return;
-                }
-                m.into_vec().pop().unwrap_or_default()
-            }
-            _ => return,
-        };
-
-        if data.is_empty() {
-            return;
-        }
-
-        match data.first() {
-            Some(1) => {
-                // Subscribe
-                if let Some(mut entry) = self.subscribers.get_sync(peer_id) {
-                    entry.subscriptions.push(Vec::from(&data[1..]));
-                }
-            }
-            Some(0) => {
-                // Unsubscribe
-                let sub = Vec::from(&data[1..]);
-                if let Some(mut entry) = self.subscribers.get_sync(peer_id) {
-                    if let Some(index) = entry.subscriptions.iter().position(|s| s == &sub) {
-                        entry.subscriptions.remove(index);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
 }
 
 impl SocketBackend for XPubSocketBackend {
@@ -81,7 +39,7 @@ impl SocketBackend for XPubSocketBackend {
     }
 
     fn shutdown(&self) {
-        self.subscribers.clear_sync();
+        self.fair_queue_inner.lock().clear();
     }
 
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>> {
@@ -94,15 +52,16 @@ impl MultiPeerBackend for XPubSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, send_queue) = io.into_parts();
 
-        self.subscribers
-            .upsert_async(
-                peer_id.clone(),
-                XPubSubscriber {
-                    subscriptions: vec![],
-                    send_queue: Arc::new(AsyncMutex::new(Box::pin(send_queue))),
-                },
-            )
-            .await;
+        if self
+            .fanout_events
+            .unbounded_send(FanoutEvent::PeerConnected {
+                peer_id: peer_id.clone(),
+                send_queue,
+            })
+            .is_err()
+        {
+            return;
+        }
 
         self.fair_queue_inner
             .lock()
@@ -111,14 +70,18 @@ impl MultiPeerBackend for XPubSocketBackend {
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         log::info!("Client disconnected {:?}", peer_id);
-        self.subscribers.remove_sync(peer_id);
         self.fair_queue_inner.lock().remove(peer_id);
+        let _ = self
+            .fanout_events
+            .unbounded_send(FanoutEvent::PeerDisconnected(peer_id.clone()));
     }
 }
 
 pub struct XPubSocket {
     pub(crate) backend: Arc<XPubSocketBackend>,
     fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
+    fanout_state: FanoutState,
+    fanout_events: FanoutEventReceiver,
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
@@ -131,48 +94,14 @@ impl Drop for XPubSocket {
 #[async_trait]
 impl SocketSend for XPubSocket {
     async fn send(&mut self, message: ZmqMessage) -> ZmqResult<()> {
+        self.fanout_state.drain_events(&mut self.fanout_events);
+
         let first_frame = match message.get(0) {
             Some(frame) => frame,
             None => return Ok(()), // Empty message, nothing to publish
         };
-        let mut targets = Vec::new();
-        let mut iter = self.backend.subscribers.begin_async().await;
-        while let Some(subscriber) = iter {
-            if subscriber.subscriptions.iter().any(|sub_filter| {
-                sub_filter.len() <= first_frame.len()
-                    && sub_filter.as_slice() == &first_frame[0..sub_filter.len()]
-            }) {
-                targets.push((subscriber.key().clone(), subscriber.send_queue.clone()));
-            }
-            iter = subscriber.next_async().await;
-        }
 
-        let mut dead_peers = Vec::new();
-        for (peer_id, send_queue) in targets {
-            let res = send_queue
-                .lock()
-                .await
-                .as_mut()
-                .send(Message::Message(message.clone()))
-                .await;
-            match res {
-                Ok(()) => {}
-                Err(CodecError::Io(e)) => {
-                    if e.kind() == ErrorKind::BrokenPipe {
-                        dead_peers.push(peer_id);
-                    } else {
-                        log::error!("Error sending message: {:?}", e);
-                    }
-                }
-                Err(e) => {
-                    log::error!("Error sending message: {:?}", e);
-                    return Err(e.into());
-                }
-            }
-        }
-        for peer in dead_peers {
-            self.backend.peer_disconnected(&peer);
-        }
+        self.fanout_state.send_matching(first_frame, &message);
         Ok(())
     }
 }
@@ -180,19 +109,25 @@ impl SocketSend for XPubSocket {
 #[async_trait]
 impl SocketRecv for XPubSocket {
     async fn recv(&mut self) -> ZmqResult<ZmqMessage> {
+        self.fanout_state.drain_events(&mut self.fanout_events);
+
         loop {
             match self.fair_queue.next().await {
                 Some((peer_id, Ok(Message::Message(message)))) => {
-                    // Process the subscription message internally to update tracking
-                    self.backend
-                        .message_received(&peer_id, Message::Message(message.clone()));
-                    // Also expose it to the application
+                    // Apply any pending connect/disconnect events before mutating subscription state
+                    // so a subscription always lands on a peer the fanout map already knows about.
+                    self.fanout_state.drain_events(&mut self.fanout_events);
+                    if let Some(change) = subscription_change(&message) {
+                        self.fanout_state.apply_subscription(&peer_id, change);
+                    }
+                    // Also expose the subscription frame to the application.
                     return Ok(message);
                 }
                 Some((_peer_id, Ok(_msg))) => {
                     // Ignore non-message frames
                 }
                 Some((peer_id, Err(e))) => {
+                    self.fanout_state.peer_disconnected(&peer_id);
                     self.backend.peer_disconnected(&peer_id);
                     return Err(e.into());
                 }
@@ -210,8 +145,9 @@ impl CaptureSocket for XPubSocket {}
 impl Socket for XPubSocket {
     fn with_options(options: SocketOptions) -> Self {
         let mut fair_queue = FairQueue::new(true);
+        let (fanout_event_sender, fanout_events) = mpsc::unbounded();
         let backend = Arc::new(XPubSocketBackend {
-            subscribers: scc::HashMap::new(),
+            fanout_events: fanout_event_sender,
             fair_queue_inner: fair_queue.inner(),
             socket_monitor: Mutex::new(None),
             socket_options: options,
@@ -227,6 +163,8 @@ impl Socket for XPubSocket {
         Self {
             backend,
             fair_queue,
+            fanout_state: FanoutState::default(),
+            fanout_events,
             binds: HashMap::new(),
         }
     }

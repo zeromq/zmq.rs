@@ -9,6 +9,130 @@ mod test {
     use futures::{SinkExt, StreamExt};
     use std::time::Duration;
 
+    async fn recv_text(sub_socket: &mut zeromq::SubSocket) -> String {
+        let message = async_rt::task::timeout(Duration::from_secs(2), sub_socket.recv())
+            .await
+            .expect("timeout waiting for subscriber message")
+            .expect("failed to receive subscriber message");
+        String::from_utf8(message.get(0).unwrap().to_vec()).unwrap()
+    }
+
+    async fn wait_for_delivery(
+        pub_socket: &mut zeromq::PubSocket,
+        sub_socket: &mut zeromq::SubSocket,
+        payload: &str,
+    ) {
+        for _ in 0..200 {
+            pub_socket
+                .send(ZmqMessage::from(payload))
+                .await
+                .expect("failed to send sync payload");
+            match async_rt::task::timeout(Duration::from_millis(10), sub_socket.recv()).await {
+                Ok(Ok(message)) if message.get(0).unwrap().as_ref() == payload.as_bytes() => {
+                    return;
+                }
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => panic!("failed to receive sync payload: {e:?}"),
+                Err(_) => async_rt::task::sleep(Duration::from_millis(5)).await,
+            }
+        }
+        panic!("timed out waiting for subscription to receive {payload}");
+    }
+
+    #[async_rt::test]
+    async fn test_pub_late_subscriber_filter_state_is_isolated() {
+        pretty_env_logger::try_init().ok();
+
+        let mut pub_socket = zeromq::PubSocket::new();
+        let endpoint = pub_socket
+            .bind("tcp://127.0.0.1:0")
+            .await
+            .expect("Failed to bind");
+
+        let mut early_sub = zeromq::SubSocket::new();
+        early_sub
+            .connect(&endpoint.to_string())
+            .await
+            .expect("Failed to connect early subscriber");
+        early_sub
+            .subscribe("early")
+            .await
+            .expect("Failed to subscribe early subscriber");
+        wait_for_delivery(&mut pub_socket, &mut early_sub, "early-sync").await;
+
+        let mut late_sub = zeromq::SubSocket::new();
+        late_sub
+            .connect(&endpoint.to_string())
+            .await
+            .expect("Failed to connect late subscriber");
+        late_sub
+            .subscribe("late")
+            .await
+            .expect("Failed to subscribe late subscriber");
+        wait_for_delivery(&mut pub_socket, &mut late_sub, "late-sync").await;
+
+        pub_socket
+            .send(ZmqMessage::from("early-after-late-join"))
+            .await
+            .expect("Failed to send early message");
+        pub_socket
+            .send(ZmqMessage::from("late-after-join"))
+            .await
+            .expect("Failed to send late message");
+
+        assert_eq!(recv_text(&mut early_sub).await, "early-after-late-join");
+        assert_eq!(recv_text(&mut late_sub).await, "late-after-join");
+    }
+
+    #[async_rt::test]
+    async fn test_pub_unsubscribe_stops_delivery_after_later_subscription() {
+        pretty_env_logger::try_init().ok();
+
+        let mut pub_socket = zeromq::PubSocket::new();
+        let endpoint = pub_socket
+            .bind("tcp://127.0.0.1:0")
+            .await
+            .expect("Failed to bind");
+
+        let mut sub_socket = zeromq::SubSocket::new();
+        sub_socket
+            .connect(&endpoint.to_string())
+            .await
+            .expect("Failed to connect subscriber");
+        sub_socket
+            .subscribe("gone")
+            .await
+            .expect("Failed to subscribe initial filter");
+        wait_for_delivery(&mut pub_socket, &mut sub_socket, "gone-sync").await;
+
+        sub_socket
+            .unsubscribe("gone")
+            .await
+            .expect("Failed to unsubscribe initial filter");
+        sub_socket
+            .subscribe("stay")
+            .await
+            .expect("Failed to subscribe replacement filter");
+        wait_for_delivery(&mut pub_socket, &mut sub_socket, "stay-sync").await;
+
+        pub_socket
+            .send(ZmqMessage::from("gone-after-unsubscribe"))
+            .await
+            .expect("Failed to send unsubscribed message");
+        assert!(
+            async_rt::task::timeout(Duration::from_millis(150), sub_socket.recv())
+                .await
+                .is_err(),
+            "subscriber received a message for an unsubscribed prefix"
+        );
+
+        pub_socket
+            .send(ZmqMessage::from("stay-after-unsubscribe"))
+            .await
+            .expect("Failed to send replacement message");
+        assert_eq!(recv_text(&mut sub_socket).await, "stay-after-unsubscribe");
+    }
+
     #[async_rt::test]
     async fn test_pub_sub_sockets() {
         pretty_env_logger::try_init().ok();
