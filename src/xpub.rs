@@ -147,7 +147,7 @@ impl Socket for XPubSocket {
         let mut fair_queue = FairQueue::new(true);
         let (fanout_event_sender, fanout_events) = mpsc::unbounded();
         let backend = Arc::new(XPubSocketBackend {
-            fanout_events: fanout_event_sender,
+            fanout_events: fanout_event_sender.clone(),
             fair_queue_inner: fair_queue.inner(),
             socket_monitor: Mutex::new(None),
             socket_options: options,
@@ -163,7 +163,7 @@ impl Socket for XPubSocket {
         Self {
             backend,
             fair_queue,
-            fanout_state: FanoutState::default(),
+            fanout_state: FanoutState::new(fanout_event_sender),
             fanout_events,
             binds: HashMap::new(),
         }

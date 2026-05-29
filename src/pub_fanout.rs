@@ -51,12 +51,23 @@ impl FanoutPeer {
 /// async writer mutex. Each peer drains its bounded queue on a dedicated writer
 /// task via [`write_message_queue`], so a full or closed queue drops one
 /// message rather than blocking the publisher.
-#[derive(Default)]
 pub(crate) struct FanoutState {
     peers: std::collections::HashMap<PeerIdentity, FanoutPeer>,
+    /// Cloned into each peer's writer task so a transport write failure evicts
+    /// the dead peer from the fanout map (the writer emits `PeerDisconnected`).
+    /// This matches the cleanup the PUB writer does on its backend and keeps a
+    /// half-open peer (write dead, read still open) from leaking its slot.
+    event_sender: FanoutEventSender,
 }
 
 impl FanoutState {
+    pub(crate) fn new(event_sender: FanoutEventSender) -> Self {
+        Self {
+            peers: std::collections::HashMap::new(),
+            event_sender,
+        }
+    }
+
     pub(crate) fn drain_events(&mut self, events: &mut FanoutEventReceiver) {
         while let Ok(event) = events.try_recv() {
             self.apply_event(event);
@@ -76,6 +87,7 @@ impl FanoutState {
     fn peer_connected(&mut self, peer_id: PeerIdentity, send_queue: ZmqFramedWrite) {
         let (queue_sender, queue_receiver) = mpsc::channel(FANOUT_SEND_QUEUE_CAPACITY);
         let writer_peer_id = peer_id.clone();
+        let writer_events = self.event_sender.clone();
         async_rt::task::spawn(async move {
             if let Err(error) = write_message_queue(queue_receiver, send_queue).await {
                 log::debug!(
@@ -83,6 +95,10 @@ impl FanoutState {
                     writer_peer_id,
                     error
                 );
+                // Transport write failed, so evict the peer instead of leaving a
+                // dead slot that silently drops every future send. Drained on the
+                // next send/recv, the same path backend disconnects flow through.
+                let _ = writer_events.unbounded_send(FanoutEvent::PeerDisconnected(writer_peer_id));
             }
         });
         self.peers.insert(
@@ -161,6 +177,13 @@ pub(crate) fn subscription_change(message: &ZmqMessage) -> Option<SubscriptionCh
 mod tests {
     use super::*;
 
+    fn test_state() -> FanoutState {
+        // The writer-eviction sender is unused by these tests (peers are inserted
+        // directly, no writer task is spawned), so a detached sender is fine.
+        let (event_sender, _events) = mpsc::unbounded();
+        FanoutState::new(event_sender)
+    }
+
     fn insert_peer(state: &mut FanoutState, peer_id: PeerIdentity) {
         let (queue_sender, _queue_receiver) = mpsc::channel(8);
         state.peers.insert(
@@ -174,7 +197,7 @@ mod tests {
 
     #[test]
     fn duplicate_subscription_requires_matching_unsubscribe_events() {
-        let mut state = FanoutState::default();
+        let mut state = test_state();
         let peer_id = PeerIdentity::new();
         insert_peer(&mut state, peer_id.clone());
 
@@ -195,7 +218,7 @@ mod tests {
 
     #[test]
     fn send_matching_skips_unsubscribed_peers() {
-        let mut state = FanoutState::default();
+        let mut state = test_state();
         let peer_id = PeerIdentity::new();
         let (queue_sender, mut queue_receiver) = mpsc::channel(8);
         state.peers.insert(
@@ -217,5 +240,40 @@ mod tests {
             message.get(0).unwrap().as_ref(),
             b"topic.a payload".as_slice()
         );
+    }
+
+    #[test]
+    fn send_matching_drops_for_dead_peer_and_still_serves_healthy_peer() {
+        let mut state = test_state();
+
+        // Dead peer: its writer task is gone, so the receiver is dropped and
+        // try_send fails. The message is dropped without disturbing other peers.
+        let dead = PeerIdentity::new();
+        let (dead_sender, dead_receiver) = mpsc::channel(8);
+        drop(dead_receiver);
+        state.peers.insert(
+            dead,
+            FanoutPeer {
+                subscriptions: vec![b"topic".to_vec()],
+                send_queue: dead_sender,
+            },
+        );
+
+        let healthy = PeerIdentity::new();
+        let (healthy_sender, mut healthy_receiver) = mpsc::channel(8);
+        state.peers.insert(
+            healthy,
+            FanoutPeer {
+                subscriptions: vec![b"topic".to_vec()],
+                send_queue: healthy_sender,
+            },
+        );
+
+        state.send_matching(b"topic.a", &ZmqMessage::from("payload"));
+
+        let Message::Message(message) = healthy_receiver.try_recv().expect("queued message") else {
+            panic!("expected a queued message for the healthy peer");
+        };
+        assert_eq!(message.get(0).unwrap().as_ref(), b"payload".as_slice());
     }
 }
