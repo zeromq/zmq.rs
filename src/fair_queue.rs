@@ -14,6 +14,11 @@ pub(crate) struct QueueInner<S, K: Clone> {
     counter: atomic::AtomicUsize,
     ready_queue: BinaryHeap<ReadyEvent<K>>,
     queued: HashSet<K>,
+    /// Holds the sole connected stream so it can be polled directly, skipping
+    /// the multi-peer ready-queue bookkeeping. Promotion to `streams` is
+    /// one-way: once a second peer connects the queue stays on the multi-peer
+    /// path for the rest of its life, even if peers later drop back to one.
+    /// Re-demoting would add churn-sensitive state transitions for no real gain.
     single_stream: Option<(K, Pin<Box<S>>)>,
     streams: HashMap<K, Pin<Box<S>>>,
     waker: Option<Waker>,
@@ -516,6 +521,72 @@ mod test {
         assert_eq!(fair_queue.next().await, Some((1, "a1")));
         assert_eq!(fair_queue.next().await, None);
         assert_eq!(disconnect_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_fair_queue_promotes_single_stream_pending_across_second_insert() {
+        use futures::task::{waker_ref, ArcWake};
+
+        struct CountingWaker {
+            wakes: AtomicUsize,
+        }
+        impl ArcWake for CountingWaker {
+            fn wake_by_ref(arc_self: &Arc<Self>) {
+                arc_self.wakes.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let counting = Arc::new(CountingWaker {
+            wakes: AtomicUsize::new(0),
+        });
+        let waker = waker_ref(&counting);
+        let mut cx = Context::from_waker(&waker);
+
+        let mut fair_queue: FairQueue<UnifiedStream, &'static str> = FairQueue::new(false);
+        {
+            let inner = fair_queue.inner();
+            let mut lock = inner.lock();
+            lock.insert(
+                "single",
+                UnifiedStream::Test(TestStream::pending_once(&["a1"])),
+            );
+            assert!(lock.single_stream.is_some());
+        }
+
+        // The single stream is Pending on its first poll, so the queue parks on
+        // the fast path rather than reporting end-of-stream.
+        assert!(matches!(
+            Pin::new(&mut fair_queue).poll_next(&mut cx),
+            Poll::Pending
+        ));
+
+        // A second peer connects while the single stream is still pending. This
+        // must move both streams onto the multi-peer path and wake the task that
+        // parked on the fast path, or a real executor would never re-poll.
+        {
+            let inner = fair_queue.inner();
+            let mut lock = inner.lock();
+            lock.insert("second", UnifiedStream::Test(TestStream::ready(&["b1"])));
+            assert!(lock.single_stream.is_none());
+            assert_eq!(lock.streams.len(), 2);
+            assert_eq!(lock.ready_queue.len(), 2);
+        }
+        assert!(
+            counting.wakes.load(Ordering::SeqCst) >= 1,
+            "second insert must wake the task parked on the single-stream fast path"
+        );
+
+        // After promotion both streams deliver via the multi-peer path.
+        let mut results = Vec::new();
+        for _ in 0..10 {
+            match Pin::new(&mut fair_queue).poll_next(&mut cx) {
+                Poll::Ready(Some(item)) => results.push(item),
+                Poll::Ready(None) => break,
+                Poll::Pending => {}
+            }
+        }
+        results.sort_unstable();
+        assert_eq!(results, vec![("second", "b1"), ("single", "a1")]);
     }
 
     #[test]
