@@ -14,12 +14,16 @@ use crate::ZmqResult;
 
 use futures::{select, FutureExt};
 
+#[cfg(feature = "tokio-runtime")]
+const TCP_SOCKET_BUFFER_SIZE: usize = 4 * 1024 * 1024;
+
 pub(crate) async fn connect(host: &Host, port: Port) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = TcpStream::connect((host.to_string().as_str(), port)).await?;
     // For some reason set_nodelay doesn't work on windows. See
     // https://github.com/zeromq/zmq.rs/issues/148 for details
     #[cfg(not(windows))]
     raw_socket.set_nodelay(true)?;
+    tune_socket_buffers(&raw_socket);
     let peer_addr = raw_socket.peer_addr()?;
 
     Ok((make_framed(raw_socket), Endpoint::from_tcp_addr(peer_addr)))
@@ -45,7 +49,10 @@ where
                         .and_then(|(raw_socket, remote_addr)| {
                             raw_socket
                                 .set_nodelay(true)
-                                .map(|_| (raw_socket, remote_addr))
+                                .map(|_| {
+                                    tune_socket_buffers(&raw_socket);
+                                    (raw_socket, remote_addr)
+                                })
                         })
                         .map(|(raw_socket, remote_addr)| {
                             (
@@ -78,3 +85,17 @@ where
         AcceptStopHandle(TaskHandle::new(stop_channel, task_handle)),
     ))
 }
+
+#[cfg(feature = "tokio-runtime")]
+fn tune_socket_buffers(raw_socket: &TcpStream) {
+    let socket = socket2::SockRef::from(raw_socket);
+    if let Err(error) = socket.set_recv_buffer_size(TCP_SOCKET_BUFFER_SIZE) {
+        log::debug!("failed to set TCP receive buffer size: {error}");
+    }
+    if let Err(error) = socket.set_send_buffer_size(TCP_SOCKET_BUFFER_SIZE) {
+        log::debug!("failed to set TCP send buffer size: {error}");
+    }
+}
+
+#[cfg(not(feature = "tokio-runtime"))]
+fn tune_socket_buffers(_raw_socket: &TcpStream) {}
