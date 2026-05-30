@@ -58,7 +58,15 @@ impl TryFrom<Bytes> for ZmqCommand {
     type Error = CodecError;
 
     fn try_from(mut buf: Bytes) -> Result<Self, Self::Error> {
+        if buf.is_empty() {
+            return Err(CodecError::Decode("Missing command length"));
+        }
+
         let command_len = buf.get_u8() as usize;
+        if buf.len() < command_len {
+            return Err(CodecError::Decode("Command name exceeds frame length"));
+        }
+
         // command-name-char = ALPHA according to https://rfc.zeromq.org/spec:23/ZMTP/
         let command = match &buf[..command_len] {
             b"READY" => ZmqCommandName::READY,
@@ -70,12 +78,24 @@ impl TryFrom<Bytes> for ZmqCommand {
         while !buf.is_empty() {
             // Collect command properties
             let prop_len = buf.get_u8() as usize;
+            if buf.len() < prop_len {
+                return Err(CodecError::Decode("Property name exceeds frame length"));
+            }
+
             let property = match String::from_utf8(buf.split_to(prop_len).to_vec()) {
                 Ok(p) => p,
                 Err(_) => return Err(CodecError::Decode("Invalid property identifier")),
             };
 
+            if buf.len() < 4 {
+                return Err(CodecError::Decode("Missing property value length"));
+            }
+
             let prop_val_len = buf.get_u32() as usize;
+            if buf.len() < prop_val_len {
+                return Err(CodecError::Decode("Property value exceeds frame length"));
+            }
+
             let prop_value = buf.split_to(prop_val_len);
             properties.insert(property, prop_value);
         }
@@ -118,5 +138,42 @@ impl From<ZmqCommand> for BytesMut {
             bytes.extend_from_slice(val.as_ref());
         }
         bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ZmqCommand;
+    use bytes::Bytes;
+    use std::convert::TryFrom;
+
+    fn assert_decode_error(data: &'static [u8]) {
+        assert!(ZmqCommand::try_from(Bytes::from_static(data)).is_err());
+    }
+
+    #[test]
+    fn rejects_truncated_command_name() {
+        assert_decode_error(&[5, b'R']);
+    }
+
+    #[test]
+    fn rejects_truncated_property_name() {
+        assert_decode_error(&[5, b'R', b'E', b'A', b'D', b'Y', 11, b'S']);
+    }
+
+    #[test]
+    fn rejects_truncated_property_value_length() {
+        assert_decode_error(&[
+            5, b'R', b'E', b'A', b'D', b'Y', 11, b'S', b'o', b'c', b'k', b'e', b't', b'-', b'T',
+            b'y', b'p', b'e', 0, 0,
+        ]);
+    }
+
+    #[test]
+    fn rejects_truncated_property_value() {
+        assert_decode_error(&[
+            5, b'R', b'E', b'A', b'D', b'Y', 11, b'S', b'o', b'c', b'k', b'e', b't', b'-', b'T',
+            b'y', b'p', b'e', 0, 0, 0, 3, b'R',
+        ]);
     }
 }
