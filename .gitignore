@@ -3,4 +3,7 @@
 Cargo.lock
 .venv
 .idea
+.vscode
+.zed
+__pycache__
 *.iml
