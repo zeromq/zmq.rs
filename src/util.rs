@@ -236,20 +236,20 @@ fn is_retryable_connect_error(endpoint: &Endpoint, error: &ZmqError) -> bool {
 }
 
 pub(crate) async fn connect_forever(endpoint: Endpoint) -> ZmqResult<(FramedIo, Endpoint)> {
-    let mut try_num: u64 = 0;
+    // Exponential backoff that starts small and grows, so a peer whose port is
+    // not bound yet (ConnectionRefused) is reached after a few short sleeps
+    // rather than waiting out a large opening delay. Mirrors the semantics of
+    // `ReconnectConfig` (capped, exponential, jittered).
+    const INITIAL: Duration = Duration::from_millis(50);
+    const MAX: Duration = Duration::from_secs(30);
+    let mut delay = INITIAL;
     loop {
         match transport::connect(&endpoint).await {
             Ok(res) => return Ok(res),
             Err(e) if is_retryable_connect_error(&endpoint, &e) => {
-                if try_num < 5 {
-                    try_num += 1;
-                }
-                let delay = {
-                    let mut rng = rand::rng();
-                    std::f64::consts::E.powf(try_num as f64 / 3.0)
-                        + rng.random_range(0.0f64..0.1f64)
-                };
-                async_rt::task::sleep(std::time::Duration::from_secs_f64(delay)).await;
+                let jitter = rand::rng().random_range(0.0f64..0.1f64);
+                async_rt::task::sleep(delay + delay.mul_f64(jitter)).await;
+                delay = (delay * 2).min(MAX);
             }
             Err(e) => return Err(e),
         }
