@@ -2,13 +2,13 @@ mod error;
 mod host;
 mod transport;
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 use std::fmt;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 pub use error::EndpointError;
 pub use host::Host;
@@ -16,8 +16,9 @@ pub use transport::Transport;
 
 pub type Port = u16;
 
-static TRANSPORT_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^([[:lower:]]+)://(.+)$").unwrap());
-static HOST_PORT_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(.+):([0-9]+)$").unwrap());
+static TRANSPORT_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^([[:lower:]]+)://(.+)$").unwrap());
+static HOST_PORT_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.+):([0-9]+)$").unwrap());
 
 /// Represents a ZMQ Endpoint.
 ///
@@ -148,7 +149,7 @@ mod private {
 mod tests {
     use super::*;
 
-    static PAIRS: Lazy<Vec<(Endpoint, &'static str)>> = Lazy::new(|| {
+    static PAIRS: LazyLock<Vec<(Endpoint, &'static str)>> = LazyLock::new(|| {
         vec![
             (
                 Endpoint::Ipc(Some(PathBuf::from("/tmp/asdf"))),
