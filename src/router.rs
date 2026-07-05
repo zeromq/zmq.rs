@@ -8,6 +8,7 @@ use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{MultiPeerBackend, SocketEvent, SocketOptions, SocketRecv, SocketSend, SocketType};
 use crate::{Socket, SocketBackend};
+use crate::{SocketBinds, SocketConnects};
 
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -19,7 +20,8 @@ use std::sync::Arc;
 
 pub struct RouterSocket {
     backend: Arc<GenericSocketBackend>,
-    binds: HashMap<Endpoint, AcceptStopHandle>,
+    binds: SocketBinds,
+    connects: SocketConnects,
     fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
 }
 
@@ -49,6 +51,7 @@ impl Socket for RouterSocket {
         Self {
             backend,
             binds: HashMap::new(),
+            connects: HashMap::new(),
             fair_queue,
         }
     }
@@ -57,8 +60,12 @@ impl Socket for RouterSocket {
         self.backend.clone()
     }
 
-    fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle> {
+    fn binds(&mut self) -> &mut SocketBinds {
         &mut self.binds
+    }
+
+    fn connects(&mut self) -> &mut SocketConnects {
+        &mut self.connects
     }
 
     fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {

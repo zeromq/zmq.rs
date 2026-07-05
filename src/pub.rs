@@ -2,11 +2,11 @@ use crate::codec::*;
 use crate::endpoint::Endpoint;
 use crate::error::ZmqResult;
 use crate::message::*;
-use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::write_queue::write_message_queue;
 use crate::{async_rt, CaptureSocket, SocketOptions};
 use crate::{MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketSend, SocketType};
+use crate::{SocketBinds, SocketConnects};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -64,6 +64,7 @@ pub(crate) struct Subscriber {
     pub(crate) subscriptions: Vec<Vec<u8>>,
     pub(crate) send_queue: PubSendQueue,
     pub(crate) _subscription_coro_stop: oneshot::Sender<()>,
+    pub(crate) endpoint: Endpoint,
 }
 
 pub(crate) struct PubSocketBackend {
@@ -204,7 +205,12 @@ impl SocketBackend for PubSocketBackend {
 
 #[async_trait]
 impl MultiPeerBackend for PubSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(
+        self: Arc<Self>,
+        peer_id: &PeerIdentity,
+        io: FramedIo,
+        endpoint: Endpoint,
+    ) {
         let (mut recv_queue, send_queue) = io.into_parts();
         // TODO provide handling for recv_queue
         let (queue_sender, queue_receiver) = mpsc::channel(PUB_SEND_QUEUE_CAPACITY);
@@ -217,6 +223,7 @@ impl MultiPeerBackend for PubSocketBackend {
                     subscriptions: vec![],
                     send_queue: queue_sender,
                     _subscription_coro_stop: sender,
+                    endpoint,
                 },
             )
             .await;
@@ -264,6 +271,10 @@ impl MultiPeerBackend for PubSocketBackend {
         });
     }
 
+    fn peer_list_by_endpoint(&self, endpoint: &Endpoint) -> Vec<PeerIdentity> {
+        crate::util::peer_list_by_endpoint(&self.subscribers, endpoint, |sub| &sub.endpoint)
+    }
+
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         log::info!("Client disconnected {:?}", peer_id);
         if let Some(monitor) = self.monitor().lock().as_mut() {
@@ -278,7 +289,8 @@ impl MultiPeerBackend for PubSocketBackend {
 pub struct PubSocket {
     pub(crate) backend: Arc<PubSocketBackend>,
     fanout_queue: PubFanoutQueue,
-    binds: HashMap<Endpoint, AcceptStopHandle>,
+    binds: SocketBinds,
+    connects: SocketConnects,
 }
 
 impl Drop for PubSocket {
@@ -319,6 +331,7 @@ impl Socket for PubSocket {
             backend,
             fanout_queue,
             binds: HashMap::new(),
+            connects: HashMap::new(),
         }
     }
 
@@ -326,8 +339,12 @@ impl Socket for PubSocket {
         self.backend.clone()
     }
 
-    fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle> {
+    fn binds(&mut self) -> &mut SocketBinds {
         &mut self.binds
+    }
+
+    fn connects(&mut self) -> &mut SocketConnects {
+        &mut self.connects
     }
 
     fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {
@@ -343,7 +360,7 @@ mod tests {
     use crate::util::tests::{
         test_bind_to_any_port_helper, test_bind_to_unspecified_interface_helper,
     };
-    use crate::ZmqResult;
+    use crate::{TryIntoEndpoint, ZmqResult};
     use std::net::IpAddr;
 
     fn test_backend() -> PubSocketBackend {
@@ -370,6 +387,8 @@ mod tests {
                     subscriptions,
                     send_queue: queue_sender,
                     _subscription_coro_stop: stop_sender,
+                    endpoint: TryIntoEndpoint::try_into("tcp://127.0.0.1:1234")
+                        .expect("valid endpoint"),
                 },
             )
             .await;

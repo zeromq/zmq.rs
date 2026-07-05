@@ -238,7 +238,7 @@ async fn try_reconnect(
 
     // Register the peer with the backend
     // This triggers subscription resync for SUB sockets
-    backend.peer_connected(&peer_id, raw_socket).await;
+    backend.peer_connected(&peer_id, raw_socket, endpoint.clone()).await;
 
     Ok((peer_id, resolved_endpoint))
 }

@@ -19,6 +19,8 @@ pub enum ZmqError {
     Network(#[from] std::io::Error),
     #[error("Socket bind doesn't exist: {0}")]
     NoSuchBind(Endpoint),
+    #[error("Socket connection to {0} doesn't exist")]
+    NoSuchConnection(Endpoint),
     #[error("Codec Error: {0}")]
     Codec(#[from] CodecError),
     #[error("Socket Error: {0}")]

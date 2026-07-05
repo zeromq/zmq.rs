@@ -1,21 +1,21 @@
 use crate::backend::GenericSocketBackend;
 use crate::codec::Message;
-use crate::transport::AcceptStopHandle;
 use crate::{
-    CaptureSocket, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketOptions,
-    SocketSend, SocketType, ZmqMessage, ZmqResult,
+    CaptureSocket, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketOptions, SocketSend,
+    SocketType, ZmqMessage, ZmqResult,
 };
+use crate::{SocketBinds, SocketConnects};
 
 use async_trait::async_trait;
 use futures::channel::mpsc;
 
-use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct PushSocket {
     backend: Arc<GenericSocketBackend>,
-    binds: HashMap<Endpoint, AcceptStopHandle>,
+    binds: SocketBinds,
+    connects: SocketConnects,
 }
 
 impl Drop for PushSocket {
@@ -34,6 +34,7 @@ impl Socket for PushSocket {
                 options,
             )),
             binds: HashMap::new(),
+            connects: HashMap::new(),
         }
     }
 
@@ -41,8 +42,12 @@ impl Socket for PushSocket {
         self.backend.clone()
     }
 
-    fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle, RandomState> {
+    fn binds(&mut self) -> &mut SocketBinds {
         &mut self.binds
+    }
+
+    fn connects(&mut self) -> &mut SocketConnects {
+        &mut self.connects
     }
 
     fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {

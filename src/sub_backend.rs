@@ -4,9 +4,9 @@ use crate::endpoint::Endpoint;
 use crate::error::ZmqResult;
 use crate::fair_queue::QueueInner;
 use crate::message::ZmqMessage;
-use crate::reconnect::{ReconnectConfig, ReconnectHandle};
-use crate::transport::AcceptStopHandle;
+use crate::reconnect::ReconnectConfig;
 use crate::util::PeerIdentity;
+use crate::{ConnectStopHandle, SocketConnects};
 use crate::{
     MultiPeerBackend, SocketBackend, SocketEvent, SocketOptions, SocketType, TryIntoEndpoint,
 };
@@ -34,6 +34,7 @@ pub(crate) enum SubscriptionMessageType {
 /// of the framed I/O since receiving is handled through the fair queue.
 pub(crate) struct SubPeer {
     pub(crate) send_queue: Arc<AsyncMutex<Pin<Box<ZmqFramedWrite>>>>,
+    pub(crate) endpoint: Endpoint,
 }
 
 /// Shared backend for [`SubSocket`](crate::SubSocket) and [`XSubSocket`](crate::XSubSocket).
@@ -279,7 +280,12 @@ impl SocketBackend for SubSocketBackend {
 
 #[async_trait]
 impl MultiPeerBackend for SubSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(
+        self: Arc<Self>,
+        peer_id: &PeerIdentity,
+        io: FramedIo,
+        endpoint: Endpoint,
+    ) {
         let (recv_queue, mut send_queue) = io.into_parts();
 
         for message in self.subscription_messages() {
@@ -294,6 +300,7 @@ impl MultiPeerBackend for SubSocketBackend {
                 peer_id.clone(),
                 SubPeer {
                     send_queue: Arc::new(AsyncMutex::new(Box::pin(send_queue))),
+                    endpoint,
                 },
             )
             .await;
@@ -301,6 +308,10 @@ impl MultiPeerBackend for SubSocketBackend {
         if let Some(inner) = &self.fair_queue_inner {
             inner.lock().insert(peer_id.clone(), recv_queue);
         }
+    }
+
+    fn peer_list_by_endpoint(&self, endpoint: &Endpoint) -> Vec<PeerIdentity> {
+        crate::util::peer_list_by_endpoint(&self.peers, endpoint, |peer| &peer.endpoint)
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
@@ -329,7 +340,7 @@ impl MultiPeerBackend for SubSocketBackend {
 /// subscriptions are automatically re-sent to the peer.
 pub(crate) async fn connect_with_reconnect(
     backend: Arc<SubSocketBackend>,
-    reconnect_handles: &mut Vec<ReconnectHandle>,
+    connects: &mut SocketConnects,
     endpoint: &str,
 ) -> ZmqResult<()> {
     let endpoint = TryIntoEndpoint::try_into(endpoint)?;
@@ -348,7 +359,10 @@ pub(crate) async fn connect_with_reconnect(
             Ok((socket, resolved_endpoint, peer_id))
         })
         .await?;
-    backend.clone().peer_connected(&peer_id, socket).await;
+    backend
+        .clone()
+        .peer_connected(&peer_id, socket, endpoint.clone())
+        .await;
 
     // Emit Connected event
     if let Some(monitor) = backend.monitor().lock().as_mut() {
@@ -363,16 +377,13 @@ pub(crate) async fn connect_with_reconnect(
 
     // Spawn reconnection task
     let reconnect_handle = crate::reconnect::spawn_reconnect_task(
-        endpoint,
+        endpoint.clone(),
         backend as Arc<dyn MultiPeerBackend>,
         peer_id,
         register_fn,
         ReconnectConfig::default(),
     );
-    reconnect_handles.push(reconnect_handle);
+    connects.insert(endpoint, ConnectStopHandle(Some(reconnect_handle)));
 
     Ok(())
 }
-
-/// Type alias for the bind map shared by SUB and XSUB sockets.
-pub(crate) type SocketBinds = HashMap<Endpoint, AcceptStopHandle>;

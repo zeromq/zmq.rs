@@ -100,6 +100,26 @@ pub(crate) struct Peer {
     pub(crate) _identity: PeerIdentity,
     pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
     pub(crate) recv_queue: ZmqFramedRead,
+    pub(crate) endpoint: Endpoint,
+}
+
+/// Collects the peers whose connection originated from `endpoint`.
+///
+/// Every backend keys its peers by [`PeerIdentity`] but stores a different
+/// value type, so the endpoint is read back through `peer_endpoint`.
+pub(crate) fn peer_list_by_endpoint<V>(
+    peers: &scc::HashMap<PeerIdentity, V>,
+    endpoint: &Endpoint,
+    peer_endpoint: impl Fn(&V) -> &Endpoint,
+) -> Vec<PeerIdentity> {
+    let mut matching = Vec::new();
+    peers.iter_sync(|peer_id, peer| {
+        if peer_endpoint(peer) == endpoint {
+            matching.push(peer_id.clone());
+        }
+        true
+    });
+    matching
 }
 
 /// Given the result of the greetings exchange, determines the version of the
@@ -190,9 +210,10 @@ pub(crate) async fn ready_exchange(
 pub(crate) async fn peer_connected(
     mut raw_socket: FramedIo,
     backend: Arc<dyn MultiPeerBackend>,
+    endpoint: Endpoint,
 ) -> ZmqResult<PeerIdentity> {
     let peer_id = peer_handshake(&mut raw_socket, backend.clone()).await?;
-    backend.peer_connected(&peer_id, raw_socket).await;
+    backend.peer_connected(&peer_id, raw_socket, endpoint).await;
     Ok(peer_id)
 }
 

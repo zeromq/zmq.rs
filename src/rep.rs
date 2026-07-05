@@ -2,7 +2,6 @@ use crate::codec::*;
 use crate::endpoint::Endpoint;
 use crate::error::*;
 use crate::fair_queue::{FairQueue, QueueInner};
-use crate::transport::AcceptStopHandle;
 use crate::*;
 use crate::{SocketType, ZmqResult};
 
@@ -16,6 +15,7 @@ use std::sync::Arc;
 struct RepPeer {
     pub(crate) _identity: PeerIdentity,
     pub(crate) send_queue: ZmqFramedWrite,
+    pub(crate) endpoint: Endpoint,
 }
 
 struct RepSocketBackend {
@@ -30,7 +30,8 @@ pub struct RepSocket {
     envelope: Option<ZmqMessage>,
     current_request: Option<PeerIdentity>,
     fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
-    binds: HashMap<Endpoint, AcceptStopHandle>,
+    binds: SocketBinds,
+    connects: SocketConnects,
 }
 
 impl Drop for RepSocket {
@@ -63,6 +64,7 @@ impl Socket for RepSocket {
             current_request: None,
             fair_queue,
             binds: HashMap::new(),
+            connects: HashMap::new(),
         }
     }
 
@@ -70,8 +72,12 @@ impl Socket for RepSocket {
         self.backend.clone()
     }
 
-    fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle> {
+    fn binds(&mut self) -> &mut SocketBinds {
         &mut self.binds
+    }
+
+    fn connects(&mut self) -> &mut SocketConnects {
+        &mut self.connects
     }
 
     fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {
@@ -83,7 +89,12 @@ impl Socket for RepSocket {
 
 #[async_trait]
 impl MultiPeerBackend for RepSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(
+        self: Arc<Self>,
+        peer_id: &PeerIdentity,
+        io: FramedIo,
+        endpoint: Endpoint,
+    ) {
         let (recv_queue, send_queue) = io.into_parts();
 
         self.peers
@@ -92,12 +103,17 @@ impl MultiPeerBackend for RepSocketBackend {
                 RepPeer {
                     _identity: peer_id.clone(),
                     send_queue,
+                    endpoint,
                 },
             )
             .await;
         self.fair_queue_inner
             .lock()
             .insert(peer_id.clone(), recv_queue);
+    }
+
+    fn peer_list_by_endpoint(&self, endpoint: &Endpoint) -> Vec<PeerIdentity> {
+        crate::util::peer_list_by_endpoint(&self.peers, endpoint, |peer| &peer.endpoint)
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {

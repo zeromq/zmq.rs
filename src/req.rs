@@ -1,7 +1,6 @@
 use crate::codec::*;
 use crate::endpoint::Endpoint;
 use crate::error::*;
-use crate::transport::AcceptStopHandle;
 use crate::util::{Peer, PeerIdentity};
 use crate::*;
 use crate::{SocketType, ZmqResult};
@@ -24,7 +23,8 @@ struct ReqSocketBackend {
 pub struct ReqSocket {
     backend: Arc<ReqSocketBackend>,
     current_request: Option<PeerIdentity>,
-    binds: HashMap<Endpoint, AcceptStopHandle>,
+    binds: SocketBinds,
+    connects: SocketConnects,
 }
 
 impl Drop for ReqSocket {
@@ -116,6 +116,7 @@ impl Socket for ReqSocket {
             }),
             current_request: None,
             binds: HashMap::new(),
+            connects: HashMap::new(),
         }
     }
 
@@ -123,8 +124,12 @@ impl Socket for ReqSocket {
         self.backend.clone()
     }
 
-    fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle> {
+    fn binds(&mut self) -> &mut SocketBinds {
         &mut self.binds
+    }
+
+    fn connects(&mut self) -> &mut SocketConnects {
+        &mut self.connects
     }
 
     fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {
@@ -136,7 +141,12 @@ impl Socket for ReqSocket {
 
 #[async_trait]
 impl MultiPeerBackend for ReqSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(
+        self: Arc<Self>,
+        peer_id: &PeerIdentity,
+        io: FramedIo,
+        endpoint: Endpoint,
+    ) {
         let (recv_queue, send_queue) = io.into_parts();
         self.peers
             .upsert_async(
@@ -145,13 +155,21 @@ impl MultiPeerBackend for ReqSocketBackend {
                     _identity: peer_id.clone(),
                     send_queue,
                     recv_queue,
+                    endpoint,
                 },
             )
             .await;
         self.round_robin.push(peer_id.clone());
     }
 
+    fn peer_list_by_endpoint(&self, endpoint: &Endpoint) -> Vec<PeerIdentity> {
+        crate::util::peer_list_by_endpoint(&self.peers, endpoint, |peer| &peer.endpoint)
+    }
+
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+        if let Some(monitor) = self.monitor().lock().as_mut() {
+            let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
+        }
         self.peers.remove_sync(peer_id);
     }
 }
