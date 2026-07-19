@@ -6,15 +6,17 @@
 
 use crate::async_rt::task::{spawn, JoinHandle};
 use crate::backend::DisconnectNotifier;
+use crate::codec::FramedIo;
 use crate::endpoint::Endpoint;
 use crate::transport;
-use crate::util::{greet_exchange, ready_exchange, PeerIdentity};
+use crate::util::{greet_exchange, ready_exchange, run_with_timeout, PeerIdentity};
 use crate::MultiPeerBackend;
 
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt, StreamExt};
 use rand::RngExt;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -45,6 +47,7 @@ impl Default for ReconnectConfig {
 /// stop the task gracefully.
 pub struct ReconnectHandle {
     shutdown_tx: Option<oneshot::Sender<()>>,
+    shutdown_flag: Arc<AtomicBool>,
     #[allow(dead_code)] // Kept to prevent task from being dropped prematurely
     task_handle: JoinHandle<()>,
 }
@@ -53,8 +56,16 @@ impl ReconnectHandle {
     /// Request graceful shutdown of the reconnection task.
     ///
     /// This signals the task to stop and returns immediately. The task will
-    /// finish its current iteration before stopping.
+    /// abandon any in-flight reconnection attempt rather than finishing it.
+    ///
+    /// The flag is set *before* the wakeup is sent, and is what makes
+    /// [`Socket::disconnect`](crate::Socket::disconnect) safe: the oneshot only
+    /// becomes visible when the task next polls, so a task sitting between
+    /// "handshake complete" and "peer registered" would otherwise register a
+    /// peer for an endpoint the caller has already disconnected. See
+    /// `spawn_reconnect_task` for the full ordering argument.
     pub fn shutdown(mut self) {
+        self.shutdown_flag.store(true, Ordering::Release);
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());
         }
@@ -82,6 +93,18 @@ pub type RegisterDisconnectFn = Box<dyn Fn(PeerIdentity, DisconnectNotifier) + S
 /// * `register_disconnect_fn` - Callback to register disconnect notifiers with the backend
 /// * `config` - Reconnection configuration (intervals, backoff)
 ///
+/// # Shutdown ordering
+/// `ReconnectHandle::shutdown` sets a flag synchronously and then wakes the
+/// task. The task checks that flag immediately *after* registering a
+/// reconnected peer. Since `Socket::disconnect` shuts the task down before it
+/// scans for peers to tear down, every interleaving is covered:
+///
+/// - task registers, then sees the flag set -> the task tears the peer down;
+/// - task registers, flag still clear -> `disconnect` had not started, so its
+///   later scan observes the peer and tears it down;
+/// - task registers after the scan -> the flag was necessarily set before that
+///   scan, so the task observes it and tears the peer down.
+///
 /// # Returns
 /// A `ReconnectHandle` to control the task.
 pub fn spawn_reconnect_task(
@@ -94,6 +117,8 @@ pub fn spawn_reconnect_task(
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     // Create the disconnect notification channel - this task owns the receiver
     let (disconnect_tx, mut disconnect_rx) = mpsc::channel::<PeerIdentity>(1);
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    let task_shutdown_flag = shutdown_flag.clone();
 
     // Register the initial peer_id
     register_disconnect_fn(initial_peer_id.clone(), disconnect_tx.clone());
@@ -154,9 +179,50 @@ pub fn spawn_reconnect_task(
                     }
                 }
 
-                // Try to connect
-                match try_reconnect(&endpoint, backend.clone()).await {
-                    Ok((new_peer_id, resolved_endpoint)) => {
+                // Connect and handshake. This half is cancel-safe: dropping the
+                // future closes the half-open socket and registers nothing, so
+                // it can be raced against shutdown.
+                let connect_timeout = backend.socket_options().connect_timeout;
+                let handshake =
+                    run_with_timeout(connect_timeout, connect_and_handshake(&endpoint, &backend))
+                        .fuse();
+                futures::pin_mut!(handshake);
+
+                let outcome = futures::select! {
+                    result = handshake => result,
+                    _ = shutdown_rx => {
+                        log::debug!(
+                            "Shutdown received during reconnect attempt to {}, stopping reconnect task",
+                            endpoint
+                        );
+                        return;
+                    }
+                };
+
+                match outcome {
+                    Ok((new_peer_id, resolved_endpoint, raw_socket)) => {
+                        // Registration is *not* cancel-safe - `peer_connected`
+                        // awaits several times while wiring the peer up, and
+                        // being dropped partway would leave it half-registered.
+                        // So run it to completion, then check for shutdown.
+                        backend
+                            .clone()
+                            .peer_connected(&new_peer_id, raw_socket, endpoint.clone())
+                            .await;
+
+                        if task_shutdown_flag.load(Ordering::Acquire) {
+                            // `disconnect()` may have scanned for peers before
+                            // this one existed, so undo the registration here
+                            // rather than leaving an unreachable peer behind.
+                            log::debug!(
+                                "Reconnected to {} after shutdown was requested, tearing down peer {:?}",
+                                endpoint,
+                                new_peer_id
+                            );
+                            backend.peer_disconnected(&new_peer_id);
+                            return;
+                        }
+
                         log::info!(
                             "Successfully reconnected to {} (peer {:?})",
                             endpoint,
@@ -202,23 +268,29 @@ pub fn spawn_reconnect_task(
 
     ReconnectHandle {
         shutdown_tx: Some(shutdown_tx),
+        shutdown_flag,
         task_handle,
     }
 }
 
-/// Attempts a single reconnection to the endpoint.
+/// Connects to the endpoint and performs the ZMTP handshake.
 ///
-/// This performs the full connection sequence:
+/// This performs the connection sequence up to, but not including, peer
+/// registration:
 /// 1. TCP/IPC connection
 /// 2. ZMTP greeting exchange
 /// 3. Ready command exchange
-/// 4. Peer registration via `backend.peer_connected()`
 ///
-/// Returns the new `peer_id` and resolved endpoint on success.
-async fn try_reconnect(
+/// Registration is deliberately left to the caller: this function is
+/// cancel-safe (dropping the future closes the half-open socket and leaves no
+/// trace on the backend), whereas `peer_connected` is not, so only this half
+/// may be raced against a shutdown signal.
+///
+/// Returns the new `peer_id`, the resolved endpoint, and the handshaken socket.
+async fn connect_and_handshake(
     endpoint: &Endpoint,
-    backend: Arc<dyn MultiPeerBackend>,
-) -> crate::ZmqResult<(PeerIdentity, Endpoint)> {
+    backend: &Arc<dyn MultiPeerBackend>,
+) -> crate::ZmqResult<(PeerIdentity, Endpoint, FramedIo)> {
     // Attempt transport-level connection
     let (mut raw_socket, resolved_endpoint) = transport::connect(endpoint).await?;
 
@@ -236,11 +308,7 @@ async fn try_reconnect(
     // Exchange ready commands
     let peer_id = ready_exchange(&mut raw_socket, backend.socket_type(), props).await?;
 
-    // Register the peer with the backend
-    // This triggers subscription resync for SUB sockets
-    backend.peer_connected(&peer_id, raw_socket).await;
-
-    Ok((peer_id, resolved_endpoint))
+    Ok((peer_id, resolved_endpoint, raw_socket))
 }
 
 #[cfg(test)]

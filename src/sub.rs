@@ -1,16 +1,12 @@
 use crate::codec::{Message, ZmqFramedRead};
-use crate::endpoint::Endpoint;
 use crate::error::{ZmqError, ZmqResult};
 use crate::fair_queue::FairQueue;
 use crate::message::ZmqMessage;
-use crate::reconnect::ReconnectHandle;
-use crate::sub_backend::{
-    connect_with_reconnect, SocketBinds, SubSocketBackend, SubscriptionMessageType,
-};
-use crate::transport::AcceptStopHandle;
+use crate::sub_backend::{connect_with_reconnect, SubSocketBackend, SubscriptionMessageType};
 use crate::util::PeerIdentity;
 use crate::{
-    MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketOptions, SocketRecv, SocketType,
+    MultiPeerBackend, Socket, SocketBackend, SocketBinds, SocketConnects, SocketEvent,
+    SocketOptions, SocketRecv, SocketType,
 };
 
 use async_trait::async_trait;
@@ -24,15 +20,16 @@ pub struct SubSocket {
     backend: Arc<SubSocketBackend>,
     fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
     binds: SocketBinds,
-    /// Handles to background reconnection tasks
-    reconnect_handles: Vec<ReconnectHandle>,
+    connects: SocketConnects,
 }
 
 impl Drop for SubSocket {
     fn drop(&mut self) {
         // Shutdown all reconnection tasks
-        for handle in self.reconnect_handles.drain(..) {
-            handle.shutdown();
+        for (_, stop_handle) in self.connects.drain() {
+            if let Some(reconnect) = stop_handle.0 {
+                reconnect.shutdown();
+            }
         }
         self.backend.shutdown();
     }
@@ -80,7 +77,7 @@ impl Socket for SubSocket {
             backend,
             fair_queue,
             binds: HashMap::new(),
-            reconnect_handles: Vec::new(),
+            connects: HashMap::new(),
         }
     }
 
@@ -88,8 +85,12 @@ impl Socket for SubSocket {
         self.backend.clone()
     }
 
-    fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle> {
+    fn binds(&mut self) -> &mut SocketBinds {
         &mut self.binds
+    }
+
+    fn connects(&mut self) -> &mut SocketConnects {
+        &mut self.connects
     }
 
     /// Connects to the given endpoint with automatic reconnection support.
@@ -99,7 +100,7 @@ impl Socket for SubSocket {
     /// is lost. On reconnection, subscriptions are automatically re-sent
     /// to the peer.
     async fn connect(&mut self, endpoint: &str) -> ZmqResult<()> {
-        connect_with_reconnect(self.backend.clone(), &mut self.reconnect_handles, endpoint).await
+        connect_with_reconnect(self.backend.clone(), &mut self.connects, endpoint).await
     }
 
     fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {

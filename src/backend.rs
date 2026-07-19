@@ -1,8 +1,8 @@
-use crate::async_rt;
 use crate::codec::{FramedIo, Message, ZmqFramedRead};
 use crate::fair_queue::QueueInner;
 use crate::util::PeerIdentity;
 use crate::write_queue::write_message_queue;
+use crate::{async_rt, Endpoint};
 use crate::{
     MultiPeerBackend, SocketBackend, SocketEvent, SocketOptions, SocketType, ZmqError, ZmqResult,
 };
@@ -23,6 +23,7 @@ const PEER_SEND_QUEUE_CAPACITY: usize = 100_000;
 
 pub(crate) struct Peer {
     pub(crate) send_queue: mpsc::Sender<Message>,
+    pub(crate) endpoint: Endpoint,
 }
 
 #[derive(Clone)]
@@ -285,7 +286,12 @@ impl SocketBackend for GenericSocketBackend {
 
 #[async_trait]
 impl MultiPeerBackend for GenericSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(
+        self: Arc<Self>,
+        peer_id: &PeerIdentity,
+        io: FramedIo,
+        endpoint: Endpoint,
+    ) {
         let (recv_queue, send_queue) = io.into_parts();
         let (queue_sender, queue_receiver) = mpsc::channel(PEER_SEND_QUEUE_CAPACITY);
         self.peers
@@ -293,6 +299,7 @@ impl MultiPeerBackend for GenericSocketBackend {
                 peer_id.clone(),
                 Peer {
                     send_queue: queue_sender,
+                    endpoint,
                 },
             )
             .await;
@@ -318,7 +325,14 @@ impl MultiPeerBackend for GenericSocketBackend {
         };
     }
 
+    fn peer_list_by_endpoint(&self, endpoint: &Endpoint) -> Vec<PeerIdentity> {
+        crate::util::peer_list_by_endpoint(&self.peers, endpoint, |peer| &peer.endpoint)
+    }
+
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+        if let Some(monitor) = self.monitor().lock().as_mut() {
+            let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
+        }
         self.peers.remove_sync(peer_id);
         self.refresh_single_peer_cache();
         match &self.fair_queue_inner {
@@ -340,7 +354,7 @@ impl MultiPeerBackend for GenericSocketBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ZmqMessage;
+    use crate::{TryIntoEndpoint, ZmqMessage};
 
     use bytes::Bytes;
     use futures::StreamExt;
@@ -361,9 +375,16 @@ mod tests {
         peer_id: PeerIdentity,
     ) -> (PeerIdentity, mpsc::Receiver<Message>) {
         let (send_queue, recv_queue) = mpsc::channel(8);
+        let endpoint = TryIntoEndpoint::try_into("tcp://127.0.0.1:1234").unwrap();
         backend
             .peers
-            .upsert_async(peer_id.clone(), Peer { send_queue })
+            .upsert_async(
+                peer_id.clone(),
+                Peer {
+                    send_queue,
+                    endpoint,
+                },
+            )
             .await;
         backend.refresh_single_peer_cache();
         backend.round_robin.push(peer_id.clone());
@@ -442,12 +463,19 @@ mod tests {
             GenericSocketBackend::with_options(None, SocketType::PUSH, SocketOptions::default());
         let peer_id: PeerIdentity = "full-peer".parse().expect("peer id");
         let (mut send_queue, mut recv_queue) = mpsc::channel(1);
+        let endpoint = TryIntoEndpoint::try_into("tcp://127.0.0.1:1234").unwrap();
         send_queue
             .try_send(message_with_frame(b"prefilled"))
             .expect("prefill peer queue");
         backend
             .peers
-            .upsert_async(peer_id.clone(), Peer { send_queue })
+            .upsert_async(
+                peer_id.clone(),
+                Peer {
+                    send_queue,
+                    endpoint,
+                },
+            )
             .await;
         backend.refresh_single_peer_cache();
         backend.round_robin.push(peer_id.clone());
@@ -475,10 +503,17 @@ mod tests {
             GenericSocketBackend::with_options(None, SocketType::PUSH, SocketOptions::default());
         let peer_id: PeerIdentity = "closed-peer".parse().expect("peer id");
         let (send_queue, recv_queue) = mpsc::channel(1);
+        let endpoint = TryIntoEndpoint::try_into("tcp://127.0.0.1:1234").unwrap();
         drop(recv_queue);
         backend
             .peers
-            .upsert_async(peer_id.clone(), Peer { send_queue })
+            .upsert_async(
+                peer_id.clone(),
+                Peer {
+                    send_queue,
+                    endpoint,
+                },
+            )
             .await;
         backend.refresh_single_peer_cache();
         backend.round_robin.push(peer_id.clone());

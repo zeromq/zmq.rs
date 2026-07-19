@@ -1,25 +1,25 @@
 use crate::backend::GenericSocketBackend;
 use crate::codec::{Message, ZmqFramedRead};
 use crate::fair_queue::FairQueue;
-use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{
-    Endpoint, MultiPeerBackend, Socket, SocketEvent, SocketOptions, SocketRecv, SocketType,
-    ZmqError, ZmqMessage, ZmqResult,
+    MultiPeerBackend, Socket, SocketEvent, SocketOptions, SocketRecv, SocketType, ZmqError,
+    ZmqMessage, ZmqResult,
 };
+use crate::{SocketBinds, SocketConnects};
 
 use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::StreamExt;
 
-use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct PullSocket {
     backend: Arc<GenericSocketBackend>,
     fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
-    binds: HashMap<Endpoint, AcceptStopHandle>,
+    binds: SocketBinds,
+    connects: SocketConnects,
 }
 
 #[async_trait]
@@ -43,6 +43,7 @@ impl Socket for PullSocket {
             backend,
             fair_queue,
             binds: HashMap::new(),
+            connects: HashMap::new(),
         }
     }
 
@@ -50,8 +51,12 @@ impl Socket for PullSocket {
         self.backend.clone()
     }
 
-    fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle, RandomState> {
+    fn binds(&mut self) -> &mut SocketBinds {
         &mut self.binds
+    }
+
+    fn connects(&mut self) -> &mut SocketConnects {
+        &mut self.connects
     }
 
     fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {

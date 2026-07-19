@@ -3,13 +3,13 @@ use crate::endpoint::Endpoint;
 use crate::error::ZmqResult;
 use crate::fair_queue::{FairQueue, QueueInner};
 use crate::message::*;
-use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{CaptureSocket, SocketOptions};
 use crate::{
     MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketRecv, SocketSend, SocketType,
     ZmqError,
 };
+use crate::{SocketBinds, SocketConnects};
 
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -25,6 +25,7 @@ use std::sync::Arc;
 pub(crate) struct XPubSubscriber {
     pub(crate) subscriptions: Vec<Vec<u8>>,
     pub(crate) send_queue: Arc<AsyncMutex<Pin<Box<ZmqFramedWrite>>>>,
+    pub(crate) endpoint: Endpoint,
 }
 
 pub(crate) struct XPubSocketBackend {
@@ -91,7 +92,12 @@ impl SocketBackend for XPubSocketBackend {
 
 #[async_trait]
 impl MultiPeerBackend for XPubSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
+    async fn peer_connected(
+        self: Arc<Self>,
+        peer_id: &PeerIdentity,
+        io: FramedIo,
+        endpoint: Endpoint,
+    ) {
         let (recv_queue, send_queue) = io.into_parts();
 
         self.subscribers
@@ -100,6 +106,7 @@ impl MultiPeerBackend for XPubSocketBackend {
                 XPubSubscriber {
                     subscriptions: vec![],
                     send_queue: Arc::new(AsyncMutex::new(Box::pin(send_queue))),
+                    endpoint,
                 },
             )
             .await;
@@ -109,8 +116,15 @@ impl MultiPeerBackend for XPubSocketBackend {
             .insert(peer_id.clone(), recv_queue);
     }
 
+    fn peer_list_by_endpoint(&self, endpoint: &Endpoint) -> Vec<PeerIdentity> {
+        crate::util::peer_list_by_endpoint(&self.subscribers, endpoint, |sub| &sub.endpoint)
+    }
+
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         log::info!("Client disconnected {:?}", peer_id);
+        if let Some(monitor) = self.monitor().lock().as_mut() {
+            let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
+        }
         self.subscribers.remove_sync(peer_id);
         self.fair_queue_inner.lock().remove(peer_id);
     }
@@ -119,7 +133,8 @@ impl MultiPeerBackend for XPubSocketBackend {
 pub struct XPubSocket {
     pub(crate) backend: Arc<XPubSocketBackend>,
     fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
-    binds: HashMap<Endpoint, AcceptStopHandle>,
+    binds: SocketBinds,
+    connects: SocketConnects,
 }
 
 impl Drop for XPubSocket {
@@ -228,6 +243,7 @@ impl Socket for XPubSocket {
             backend,
             fair_queue,
             binds: HashMap::new(),
+            connects: HashMap::new(),
         }
     }
 
@@ -235,8 +251,12 @@ impl Socket for XPubSocket {
         self.backend.clone()
     }
 
-    fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle> {
+    fn binds(&mut self) -> &mut SocketBinds {
         &mut self.binds
+    }
+
+    fn connects(&mut self) -> &mut SocketConnects {
+        &mut self.connects
     }
 
     fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {

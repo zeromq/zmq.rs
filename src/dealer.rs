@@ -7,19 +7,20 @@ use crate::{
     CaptureSocket, Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketOptions,
     SocketRecv, SocketSend, SocketType, ZmqError, ZmqMessage, ZmqResult,
 };
+use crate::{SocketBinds, SocketConnects};
 
 use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::StreamExt;
 
-use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct DealerSocket {
     backend: Arc<GenericSocketBackend>,
     fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
-    binds: HashMap<Endpoint, AcceptStopHandle>,
+    binds: SocketBinds,
+    connects: SocketConnects,
 }
 
 impl Drop for DealerSocket {
@@ -49,6 +50,7 @@ impl Socket for DealerSocket {
             backend,
             fair_queue,
             binds: HashMap::new(),
+            connects: HashMap::new(),
         }
     }
 
@@ -56,8 +58,12 @@ impl Socket for DealerSocket {
         self.backend.clone()
     }
 
-    fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle, RandomState> {
+    fn binds(&mut self) -> &mut SocketBinds {
         &mut self.binds
+    }
+
+    fn connects(&mut self) -> &mut SocketConnects {
+        &mut self.connects
     }
 
     fn monitor(&mut self) -> mpsc::Receiver<SocketEvent> {

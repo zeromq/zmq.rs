@@ -50,6 +50,12 @@ pub mod __bench {
 
     pub use super::fair_queue::FairQueue;
 
+    /// Bench peers are synthetic and never disconnected by endpoint, so they
+    /// all share one placeholder.
+    fn bench_endpoint() -> super::Endpoint {
+        super::TryIntoEndpoint::try_into("tcp://127.0.0.1:1234").expect("valid endpoint")
+    }
+
     pub struct BenchRoundRobinBackend {
         backend: GenericSocketBackend,
         receivers: Vec<mpsc::Receiver<Message>>,
@@ -71,7 +77,13 @@ pub mod __bench {
                 let (send_queue, recv_queue) = mpsc::channel(queue_capacity);
                 backend
                     .peers
-                    .upsert_async(peer_id.clone(), Peer { send_queue })
+                    .upsert_async(
+                        peer_id.clone(),
+                        Peer {
+                            send_queue,
+                            endpoint: bench_endpoint(),
+                        },
+                    )
                     .await;
                 backend.round_robin.push(peer_id);
                 receivers.push(recv_queue);
@@ -128,6 +140,7 @@ pub mod __bench {
                             subscriptions: subscriptions.clone(),
                             send_queue,
                             _subscription_coro_stop: stop_sender,
+                            endpoint: bench_endpoint(),
                         },
                     )
                     .await;
@@ -204,6 +217,7 @@ pub use crate::xpub::*;
 pub use crate::xsub::*;
 
 use crate::codec::*;
+use crate::reconnect::ReconnectHandle;
 use crate::transport::AcceptStopHandle;
 use util::PeerIdentity;
 
@@ -369,11 +383,36 @@ impl SocketOptions {
     }
 }
 
+/// Handle to the background work owned by a single `connect()`ed endpoint.
+///
+/// Mirrors [`AcceptStopHandle`], which plays the same role for `bind()`. Socket
+/// types with no reconnection support store `None`, so that one uniform map can
+/// cover every socket type.
+pub struct ConnectStopHandle(pub(crate) Option<ReconnectHandle>);
+
+/// The endpoints a socket is bound to, keyed by the *resolved* endpoint.
+pub(crate) type SocketBinds = HashMap<Endpoint, AcceptStopHandle>;
+
+/// The endpoints a socket is connected to, keyed by the endpoint originally
+/// passed to `connect()`.
+pub(crate) type SocketConnects = HashMap<Endpoint, ConnectStopHandle>;
+
 #[async_trait]
 pub trait MultiPeerBackend: SocketBackend {
     /// This should not be public..
     /// Find a better way of doing this
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo);
+    async fn peer_connected(
+        self: Arc<Self>,
+        peer_id: &PeerIdentity,
+        io: FramedIo,
+        endpoint: Endpoint,
+    );
+
+    /// The peers currently connected via `endpoint`.
+    ///
+    /// The backend is the source of truth here rather than the socket, because
+    /// reconnection replaces a peer's identity while keeping its endpoint.
+    fn peer_list_by_endpoint(&self, endpoint: &Endpoint) -> Vec<PeerIdentity>;
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity);
 }
@@ -426,16 +465,20 @@ pub trait Socket: Sized + Send {
     /// Returns the endpoint resolved to the exact bound location if applicable
     /// (port # resolved, for example).
     async fn bind(&mut self, endpoint: &str) -> ZmqResult<Endpoint> {
-        let endpoint = TryIntoEndpoint::try_into(endpoint)?;
+        let original_endpoint = TryIntoEndpoint::try_into(endpoint)?;
+        let original_endpoint_clone = original_endpoint.clone();
 
         let cloned_backend = self.backend();
         let cback = move |result: ZmqResult<(FramedIo, Endpoint)>| {
             let cloned_backend = cloned_backend.clone();
+            let cloned_endpoint = original_endpoint_clone.clone();
             async move {
                 let result = match result {
-                    Ok((socket, endpoint)) => util::peer_connected(socket, cloned_backend.clone())
-                        .await
-                        .map(|peer_id| (endpoint, peer_id)),
+                    Ok((socket, endpoint)) => {
+                        util::peer_connected(socket, cloned_backend.clone(), cloned_endpoint)
+                            .await
+                            .map(|peer_id| (endpoint, peer_id))
+                    }
                     Err(e) => Err(e),
                 };
 
@@ -454,7 +497,7 @@ pub trait Socket: Sized + Send {
             }
         };
 
-        let (endpoint, stop_handle) = transport::begin_accept(endpoint, cback).await?;
+        let (endpoint, stop_handle) = transport::begin_accept(original_endpoint, cback).await?;
 
         if let Some(monitor) = self.backend().monitor().lock().as_mut() {
             let _ = monitor.try_send(SocketEvent::Listening(endpoint.clone()));
@@ -464,7 +507,9 @@ pub trait Socket: Sized + Send {
         Ok(endpoint)
     }
 
-    fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle>;
+    fn binds(&mut self) -> &mut SocketBinds;
+
+    fn connects(&mut self) -> &mut SocketConnects;
 
     /// Unbinds the endpoint, blocking until the associated endpoint is no
     /// longer in use
@@ -472,7 +517,8 @@ pub trait Socket: Sized + Send {
     /// # Errors
     /// May give a `ZmqError::NoSuchBind` if `endpoint` isn't bound. May also
     /// give any other zmq errors encountered when attempting to disconnect
-    async fn unbind(&mut self, endpoint: Endpoint) -> ZmqResult<()> {
+    async fn unbind(&mut self, endpoint: impl TryIntoEndpoint) -> ZmqResult<()> {
+        let endpoint = TryIntoEndpoint::try_into(endpoint)?;
         let stop_handle = self.binds().remove(&endpoint);
         let stop_handle = stop_handle.ok_or(ZmqError::NoSuchBind(endpoint))?;
         stop_handle.0.shutdown().await
@@ -493,16 +539,24 @@ pub trait Socket: Sized + Send {
     /// Connects to the given endpoint.
     async fn connect(&mut self, endpoint: &str) -> ZmqResult<()> {
         let backend = self.backend();
-        let endpoint = TryIntoEndpoint::try_into(endpoint)?;
+        let original_endpoint = TryIntoEndpoint::try_into(endpoint)?;
+        let original_endpoint_clone = original_endpoint.clone();
         let connect_timeout = backend.socket_options().connect_timeout;
 
         let (socket, endpoint, peer_id) = util::run_with_timeout(connect_timeout, async {
-            let (mut socket, endpoint) = util::connect_forever(endpoint).await?;
+            let (mut socket, endpoint) = util::connect_forever(original_endpoint).await?;
             let peer_id = util::peer_handshake(&mut socket, backend.clone()).await?;
             Ok((socket, endpoint, peer_id))
         })
         .await?;
-        backend.peer_connected(&peer_id, socket).await;
+        backend
+            .peer_connected(&peer_id, socket, original_endpoint_clone.clone())
+            .await;
+
+        // Keyed by the endpoint as given, not as resolved: `disconnect()` must
+        // accept the same string that was passed to `connect()`.
+        self.connects()
+            .insert(original_endpoint_clone, ConnectStopHandle(None));
 
         if let Some(monitor) = self.backend().monitor().lock().as_mut() {
             let _ = monitor.try_send(SocketEvent::Connected(endpoint, peer_id));
@@ -520,25 +574,57 @@ pub trait Socket: Sized + Send {
 
     /// Disconnects from the given endpoint, blocking until finished.
     ///
+    /// The endpoint must be the one originally passed to [`Socket::connect`].
+    ///
     /// # Errors
     /// May give a `ZmqError::NoSuchConnection` if `endpoint` isn't connected.
     /// May also give any other zmq errors encountered when attempting to
     /// disconnect
-    // TODO: async fn disconnect(&mut self, endpoint: impl TryIntoEndpoint + 'async_trait) ->
-    // ZmqResult<()>;
+    async fn disconnect(&mut self, endpoint: impl TryIntoEndpoint) -> ZmqResult<()> {
+        let endpoint = TryIntoEndpoint::try_into(endpoint)?;
+        let stop_handle = self.connects().remove(&endpoint);
+        let stop_handle = stop_handle.ok_or(ZmqError::NoSuchConnection(endpoint.clone()))?;
 
-    /// Disconnects all connections, blocking until finished.
-    // TODO: async fn disconnect_all(&mut self) -> ZmqResult<()>;
+        // Stop reconnection before tearing the peers down, for two reasons.
+        // First, `peer_disconnected` notifies the reconnect task, which would
+        // otherwise immediately reconnect to the endpoint we are disconnecting
+        // from. Second, this ordering is what lets a reconnect attempt already
+        // in flight notice it has been cancelled -- `shutdown()` sets its flag
+        // synchronously, so a peer registered after the scan below still gets
+        // torn down by the reconnect task itself. Do not reorder these.
+        if let Some(reconnect) = stop_handle.0 {
+            reconnect.shutdown();
+        }
 
-    /// Closes the socket, blocking until all associated binds are closed.
-    /// This is equivalent to `drop()`, but with the benefit of blocking until
-    /// resources are released, and getting any underlying errors.
+        let backend = self.backend();
+        for peer_id in backend.peer_list_by_endpoint(&endpoint) {
+            backend.peer_disconnected(&peer_id);
+        }
+        Ok(())
+    }
+
+    /// Disconnects all connected endpoints, blocking until finished.
+    async fn disconnect_all(&mut self) -> Vec<ZmqError> {
+        let mut errs = Vec::new();
+        let endpoints: Vec<_> = self.connects().keys().cloned().collect();
+        for endpoint in endpoints {
+            if let Err(err) = self.disconnect(endpoint).await {
+                errs.push(err);
+            }
+        }
+        errs
+    }
+
+    /// Closes the socket, blocking until all associated connections and binds
+    /// are closed. This is equivalent to `drop()`, but with the benefit of
+    /// blocking until resources are released, and getting any underlying
+    /// errors.
     ///
     /// Returns any encountered errors.
-    // TODO: Call disconnect_all() when added
     async fn close(mut self) -> Vec<ZmqError> {
-        // self.disconnect_all().await?;
-        self.unbind_all().await
+        let mut errs = self.disconnect_all().await;
+        errs.extend(self.unbind_all().await);
+        errs
     }
 }
 
