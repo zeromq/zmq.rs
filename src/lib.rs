@@ -585,9 +585,13 @@ pub trait Socket: Sized + Send {
         let stop_handle = self.connects().remove(&endpoint);
         let stop_handle = stop_handle.ok_or(ZmqError::NoSuchConnection(endpoint.clone()))?;
 
-        // Stop reconnection before tearing the peers down: `peer_disconnected`
-        // notifies the reconnect task, which would otherwise immediately
-        // reconnect to the endpoint we are disconnecting from.
+        // Stop reconnection before tearing the peers down, for two reasons.
+        // First, `peer_disconnected` notifies the reconnect task, which would
+        // otherwise immediately reconnect to the endpoint we are disconnecting
+        // from. Second, this ordering is what lets a reconnect attempt already
+        // in flight notice it has been cancelled -- `shutdown()` sets its flag
+        // synchronously, so a peer registered after the scan below still gets
+        // torn down by the reconnect task itself. Do not reorder these.
         if let Some(reconnect) = stop_handle.0 {
             reconnect.shutdown();
         }
