@@ -286,13 +286,6 @@ impl SocketBackend for GenericSocketBackend {
 #[async_trait]
 impl MultiPeerBackend for GenericSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
-        // PAIR allows only a single peer; further connections are rejected.
-        if self.socket_type == SocketType::PAIR && !self.peers.is_empty() {
-            log::debug!("PAIR socket rejecting additional peer {peer_id:?}");
-            drop(io);
-            return;
-        }
-
         let (recv_queue, send_queue) = io.into_parts();
         let (queue_sender, queue_receiver) = mpsc::channel(PEER_SEND_QUEUE_CAPACITY);
         self.peers
