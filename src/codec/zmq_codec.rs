@@ -182,7 +182,7 @@ pub(crate) mod tests {
             .expect("decode success")
             .expect("single message");
 
-        eprintln!("{:?}", &message);
+        eprintln!("{:?}", message);
         match message {
             Message::Message(m) => {
                 assert_eq!(6, m.into_vecdeque().len());
@@ -205,7 +205,7 @@ pub(crate) mod tests {
             .decode(&mut bytes)
             .expect("decode success")
             .expect("single message");
-        eprintln!("{:?}", &message);
+        eprintln!("{:?}", message);
         assert_eq!(bytes.len(), 0);
         match message {
             Message::Message(m) => {

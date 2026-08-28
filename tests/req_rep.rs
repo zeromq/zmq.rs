@@ -36,7 +36,7 @@ mod test {
         helpers::run_rep_server(rep_socket, num_messages).await?;
 
         let events: Vec<_> = monitor.collect().await;
-        assert_eq!(2, events.len(), "{:?}", &events);
+        assert_eq!(2, events.len(), "{:?}", events);
 
         Ok(())
     }

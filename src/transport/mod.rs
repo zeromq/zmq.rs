@@ -8,6 +8,32 @@ use crate::endpoint::Endpoint;
 use crate::task_handle::TaskHandle;
 use crate::ZmqResult;
 
+/// An already-bound transport listener that a `ZeroMQ` socket can adopt.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum Listener {
+    /// A TCP listener bound by the caller.
+    #[cfg(feature = "tcp-transport")]
+    Tcp(std::net::TcpListener),
+    /// A Unix-domain listener bound by the caller.
+    #[cfg(all(feature = "ipc-transport", target_family = "unix"))]
+    Ipc(std::os::unix::net::UnixListener),
+}
+
+#[cfg(feature = "tcp-transport")]
+impl From<std::net::TcpListener> for Listener {
+    fn from(listener: std::net::TcpListener) -> Self {
+        Self::Tcp(listener)
+    }
+}
+
+#[cfg(all(feature = "ipc-transport", target_family = "unix"))]
+impl From<std::os::unix::net::UnixListener> for Listener {
+    fn from(listener: std::os::unix::net::UnixListener) -> Self {
+        Self::Ipc(listener)
+    }
+}
+
 macro_rules! do_if_enabled {
     ($feature:literal, $body:expr) => {{
         #[cfg(feature = $feature)]
@@ -86,6 +112,21 @@ where
             #[cfg(not(all(feature = "ipc-transport", any(target_family = "unix", windows))))]
             panic!("IPC transport is not available on this platform")
         }
+    }
+}
+
+pub(crate) async fn begin_accept_listener<T>(
+    listener: Listener,
+    cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
+) -> ZmqResult<(Endpoint, AcceptStopHandle)>
+where
+    T: std::future::Future<Output = ()> + Send + 'static,
+{
+    match listener {
+        #[cfg(feature = "tcp-transport")]
+        Listener::Tcp(listener) => tcp::begin_accept_listener(listener, cback).await,
+        #[cfg(all(feature = "ipc-transport", target_family = "unix"))]
+        Listener::Ipc(listener) => ipc::begin_accept_listener(listener, cback).await,
     }
 }
 

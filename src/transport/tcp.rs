@@ -30,7 +30,7 @@ pub(crate) async fn connect(host: &Host, port: Port) -> ZmqResult<(FramedIo, End
 }
 
 pub(crate) async fn begin_accept<T>(
-    mut host: Host,
+    host: Host,
     port: Port,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
 ) -> ZmqResult<(Endpoint, AcceptStopHandle)>
@@ -39,6 +39,37 @@ where
 {
     let listener = TcpListener::bind((host.to_string().as_str(), port)).await?;
     let resolved_addr = listener.local_addr()?;
+    debug_assert_ne!(resolved_addr.port(), 0);
+    let endpoint = Endpoint::Tcp(host, resolved_addr.port());
+    begin_accept_bound(listener, endpoint, cback).await
+}
+
+pub(crate) async fn begin_accept_listener<T>(
+    listener: std::net::TcpListener,
+    cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
+) -> ZmqResult<(Endpoint, AcceptStopHandle)>
+where
+    T: std::future::Future<Output = ()> + Send + 'static,
+{
+    let resolved_addr = listener.local_addr()?;
+    listener.set_nonblocking(true)?;
+
+    #[cfg(feature = "tokio-runtime")]
+    let listener = TcpListener::from_std(listener)?;
+    #[cfg(any(feature = "async-std-runtime", feature = "async-dispatcher-runtime"))]
+    let listener = TcpListener::from(listener);
+
+    begin_accept_bound(listener, Endpoint::from_tcp_addr(resolved_addr), cback).await
+}
+
+async fn begin_accept_bound<T>(
+    listener: TcpListener,
+    endpoint: Endpoint,
+    cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
+) -> ZmqResult<(Endpoint, AcceptStopHandle)>
+where
+    T: std::future::Future<Output = ()> + Send + 'static,
+{
     let (stop_channel, stop_callback) = futures::channel::oneshot::channel::<()>();
     let task_handle = async_rt::task::spawn(async move {
         let mut stop_callback = stop_callback.fuse();
@@ -70,18 +101,8 @@ where
         }
         Ok(())
     });
-    debug_assert_ne!(resolved_addr.port(), 0);
-    let port = resolved_addr.port();
-    let resolved_host: Host = resolved_addr.ip().into();
-    if let Host::Ipv4(ip) = host {
-        debug_assert_eq!(ip, resolved_addr.ip());
-        host = resolved_host;
-    } else if let Host::Ipv6(ip) = host {
-        debug_assert_eq!(ip, resolved_addr.ip());
-        host = resolved_host;
-    }
     Ok((
-        Endpoint::Tcp(host, port),
+        endpoint,
         AcceptStopHandle(TaskHandle::new(stop_channel, task_handle)),
     ))
 }

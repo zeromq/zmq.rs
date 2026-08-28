@@ -55,9 +55,9 @@ mod test {
         let router_events: Vec<_> = router_monitor.collect().await;
         let dealer_events: Vec<_> = dealer_monitor.collect().await;
         let rep_events: Vec<_> = rep_monitor.collect().await;
-        assert_eq!(2, router_events.len(), "{:?}", &router_events);
-        assert_eq!(2, dealer_events.len(), "{:?}", &dealer_events);
-        assert_eq!(1, rep_events.len(), "{:?}", &rep_events);
+        assert_eq!(2, router_events.len(), "{:?}", router_events);
+        assert_eq!(2, dealer_events.len(), "{:?}", dealer_events);
+        assert_eq!(1, rep_events.len(), "{:?}", rep_events);
 
         Ok(())
     }

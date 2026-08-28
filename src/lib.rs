@@ -200,6 +200,7 @@ pub use crate::rep::*;
 pub use crate::req::*;
 pub use crate::router::*;
 pub use crate::sub::*;
+pub use crate::transport::Listener;
 pub use crate::xpub::*;
 pub use crate::xsub::*;
 
@@ -409,6 +410,56 @@ pub trait SocketSend {
 /// in [proxy] function as a capture parameter
 pub trait CaptureSocket: SocketSend {}
 
+enum BindTarget {
+    Endpoint(Endpoint),
+    Listener(Listener),
+}
+
+async fn bind_inner<S>(socket: &mut S, target: BindTarget) -> ZmqResult<Endpoint>
+where
+    S: Socket,
+{
+    let backend = socket.backend();
+    let callback_backend = backend.clone();
+    let callback = move |result: ZmqResult<(FramedIo, Endpoint)>| {
+        let backend = callback_backend.clone();
+        async move {
+            let result = match result {
+                Ok((io, endpoint)) => util::peer_connected(io, backend.clone())
+                    .await
+                    .map(|peer_id| (endpoint, peer_id)),
+                Err(error) => Err(error),
+            };
+
+            match result {
+                Ok((endpoint, peer_id)) => {
+                    if let Some(monitor) = backend.monitor().lock().as_mut() {
+                        let _ = monitor.try_send(SocketEvent::Accepted(endpoint, peer_id));
+                    }
+                }
+                Err(error) => {
+                    if let Some(monitor) = backend.monitor().lock().as_mut() {
+                        let _ = monitor.try_send(SocketEvent::AcceptFailed(error));
+                    }
+                }
+            }
+        }
+    };
+
+    let (endpoint, stop_handle) = match target {
+        BindTarget::Endpoint(endpoint) => transport::begin_accept(endpoint, callback).await?,
+        BindTarget::Listener(listener) => {
+            transport::begin_accept_listener(listener, callback).await?
+        }
+    };
+
+    if let Some(monitor) = backend.monitor().lock().as_mut() {
+        let _ = monitor.try_send(SocketEvent::Listening(endpoint.clone()));
+    }
+    socket.binds().insert(endpoint.clone(), stop_handle);
+    Ok(endpoint)
+}
+
 #[allow(clippy::empty_line_after_outer_attr)]
 #[async_trait]
 pub trait Socket: Sized + Send {
@@ -427,41 +478,30 @@ pub trait Socket: Sized + Send {
     /// (port # resolved, for example).
     async fn bind(&mut self, endpoint: &str) -> ZmqResult<Endpoint> {
         let endpoint = TryIntoEndpoint::try_into(endpoint)?;
+        bind_inner(self, BindTarget::Endpoint(endpoint)).await
+    }
 
-        let cloned_backend = self.backend();
-        let cback = move |result: ZmqResult<(FramedIo, Endpoint)>| {
-            let cloned_backend = cloned_backend.clone();
-            async move {
-                let result = match result {
-                    Ok((socket, endpoint)) => util::peer_connected(socket, cloned_backend.clone())
-                        .await
-                        .map(|peer_id| (endpoint, peer_id)),
-                    Err(e) => Err(e),
-                };
-
-                match result {
-                    Ok((endpoint, peer_id)) => {
-                        if let Some(monitor) = cloned_backend.monitor().lock().as_mut() {
-                            let _ = monitor.try_send(SocketEvent::Accepted(endpoint, peer_id));
-                        }
-                    }
-                    Err(e) => {
-                        if let Some(monitor) = cloned_backend.monitor().lock().as_mut() {
-                            let _ = monitor.try_send(SocketEvent::AcceptFailed(e));
-                        }
-                    }
-                }
-            }
-        };
-
-        let (endpoint, stop_handle) = transport::begin_accept(endpoint, cback).await?;
-
-        if let Some(monitor) = self.backend().monitor().lock().as_mut() {
-            let _ = monitor.try_send(SocketEvent::Listening(endpoint.clone()));
-        }
-
-        self.binds().insert(endpoint.clone(), stop_handle);
-        Ok(endpoint)
+    /// Adopts an already-bound transport listener and starts accepting new
+    /// connections on it.
+    ///
+    /// The socket takes ownership of the listener. The listener remains bound
+    /// until the returned endpoint is unbound or the socket is closed. Both
+    /// blocking and nonblocking standard-library listeners are accepted.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use zeromq::{RouterSocket, Socket};
+    ///
+    /// # async fn example() -> zeromq::ZmqResult<()> {
+    /// let listener = std::net::TcpListener::bind(("127.0.0.1", 0))?;
+    /// let mut socket = RouterSocket::new();
+    /// let endpoint = socket.bind_listener(listener).await?;
+    /// println!("listening on {endpoint}");
+    /// # Ok(())
+    /// # }
+    /// ```
+    async fn bind_listener(&mut self, listener: impl Into<Listener> + Send) -> ZmqResult<Endpoint> {
+        bind_inner(self, BindTarget::Listener(listener.into())).await
     }
 
     fn binds(&mut self) -> &mut HashMap<Endpoint, AcceptStopHandle>;

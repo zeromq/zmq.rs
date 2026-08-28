@@ -59,7 +59,7 @@ mod test {
             let reply = our_req.recv().await.expect("Failed to recv");
 
             let reply_payload: String = reply.try_into().unwrap();
-            println!("Received reply: {}", &reply_payload);
+            println!("Received reply: {}", reply_payload);
             assert_eq!(reply_payload, format!("Reply: {}", i));
         }
     }

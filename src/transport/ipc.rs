@@ -34,18 +34,15 @@ trait UnixSocketAddrExt {
     fn as_pathname(&self) -> Option<&Path>;
 }
 
-#[cfg(all(feature = "tokio-runtime", target_family = "unix"))]
-impl UnixSocketAddrExt for tokio::net::unix::SocketAddr {
+#[cfg(target_family = "unix")]
+impl UnixSocketAddrExt for std::os::unix::net::SocketAddr {
     fn as_pathname(&self) -> Option<&Path> {
         self.as_pathname()
     }
 }
 
-#[cfg(all(
-    any(feature = "async-std-runtime", feature = "async-dispatcher-runtime"),
-    target_family = "unix"
-))]
-impl UnixSocketAddrExt for async_std::os::unix::net::SocketAddr {
+#[cfg(all(feature = "tokio-runtime", target_family = "unix"))]
+impl UnixSocketAddrExt for tokio::net::unix::SocketAddr {
     fn as_pathname(&self) -> Option<&Path> {
         self.as_pathname()
     }
@@ -95,13 +92,41 @@ where
     let listener = UnixListener::bind(path)?;
 
     #[cfg(target_family = "unix")]
-    let resolved_addr = listener.local_addr()?;
-    #[cfg(target_family = "unix")]
-    let resolved_addr = pathname_from_unix_addr(resolved_addr);
-
+    let resolved_addr = pathname_from_unix_addr(listener.local_addr()?);
     #[cfg(windows)]
     let resolved_addr = Some(path.to_owned());
 
+    begin_accept_bound(listener, resolved_addr, cback).await
+}
+
+#[cfg(target_family = "unix")]
+pub(crate) async fn begin_accept_listener<T>(
+    listener: std::os::unix::net::UnixListener,
+    cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
+) -> ZmqResult<(Endpoint, AcceptStopHandle)>
+where
+    T: std::future::Future<Output = ()> + Send + 'static,
+{
+    let resolved_addr = listener.local_addr()?;
+    let resolved_addr = pathname_from_unix_addr(resolved_addr);
+    listener.set_nonblocking(true)?;
+
+    #[cfg(feature = "tokio-runtime")]
+    let listener = UnixListener::from_std(listener)?;
+    #[cfg(any(feature = "async-std-runtime", feature = "async-dispatcher-runtime"))]
+    let listener = UnixListener::from(listener);
+
+    begin_accept_bound(listener, resolved_addr, cback).await
+}
+
+async fn begin_accept_bound<T>(
+    listener: UnixListener,
+    resolved_addr: Option<std::path::PathBuf>,
+    cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
+) -> ZmqResult<(Endpoint, AcceptStopHandle)>
+where
+    T: std::future::Future<Output = ()> + Send + 'static,
+{
     let listener_addr = resolved_addr.clone();
     let (stop_channel, stop_callback) = oneshot::channel::<()>();
     let task_handle = async_rt::task::spawn(async move {
