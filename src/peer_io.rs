@@ -84,7 +84,7 @@ impl PeerSendError {
                     || error.kind() == std::io::ErrorKind::ConnectionReset
             }
             Self::Channel(error) => error.is_disconnected(),
-            _ => false,
+            Self::Codec(_) => false,
         }
     }
 }
