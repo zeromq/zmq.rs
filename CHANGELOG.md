@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Runtime-neutral adoption of already-bound TCP and Unix-domain listeners via
+  `Socket::bind_listener`
+
 ## [0.6.0] - 2026-05-04
 
 ### Added

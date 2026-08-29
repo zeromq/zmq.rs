@@ -11,6 +11,32 @@ use crate::peer_io::PeerIo;
 use crate::task_handle::TaskHandle;
 use crate::{ZmqError, ZmqResult};
 
+/// An already-bound transport listener that a `ZeroMQ` socket can adopt.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum Listener {
+    /// A TCP listener bound by the caller.
+    #[cfg(feature = "tcp-transport")]
+    Tcp(std::net::TcpListener),
+    /// A Unix-domain listener bound by the caller.
+    #[cfg(all(feature = "ipc-transport", target_family = "unix"))]
+    Ipc(std::os::unix::net::UnixListener),
+}
+
+#[cfg(feature = "tcp-transport")]
+impl From<std::net::TcpListener> for Listener {
+    fn from(listener: std::net::TcpListener) -> Self {
+        Self::Tcp(listener)
+    }
+}
+
+#[cfg(all(feature = "ipc-transport", target_family = "unix"))]
+impl From<std::os::unix::net::UnixListener> for Listener {
+    fn from(listener: std::os::unix::net::UnixListener) -> Self {
+        Self::Ipc(listener)
+    }
+}
+
 macro_rules! do_if_enabled {
     ($feature:literal, $body:expr) => {{
         #[cfg(feature = $feature)]
@@ -117,6 +143,33 @@ where
                 "inproc transport requires a Context; set it via SocketOptions::context",
             ))?;
             inproc::begin_accept(name, context, upstream_cback).await
+        }
+    }
+}
+
+pub(crate) async fn begin_accept_listener<T>(
+    listener: Listener,
+    upstream_cback: impl Fn(ZmqResult<(PeerIo, Endpoint)>) -> T + Send + 'static,
+) -> ZmqResult<(Endpoint, AcceptStopHandle)>
+where
+    T: std::future::Future<Output = ()> + Send + 'static,
+{
+    match listener {
+        #[cfg(feature = "tcp-transport")]
+        Listener::Tcp(listener) => {
+            let cback = move |result: ZmqResult<(FramedIo, Endpoint)>| {
+                let result = result.map(|(io, endpoint)| (PeerIo::Framed(io), endpoint));
+                upstream_cback(result)
+            };
+            tcp::begin_accept_listener(listener, cback).await
+        }
+        #[cfg(all(feature = "ipc-transport", target_family = "unix"))]
+        Listener::Ipc(listener) => {
+            let cback = move |result: ZmqResult<(FramedIo, Endpoint)>| {
+                let result = result.map(|(io, endpoint)| (PeerIo::Framed(io), endpoint));
+                upstream_cback(result)
+            };
+            ipc::begin_accept_listener(listener, cback).await
         }
     }
 }

@@ -2,9 +2,12 @@
 mod test {
 
     use bytes::Bytes;
+    use futures::future::{select, Either};
+    use futures::pin_mut;
+    use futures::StreamExt;
     use zeromq::__async_rt as async_rt;
     use zeromq::prelude::*;
-    use zeromq::ZmqMessage;
+    use zeromq::{SocketEvent, SocketOptions, ZmqMessage};
 
     use std::error::Error;
     use std::time::Duration;
@@ -21,6 +24,53 @@ mod test {
     #[test]
     fn router_send_half_is_clone() {
         assert_clone::<zeromq::RouterSendHalf>();
+    }
+
+    #[async_rt::test]
+    async fn router_monitor_reports_peer_disconnect_after_split() -> Result<(), Box<dyn Error>> {
+        let peer_id: zeromq::util::PeerIdentity = "disconnecting-dealer".parse()?;
+        let mut options = SocketOptions::default();
+        options.peer_identity(peer_id.clone());
+
+        let mut router = zeromq::RouterSocket::new();
+        let mut monitor = router.monitor();
+        let endpoint = router.bind("tcp://localhost:0").await?;
+
+        let mut dealer = zeromq::DealerSocket::with_options(options);
+        dealer.connect(endpoint.to_string().as_str()).await?;
+        dealer.send(ZmqMessage::from("register-dealer")).await?;
+
+        let (_send_half, mut recv_half) = router.split();
+        let registration = recv_half.recv().await?;
+        assert_eq!(registration.get(0).unwrap().as_ref(), peer_id.as_ref());
+
+        assert!(dealer.close().await.is_empty());
+
+        let disconnected_peer = async_rt::task::timeout(Duration::from_secs(5), async {
+            loop {
+                let recv = recv_half.recv();
+                let next_event = monitor.next();
+                pin_mut!(recv, next_event);
+
+                match select(recv, next_event).await {
+                    Either::Left((result, _)) => {
+                        panic!("router recv completed before disconnect event: {result:?}")
+                    }
+                    Either::Right((Some(SocketEvent::Disconnected(disconnected_peer)), _)) => {
+                        break disconnected_peer;
+                    }
+                    Either::Right((Some(_), _)) => {}
+                    Either::Right((None, _)) => {
+                        panic!("router monitor closed before disconnect event")
+                    }
+                }
+            }
+        })
+        .await
+        .expect("timeout waiting for disconnect monitor event");
+
+        assert_eq!(disconnected_peer, peer_id);
+        Ok(())
     }
 
     #[async_rt::test]
