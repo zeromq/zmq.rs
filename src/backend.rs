@@ -319,7 +319,7 @@ impl MultiPeerBackend for GenericSocketBackend {
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
-        self.peers.remove_sync(peer_id);
+        let peer_removed = self.peers.remove_sync(peer_id).is_some();
         self.refresh_single_peer_cache();
         match &self.fair_queue_inner {
             None => {}
@@ -327,6 +327,12 @@ impl MultiPeerBackend for GenericSocketBackend {
                 inner.lock().remove(peer_id);
             }
         };
+
+        if peer_removed {
+            if let Some(monitor) = self.monitor().lock().as_mut() {
+                let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
+            }
+        }
 
         // Notify reconnection task if registered
         if let Some(mut notifier) = self.disconnect_notifiers.lock().remove(peer_id) {
@@ -492,5 +498,26 @@ mod tests {
         assert_eq!(0, backend.peer_count.load(Ordering::Acquire));
         assert!(backend.single_peer.lock().is_none());
         assert!(backend.peers.get_async(&peer_id).await.is_none());
+    }
+
+    #[crate::async_rt::test]
+    async fn test_peer_disconnected_emits_one_monitor_event() {
+        let backend =
+            GenericSocketBackend::with_options(None, SocketType::ROUTER, SocketOptions::default());
+        let (monitor_sender, mut monitor_receiver) = mpsc::channel(8);
+        backend.socket_monitor.lock().replace(monitor_sender);
+        let (peer_id, _recv_queue) =
+            insert_peer(&backend, "monitor-peer".parse().expect("peer id")).await;
+
+        backend.peer_disconnected(&peer_id);
+
+        let event = monitor_receiver.next().await.expect("disconnect event");
+        assert!(matches!(
+            event,
+            SocketEvent::Disconnected(disconnected_peer) if disconnected_peer == peer_id
+        ));
+
+        backend.peer_disconnected(&peer_id);
+        assert!(monitor_receiver.try_recv().is_err());
     }
 }
