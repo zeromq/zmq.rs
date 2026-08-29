@@ -35,9 +35,11 @@ static HOST_PORT_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.+):([
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum Endpoint {
-    // TODO: Add endpoints for the other transport variants
+    // TODO: Add endpoints for the other transport variants (pgm, etc.)
     Tcp(Host, Port),
     Ipc(Option<PathBuf>),
+    /// In-process endpoint name (the part after `inproc://`).
+    Inproc(String),
 }
 
 impl Endpoint {
@@ -45,6 +47,7 @@ impl Endpoint {
         match self {
             Self::Tcp(_, _) => Transport::Tcp,
             Self::Ipc(_) => Transport::Ipc,
+            Self::Inproc(_) => Transport::Inproc,
         }
     }
 
@@ -92,6 +95,7 @@ impl FromStr for Endpoint {
                 let path: PathBuf = address.to_string().into();
                 Endpoint::Ipc(Some(path))
             }
+            Transport::Inproc => Endpoint::Inproc(address.to_string()),
         };
 
         Ok(endpoint)
@@ -110,6 +114,7 @@ impl fmt::Display for Endpoint {
             }
             Endpoint::Ipc(Some(path)) => write!(f, "ipc://{}", path.display()),
             Endpoint::Ipc(None) => write!(f, "ipc://????"),
+            Endpoint::Inproc(name) => write!(f, "inproc://{}", name),
         }
     }
 }
@@ -195,6 +200,9 @@ mod tests {
                 Endpoint::Tcp(Host::Ipv4("127.0.0.1".parse().unwrap()), 0),
                 "tcp://127.0.0.1:0",
             ),
+            (Endpoint::Inproc("step2".to_string()), "inproc://step2"),
+            (Endpoint::Inproc("#1".to_string()), "inproc://#1"),
+            (Endpoint::Inproc("a/b/c".to_string()), "inproc://a/b/c"),
         ]
     });
 

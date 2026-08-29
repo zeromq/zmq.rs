@@ -1,4 +1,4 @@
-use crate::codec::{Message, ZmqFramedRead};
+use crate::codec::Message;
 use crate::endpoint::Endpoint;
 use crate::error::{ZmqError, ZmqResult};
 use crate::fair_queue::FairQueue;
@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 pub struct XSubSocket {
     backend: Arc<SubSocketBackend>,
-    fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
+    fair_queue: FairQueue<crate::peer_io::PeerRecv, PeerIdentity>,
     binds: SocketBinds,
     /// Handles to background reconnection tasks
     reconnect_handles: Vec<crate::reconnect::ReconnectHandle>,

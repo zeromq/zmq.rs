@@ -11,6 +11,8 @@ pub enum Transport {
     /// TCP transport
     Tcp,
     Ipc,
+    /// In-process transport (within a process; requires a shared context registry)
+    Inproc,
 }
 
 impl Transport {
@@ -18,6 +20,7 @@ impl Transport {
         match self {
             Transport::Tcp => "tcp",
             Transport::Ipc => "ipc",
+            Transport::Inproc => "inproc",
         }
     }
 }
@@ -29,6 +32,7 @@ impl FromStr for Transport {
         let result = match s {
             "tcp" => Transport::Tcp,
             "ipc" => Transport::Ipc,
+            "inproc" => Transport::Inproc,
             _ => return Err(EndpointError::UnknownTransport(s.to_string())),
         };
         Ok(result)

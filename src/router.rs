@@ -20,7 +20,7 @@ use std::sync::Arc;
 pub struct RouterSocket {
     backend: Arc<GenericSocketBackend>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
-    fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
+    fair_queue: FairQueue<crate::peer_io::PeerRecv, PeerIdentity>,
 }
 
 impl Drop for RouterSocket {
@@ -164,7 +164,7 @@ pub struct RouterSendHalf {
 /// The recv half of a [`RouterSocket`] produced by [`RouterSocket::split`].
 pub struct RouterRecvHalf {
     inner: Arc<RouterSocketInner>,
-    fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
+    fair_queue: FairQueue<crate::peer_io::PeerRecv, PeerIdentity>,
 }
 
 #[async_trait]

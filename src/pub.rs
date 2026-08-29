@@ -4,7 +4,6 @@ use crate::error::ZmqResult;
 use crate::message::*;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::write_queue::write_message_queue;
 use crate::{async_rt, CaptureSocket, SocketOptions};
 use crate::{MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketSend, SocketType};
 
@@ -204,10 +203,13 @@ impl SocketBackend for PubSocketBackend {
 
 #[async_trait]
 impl MultiPeerBackend for PubSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
-        let (mut recv_queue, send_queue) = io.into_parts();
-        // TODO provide handling for recv_queue
-        let (queue_sender, queue_receiver) = mpsc::channel(PUB_SEND_QUEUE_CAPACITY);
+    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: crate::peer_io::PeerIo) {
+        let backend = self.clone();
+        let writer_peer_id = peer_id.clone();
+        let (queue_sender, mut recv_queue) = crate::peer_io::install_peer_io(io, move || {
+            backend.peer_disconnected(&writer_peer_id);
+        });
+
         let (sender, stop_receiver) = oneshot::channel();
         let old_subscriber = self
             .subscribers
@@ -223,18 +225,6 @@ impl MultiPeerBackend for PubSocketBackend {
         if old_subscriber.is_none() {
             self.subscriber_count.fetch_add(1, Ordering::Relaxed);
         }
-        let writer_backend = self.clone();
-        let writer_peer_id = peer_id.clone();
-        async_rt::task::spawn(async move {
-            if let Err(error) = write_message_queue(queue_receiver, send_queue).await {
-                log::debug!(
-                    "Error sending message to subscriber {:?}: {:?}",
-                    writer_peer_id,
-                    error
-                );
-                writer_backend.peer_disconnected(&writer_peer_id);
-            }
-        });
         let backend = self;
         let peer_id = peer_id.clone();
         async_rt::task::spawn(async move {

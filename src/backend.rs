@@ -1,8 +1,7 @@
-use crate::async_rt;
-use crate::codec::{FramedIo, Message, ZmqFramedRead};
+use crate::codec::Message;
 use crate::fair_queue::QueueInner;
+use crate::peer_io::{install_peer_io, PeerIo, PeerRecv};
 use crate::util::PeerIdentity;
-use crate::write_queue::write_message_queue;
 use crate::{
     MultiPeerBackend, SocketBackend, SocketEvent, SocketOptions, SocketType, ZmqError, ZmqResult,
 };
@@ -19,7 +18,6 @@ use std::sync::Arc;
 
 /// Sender for notifying reconnection tasks when a peer disconnects.
 pub(crate) type DisconnectNotifier = mpsc::Sender<PeerIdentity>;
-const PEER_SEND_QUEUE_CAPACITY: usize = 100_000;
 
 pub(crate) struct Peer {
     pub(crate) send_queue: mpsc::Sender<Message>,
@@ -52,7 +50,7 @@ enum SendResolution {
 
 pub(crate) struct GenericSocketBackend {
     pub(crate) peers: scc::HashMap<PeerIdentity, Peer>,
-    fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
+    fair_queue_inner: Option<Arc<Mutex<QueueInner<PeerRecv, PeerIdentity>>>>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
     socket_type: SocketType,
     socket_options: SocketOptions,
@@ -65,7 +63,7 @@ pub(crate) struct GenericSocketBackend {
 
 impl GenericSocketBackend {
     pub(crate) fn with_options(
-        fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
+        fair_queue_inner: Option<Arc<Mutex<QueueInner<PeerRecv, PeerIdentity>>>>,
         socket_type: SocketType,
         options: SocketOptions,
     ) -> Self {
@@ -285,9 +283,13 @@ impl SocketBackend for GenericSocketBackend {
 
 #[async_trait]
 impl MultiPeerBackend for GenericSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
-        let (recv_queue, send_queue) = io.into_parts();
-        let (queue_sender, queue_receiver) = mpsc::channel(PEER_SEND_QUEUE_CAPACITY);
+    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: PeerIo) {
+        let backend = self.clone();
+        let writer_peer_id = peer_id.clone();
+        let (queue_sender, recv_queue) = install_peer_io(io, move || {
+            backend.peer_disconnected(&writer_peer_id);
+        });
+
         self.peers
             .upsert_async(
                 peer_id.clone(),
@@ -297,18 +299,6 @@ impl MultiPeerBackend for GenericSocketBackend {
             )
             .await;
         self.refresh_single_peer_cache();
-        let writer_backend = self.clone();
-        let writer_peer_id = peer_id.clone();
-        async_rt::task::spawn(async move {
-            if let Err(error) = write_message_queue(queue_receiver, send_queue).await {
-                log::debug!(
-                    "Error sending message to peer {:?}: {:?}",
-                    writer_peer_id,
-                    error
-                );
-                writer_backend.peer_disconnected(&writer_peer_id);
-            }
-        });
         self.round_robin.push(peer_id.clone());
         match &self.fair_queue_inner {
             None => {}

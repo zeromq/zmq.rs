@@ -12,7 +12,7 @@ pub(crate) use command::{ZmqCommand, ZmqCommandName};
 pub use error::CodecError;
 pub(crate) use error::CodecResult;
 pub use framed::ZmqFramedRead;
-pub(crate) use framed::{FrameableWrite, FramedIo, ZmqFramedWrite};
+pub(crate) use framed::{FramedIo, ZmqFramedWrite};
 pub(crate) use greeting::{ZmqGreeting, ZmtpVersion};
 pub use zmq_codec::ZmqCodec;
 

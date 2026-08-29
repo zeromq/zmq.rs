@@ -3,11 +3,14 @@
 mod async_rt;
 mod backend;
 mod codec;
+mod context;
 mod dealer;
 mod endpoint;
 mod error;
 mod fair_queue;
 mod message;
+mod pair;
+mod peer_io;
 mod r#pub;
 mod pull;
 mod push;
@@ -189,10 +192,12 @@ pub mod __bench {
     }
 }
 
+pub use crate::context::Context;
 pub use crate::dealer::*;
 pub use crate::endpoint::{Endpoint, Host, Transport, TryIntoEndpoint};
 pub use crate::error::{ZmqError, ZmqResult};
 pub use crate::message::*;
+pub use crate::pair::*;
 pub use crate::pull::*;
 pub use crate::push::*;
 pub use crate::r#pub::*;
@@ -209,7 +214,6 @@ use crate::transport::AcceptStopHandle;
 use util::PeerIdentity;
 
 use async_trait::async_trait;
-use asynchronous_codec::FramedWrite;
 use futures::channel::mpsc;
 use futures::{select, FutureExt};
 use parking_lot::Mutex;
@@ -339,9 +343,11 @@ pub enum SocketEvent {
 
 pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
+#[derive(Clone)]
 pub struct SocketOptions {
     pub(crate) peer_id: Option<PeerIdentity>,
     pub(crate) connect_timeout: Option<Duration>,
+    pub(crate) context: Option<Context>,
 }
 
 impl Default for SocketOptions {
@@ -349,6 +355,7 @@ impl Default for SocketOptions {
         Self {
             peer_id: None,
             connect_timeout: Some(DEFAULT_CONNECT_TIMEOUT),
+            context: None,
         }
     }
 }
@@ -368,13 +375,22 @@ impl SocketOptions {
         self.connect_timeout = None;
         self
     }
+
+    /// Sets the shared [`Context`] used for `inproc://` bind/connect rendezvous.
+    ///
+    /// TCP and IPC ignore this setting. Both ends of an `inproc://` connection
+    /// must use the same `Context` (or clones of it).
+    pub fn context(&mut self, context: Context) -> &mut Self {
+        self.context = Some(context);
+        self
+    }
 }
 
 #[async_trait]
 pub trait MultiPeerBackend: SocketBackend {
     /// This should not be public..
     /// Find a better way of doing this
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo);
+    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: crate::peer_io::PeerIo);
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity);
 }
@@ -421,7 +437,7 @@ where
 {
     let backend = socket.backend();
     let callback_backend = backend.clone();
-    let callback = move |result: ZmqResult<(FramedIo, Endpoint)>| {
+    let callback = move |result: ZmqResult<(crate::peer_io::PeerIo, Endpoint)>| {
         let backend = callback_backend.clone();
         async move {
             let result = match result {
@@ -446,8 +462,11 @@ where
         }
     };
 
+    let context = backend.socket_options().context.clone();
     let (endpoint, stop_handle) = match target {
-        BindTarget::Endpoint(endpoint) => transport::begin_accept(endpoint, callback).await?,
+        BindTarget::Endpoint(endpoint) => {
+            transport::begin_accept(endpoint, context, callback).await?
+        }
         BindTarget::Listener(listener) => {
             transport::begin_accept_listener(listener, callback).await?
         }
@@ -537,8 +556,9 @@ pub trait Socket: Sized + Send {
         let connect_timeout = backend.socket_options().connect_timeout;
 
         let (socket, endpoint, peer_id) = util::run_with_timeout(connect_timeout, async {
-            let (mut socket, endpoint) = util::connect_forever(endpoint).await?;
-            let peer_id = util::peer_handshake(&mut socket, backend.clone()).await?;
+            let (mut socket, endpoint) =
+                util::connect_forever(endpoint, backend.socket_options().context.clone()).await?;
+            let peer_id = util::peer_handshake_io(&mut socket, backend.clone()).await?;
             Ok((socket, endpoint, peer_id))
         })
         .await?;

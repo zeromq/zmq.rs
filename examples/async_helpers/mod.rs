@@ -30,3 +30,33 @@ pub use async_dispatcher::{main, test};
 #[allow(unused)]
 #[cfg(feature = "async-dispatcher-runtime")]
 pub use async_dispatcher::sleep;
+
+#[allow(unused)]
+#[cfg(feature = "tokio-runtime")]
+pub fn spawn<F>(future: F)
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::spawn(future);
+}
+
+#[allow(unused)]
+#[cfg(feature = "async-std-runtime")]
+pub fn spawn<F>(future: F)
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    async_std::task::spawn(future);
+}
+
+#[allow(unused)]
+#[cfg(feature = "async-dispatcher-runtime")]
+pub fn spawn<F>(future: F)
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    async_dispatcher::spawn(future);
+}
