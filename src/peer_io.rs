@@ -120,9 +120,12 @@ pub(crate) fn install_peer_io(
             let (recv_queue, send_queue) = io.into_parts();
             let (queue_sender, queue_receiver) = mpsc::channel(PEER_SEND_QUEUE_CAPACITY);
             async_rt::task::spawn(async move {
-                if write_message_queue(queue_receiver, send_queue).await.is_err() {
-                    on_write_fail();
-                }
+                if write_message_queue(queue_receiver, send_queue)
+                    .await
+                    .is_err()
+                    {
+                        on_write_fail();
+                    }
             });
             (queue_sender, PeerRecv::Framed(recv_queue))
         }

@@ -70,9 +70,10 @@ impl PairBackend {
 
         match send_queue.try_send(message) {
             Ok(()) => Ok(()),
-            Err(error) if error.is_full() => {
-                send_queue.send(error.into_inner()).await.map_err(Into::into)
-            }
+            Err(error) if error.is_full() => send_queue
+                .send(error.into_inner())
+                .await
+                .map_err(Into::into),
             Err(error) => Err(error.into_send_error().into()),
         }
     }
@@ -277,8 +278,16 @@ mod tests {
             let admitted = admitted.clone();
             tasks.push(crate::async_rt::task::spawn(async move {
                 let peer_id = PeerIdentity::new();
-                backend.clone().peer_connected(&peer_id, framed_null()).await;
-                if backend.peer.lock().as_ref().is_some_and(|p| p.peer_id == peer_id) {
+                backend
+                    .clone()
+                    .peer_connected(&peer_id, framed_null())
+                    .await;
+                if backend
+                    .peer
+                    .lock()
+                    .as_ref()
+                    .is_some_and(|p| p.peer_id == peer_id)
+                {
                     admitted.fetch_add(1, Ordering::SeqCst);
                 }
             }));

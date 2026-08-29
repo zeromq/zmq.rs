@@ -206,10 +206,9 @@ impl MultiPeerBackend for PubSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: crate::peer_io::PeerIo) {
         let backend = self.clone();
         let writer_peer_id = peer_id.clone();
-        let (queue_sender, mut recv_queue) =
-            crate::peer_io::install_peer_io(io, move || {
-                backend.peer_disconnected(&writer_peer_id);
-            });
+        let (queue_sender, mut recv_queue) = crate::peer_io::install_peer_io(io, move || {
+            backend.peer_disconnected(&writer_peer_id);
+        });
 
         let (sender, stop_receiver) = oneshot::channel();
         let old_subscriber = self
