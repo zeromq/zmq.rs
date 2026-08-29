@@ -1,10 +1,12 @@
-use crate::codec::{CodecResult, FramedIo, ZmqFramedRead};
+use crate::codec::{CodecResult, FramedIo};
+use crate::peer_io::{PeerIo, PeerRecv};
 use crate::*;
 
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use rand::RngExt;
 
+use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::future::Future;
 use std::io::ErrorKind;
@@ -98,8 +100,8 @@ impl From<PeerIdentity> for Vec<u8> {
 
 pub(crate) struct Peer {
     pub(crate) _identity: PeerIdentity,
-    pub(crate) send_queue: FramedWrite<Box<dyn FrameableWrite>, ZmqCodec>,
-    pub(crate) recv_queue: ZmqFramedRead,
+    pub(crate) send_queue: futures::channel::mpsc::Sender<Message>,
+    pub(crate) recv_queue: PeerRecv,
 }
 
 /// Given the result of the greetings exchange, determines the version of the
@@ -188,12 +190,22 @@ pub(crate) async fn ready_exchange(
 }
 
 pub(crate) async fn peer_connected(
-    mut raw_socket: FramedIo,
+    mut raw_socket: PeerIo,
     backend: Arc<dyn MultiPeerBackend>,
 ) -> ZmqResult<PeerIdentity> {
-    let peer_id = peer_handshake(&mut raw_socket, backend.clone()).await?;
+    let peer_id = peer_handshake_io(&mut raw_socket, backend.clone()).await?;
     backend.peer_connected(&peer_id, raw_socket).await;
     Ok(peer_id)
+}
+
+pub(crate) async fn peer_handshake_io(
+    raw_socket: &mut PeerIo,
+    backend: Arc<dyn MultiPeerBackend>,
+) -> ZmqResult<PeerIdentity> {
+    match raw_socket {
+        PeerIo::Framed(socket) => peer_handshake(socket, backend).await,
+        PeerIo::Inproc { .. } => Ok(PeerIdentity::new()),
+    }
 }
 
 pub(crate) async fn peer_handshake(
@@ -238,7 +250,7 @@ fn is_retryable_connect_error(endpoint: &Endpoint, error: &ZmqError) -> bool {
 pub(crate) async fn connect_forever(
     endpoint: Endpoint,
     context: Option<Context>,
-) -> ZmqResult<(FramedIo, Endpoint)> {
+) -> ZmqResult<(PeerIo, Endpoint)> {
     // Exponential backoff that starts small and grows, so a peer whose port is
     // not bound yet (ConnectionRefused) is reached after a few short sleeps
     // rather than waiting out a large opening delay. Mirrors the semantics of

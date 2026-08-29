@@ -3,7 +3,7 @@
 //! TCP and IPC sockets do not require a [`Context`]. `inproc://` bind/connect
 //! use one shared [`Context`] so peers can find each other by name.
 
-use crate::codec::FramedIo;
+use crate::peer_io::PeerIo;
 use crate::{ZmqError, ZmqResult};
 
 use futures::channel::mpsc;
@@ -12,8 +12,8 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Sender used by `inproc` connect to deliver a framed peer to the bind side.
-pub(crate) type InprocAcceptSender = mpsc::UnboundedSender<FramedIo>;
+/// Sender used by `inproc` connect to deliver a peer to the bind side.
+pub(crate) type InprocAcceptSender = mpsc::UnboundedSender<PeerIo>;
 
 /// Shared context for in-process endpoint rendezvous.
 ///

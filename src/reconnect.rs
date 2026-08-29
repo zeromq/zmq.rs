@@ -8,7 +8,7 @@ use crate::async_rt::task::{spawn, JoinHandle};
 use crate::backend::DisconnectNotifier;
 use crate::endpoint::Endpoint;
 use crate::transport;
-use crate::util::{greet_exchange, ready_exchange, PeerIdentity};
+use crate::util::PeerIdentity;
 use crate::MultiPeerBackend;
 
 use futures::channel::{mpsc, oneshot};
@@ -220,26 +220,14 @@ async fn try_reconnect(
     backend: Arc<dyn MultiPeerBackend>,
 ) -> crate::ZmqResult<(PeerIdentity, Endpoint)> {
     // Attempt transport-level connection
-    let (mut raw_socket, resolved_endpoint) =
+    let (mut peer_io, resolved_endpoint) =
         transport::connect(endpoint, backend.socket_options().context.as_ref()).await?;
 
-    // Perform ZMTP handshake
-    greet_exchange(&mut raw_socket).await?;
-
-    // Build properties for ready exchange (include identity if configured)
-    let mut props = None;
-    if let Some(identity) = &backend.socket_options().peer_id {
-        let mut connect_ops = std::collections::HashMap::new();
-        connect_ops.insert("Identity".to_string(), identity.clone().into());
-        props = Some(connect_ops);
-    }
-
-    // Exchange ready commands
-    let peer_id = ready_exchange(&mut raw_socket, backend.socket_type(), props).await?;
+    let peer_id = crate::util::peer_handshake_io(&mut peer_io, backend.clone()).await?;
 
     // Register the peer with the backend
     // This triggers subscription resync for SUB sockets
-    backend.peer_connected(&peer_id, raw_socket).await;
+    backend.peer_connected(&peer_id, peer_io).await;
 
     Ok((peer_id, resolved_endpoint))
 }

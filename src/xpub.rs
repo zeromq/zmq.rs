@@ -3,6 +3,7 @@ use crate::endpoint::Endpoint;
 use crate::error::ZmqResult;
 use crate::fair_queue::{FairQueue, QueueInner};
 use crate::message::*;
+use crate::peer_io::{split_peer_io, PeerSend};
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
 use crate::{CaptureSocket, SocketOptions};
@@ -14,22 +15,20 @@ use crate::{
 use async_trait::async_trait;
 use futures::channel::mpsc;
 use futures::lock::Mutex as AsyncMutex;
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use parking_lot::Mutex;
 
 use std::collections::HashMap;
-use std::io::ErrorKind;
-use std::pin::Pin;
 use std::sync::Arc;
 
 pub(crate) struct XPubSubscriber {
     pub(crate) subscriptions: Vec<Vec<u8>>,
-    pub(crate) send_queue: Arc<AsyncMutex<Pin<Box<ZmqFramedWrite>>>>,
+    pub(crate) send_queue: Arc<AsyncMutex<PeerSend>>,
 }
 
 pub(crate) struct XPubSocketBackend {
     subscribers: scc::HashMap<PeerIdentity, XPubSubscriber>,
-    fair_queue_inner: Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>,
+    fair_queue_inner: Arc<Mutex<QueueInner<crate::peer_io::PeerRecv, PeerIdentity>>>,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
     socket_options: SocketOptions,
 }
@@ -91,15 +90,15 @@ impl SocketBackend for XPubSocketBackend {
 
 #[async_trait]
 impl MultiPeerBackend for XPubSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
-        let (recv_queue, send_queue) = io.into_parts();
+    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: crate::peer_io::PeerIo) {
+        let (send_queue, recv_queue) = split_peer_io(io);
 
         self.subscribers
             .upsert_async(
                 peer_id.clone(),
                 XPubSubscriber {
                     subscriptions: vec![],
-                    send_queue: Arc::new(AsyncMutex::new(Box::pin(send_queue))),
+                    send_queue: Arc::new(AsyncMutex::new(send_queue)),
                 },
             )
             .await;
@@ -118,7 +117,7 @@ impl MultiPeerBackend for XPubSocketBackend {
 
 pub struct XPubSocket {
     pub(crate) backend: Arc<XPubSocketBackend>,
-    fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
+    fair_queue: FairQueue<crate::peer_io::PeerRecv, PeerIdentity>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
@@ -152,21 +151,16 @@ impl SocketSend for XPubSocket {
             let res = send_queue
                 .lock()
                 .await
-                .as_mut()
                 .send(Message::Message(message.clone()))
                 .await;
             match res {
                 Ok(()) => {}
-                Err(CodecError::Io(e)) => {
-                    if e.kind() == ErrorKind::BrokenPipe {
-                        dead_peers.push(peer_id);
-                    } else {
-                        log::error!("Error sending message: {:?}", e);
-                    }
+                Err(error) if error.is_disconnected() => {
+                    dead_peers.push(peer_id);
                 }
-                Err(e) => {
-                    log::error!("Error sending message: {:?}", e);
-                    return Err(e.into());
+                Err(error) => {
+                    log::error!("Error sending message: {:?}", error);
+                    return Err(error.into());
                 }
             }
         }

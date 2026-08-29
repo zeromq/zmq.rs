@@ -1,9 +1,8 @@
-use crate::async_rt;
-use crate::codec::{FramedIo, Message, ZmqFramedRead};
+use crate::codec::Message;
 use crate::fair_queue::{FairQueue, QueueInner};
+use crate::peer_io::{install_peer_io, PeerIo, PeerRecv};
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
-use crate::write_queue::write_message_queue;
 use crate::{
     Endpoint, MultiPeerBackend, Socket, SocketBackend, SocketEvent, SocketOptions, SocketRecv,
     SocketSend, SocketType, ZmqError, ZmqMessage, ZmqResult,
@@ -18,8 +17,6 @@ use std::collections::hash_map::RandomState;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-const PEER_SEND_QUEUE_CAPACITY: usize = 100_000;
-
 struct PairPeer {
     peer_id: PeerIdentity,
     send_queue: mpsc::Sender<Message>,
@@ -31,14 +28,14 @@ struct PairPeer {
 /// install a peer (unlike checking `peers.is_empty()` then awaiting upsert).
 pub(crate) struct PairBackend {
     peer: Mutex<Option<PairPeer>>,
-    fair_queue_inner: Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>,
+    fair_queue_inner: Arc<Mutex<QueueInner<PeerRecv, PeerIdentity>>>,
     socket_options: SocketOptions,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
 }
 
 impl PairBackend {
     fn new(
-        fair_queue_inner: Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>,
+        fair_queue_inner: Arc<Mutex<QueueInner<PeerRecv, PeerIdentity>>>,
         options: SocketOptions,
     ) -> Self {
         Self {
@@ -102,39 +99,27 @@ impl SocketBackend for PairBackend {
 
 #[async_trait]
 impl MultiPeerBackend for PairBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
-        let (recv_queue, send_queue) = io.into_parts();
-        let (queue_sender, queue_receiver) = mpsc::channel(PEER_SEND_QUEUE_CAPACITY);
-
-        {
+    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: PeerIo) {
+        let recv_queue = {
             let mut slot = self.peer.lock();
             if slot.is_some() {
                 log::debug!("PAIR socket rejecting additional peer {peer_id:?}");
-                // Dropping the halves closes the rejected peer connection.
-                drop(recv_queue);
-                drop(send_queue);
-                drop(queue_sender);
-                drop(queue_receiver);
+                drop(io);
                 return;
             }
+
+            let backend = self.clone();
+            let writer_peer_id = peer_id.clone();
+            let (queue_sender, recv_queue) = install_peer_io(io, move || {
+                backend.peer_disconnected(&writer_peer_id);
+            });
+
             *slot = Some(PairPeer {
                 peer_id: peer_id.clone(),
                 send_queue: queue_sender,
             });
-        }
-
-        let writer_backend = self.clone();
-        let writer_peer_id = peer_id.clone();
-        async_rt::task::spawn(async move {
-            if let Err(error) = write_message_queue(queue_receiver, send_queue).await {
-                log::debug!(
-                    "Error sending message to peer {:?}: {:?}",
-                    writer_peer_id,
-                    error
-                );
-                writer_backend.peer_disconnected(&writer_peer_id);
-            }
-        });
+            recv_queue
+        };
 
         self.fair_queue_inner.lock().insert(peer_id.clone(), recv_queue);
     }
@@ -156,7 +141,7 @@ impl MultiPeerBackend for PairBackend {
 /// are rejected (the extra peer is dropped), matching libzmq behaviour.
 pub struct PairSocket {
     backend: Arc<PairBackend>,
-    fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
+    fair_queue: FairQueue<PeerRecv, PeerIdentity>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
@@ -234,6 +219,7 @@ impl SocketSend for PairSocket {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::codec::FramedIo;
     use crate::util::PeerIdentity;
 
     use futures::{AsyncRead, AsyncWrite};
@@ -272,11 +258,11 @@ mod tests {
         }
     }
 
-    fn framed_null() -> FramedIo {
-        FramedIo::new(Box::new(NullIo), Box::new(NullIo))
+    fn framed_null() -> PeerIo {
+        PeerIo::Framed(FramedIo::new(Box::new(NullIo), Box::new(NullIo)))
     }
 
-    #[async_rt::test]
+    #[crate::async_rt::test]
     async fn pair_backend_admits_only_one_peer_under_contention() {
         let fair_queue = FairQueue::new(true);
         let backend = Arc::new(PairBackend::new(
@@ -289,7 +275,7 @@ mod tests {
         for _ in 0..32 {
             let backend = backend.clone();
             let admitted = admitted.clone();
-            tasks.push(async_rt::task::spawn(async move {
+            tasks.push(crate::async_rt::task::spawn(async move {
                 let peer_id = PeerIdentity::new();
                 backend.clone().peer_connected(&peer_id, framed_null()).await;
                 if backend.peer.lock().as_ref().is_some_and(|p| p.peer_id == peer_id) {

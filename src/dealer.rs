@@ -1,5 +1,5 @@
 use crate::backend::GenericSocketBackend;
-use crate::codec::{Message, ZmqFramedRead};
+use crate::codec::Message;
 use crate::fair_queue::FairQueue;
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 pub struct DealerSocket {
     backend: Arc<GenericSocketBackend>,
-    fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
+    fair_queue: FairQueue<crate::peer_io::PeerRecv, PeerIdentity>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
@@ -159,7 +159,7 @@ pub struct DealerSendHalf {
 /// The recv half of a [`DealerSocket`] produced by [`DealerSocket::split`].
 pub struct DealerRecvHalf {
     _inner: Arc<DealerSocketInner>,
-    fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
+    fair_queue: FairQueue<crate::peer_io::PeerRecv, PeerIdentity>,
 }
 
 #[async_trait]

@@ -1,9 +1,10 @@
 use crate::backend::DisconnectNotifier;
-use crate::codec::{CodecError, FramedIo, Message, ZmqFramedRead, ZmqFramedWrite};
+use crate::codec::Message;
 use crate::endpoint::Endpoint;
 use crate::error::ZmqResult;
 use crate::fair_queue::QueueInner;
 use crate::message::ZmqMessage;
+use crate::peer_io::{split_peer_io, PeerIo, PeerSend};
 use crate::reconnect::{ReconnectConfig, ReconnectHandle};
 use crate::transport::AcceptStopHandle;
 use crate::util::PeerIdentity;
@@ -15,12 +16,9 @@ use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use futures::channel::mpsc;
 use futures::lock::Mutex as AsyncMutex;
-use futures::SinkExt;
 use parking_lot::Mutex;
 
 use std::collections::{HashMap, HashSet};
-use std::io::ErrorKind;
-use std::pin::Pin;
 use std::sync::Arc;
 
 /// Type of subscription message sent from SUB/XSUB to PUB/XPUB.
@@ -31,9 +29,9 @@ pub(crate) enum SubscriptionMessageType {
 }
 
 /// A connected peer for SUB/XSUB sockets, holding only the send half
-/// of the framed I/O since receiving is handled through the fair queue.
+/// since receiving is handled through the fair queue.
 pub(crate) struct SubPeer {
-    pub(crate) send_queue: Arc<AsyncMutex<Pin<Box<ZmqFramedWrite>>>>,
+    pub(crate) send_queue: Arc<AsyncMutex<PeerSend>>,
 }
 
 /// Shared backend for [`SubSocket`](crate::SubSocket) and [`XSubSocket`](crate::XSubSocket).
@@ -43,7 +41,7 @@ pub(crate) struct SubPeer {
 /// re-sent to ensure the peer receives the full subscription set.
 pub(crate) struct SubSocketBackend {
     pub(crate) peers: scc::HashMap<PeerIdentity, SubPeer>,
-    fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
+    fair_queue_inner: Option<Arc<Mutex<QueueInner<crate::peer_io::PeerRecv, PeerIdentity>>>>,
     socket_type: SocketType,
     socket_options: SocketOptions,
     pub(crate) socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
@@ -54,7 +52,7 @@ pub(crate) struct SubSocketBackend {
 
 impl SubSocketBackend {
     pub(crate) fn with_options(
-        fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
+        fair_queue_inner: Option<Arc<Mutex<QueueInner<crate::peer_io::PeerRecv, PeerIdentity>>>>,
         socket_type: SocketType,
         options: SocketOptions,
     ) -> Self {
@@ -168,21 +166,16 @@ impl SubSocketBackend {
             let res = send_queue
                 .lock()
                 .await
-                .as_mut()
                 .send(Message::Message(message.clone()))
                 .await;
             match res {
                 Ok(()) => {}
-                Err(CodecError::Io(e)) => {
-                    if e.kind() == ErrorKind::BrokenPipe {
-                        dead_peers.push(peer_id);
-                    } else {
-                        log::error!("Error sending message: {:?}", e);
-                    }
+                Err(error) if error.is_disconnected() => {
+                    dead_peers.push(peer_id);
                 }
-                Err(e) => {
-                    log::error!("Error sending message: {:?}", e);
-                    return Err(e.into());
+                Err(error) => {
+                    log::error!("Error sending message: {:?}", error);
+                    return Err(error.into());
                 }
             }
         }
@@ -218,30 +211,24 @@ impl SubSocketBackend {
         let mut dead_peers = Vec::new();
         let mut first_error = None;
         for (peer_id, send_queue) in targets {
-            let result = send_queue
+            match send_queue
                 .lock()
                 .await
-                .as_mut()
                 .send(Message::Message(message.clone()))
-                .await;
-            match result {
+                .await
+            {
                 Ok(()) => {}
-                Err(e)
-                    if matches!(
-                        &e,
-                        CodecError::Io(io_error) if io_error.kind() == ErrorKind::BrokenPipe
-                    ) =>
-                {
+                Err(error) if error.is_disconnected() => {
                     dead_peers.push(peer_id);
-                    first_error.get_or_insert(e.into());
+                    first_error.get_or_insert(error.into());
                 }
-                Err(e) => {
+                Err(error) => {
                     log::error!(
                         "Error sending control message to peer {:?}: {:?}",
                         peer_id,
-                        e
+                        error
                     );
-                    first_error.get_or_insert(e.into());
+                    first_error.get_or_insert(error.into());
                 }
             }
         }
@@ -279,8 +266,8 @@ impl SocketBackend for SubSocketBackend {
 
 #[async_trait]
 impl MultiPeerBackend for SubSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
-        let (recv_queue, mut send_queue) = io.into_parts();
+    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: PeerIo) {
+        let (mut send_queue, recv_queue) = split_peer_io(io);
 
         for message in self.subscription_messages() {
             if let Err(e) = send_queue.send(Message::Message(message)).await {
@@ -293,7 +280,7 @@ impl MultiPeerBackend for SubSocketBackend {
             .upsert_async(
                 peer_id.clone(),
                 SubPeer {
-                    send_queue: Arc::new(AsyncMutex::new(Box::pin(send_queue))),
+                    send_queue: Arc::new(AsyncMutex::new(send_queue)),
                 },
             )
             .await;
@@ -343,7 +330,7 @@ pub(crate) async fn connect_with_reconnect(
                 backend.socket_options().context.clone(),
             )
             .await?;
-            let peer_id = crate::util::peer_handshake(
+            let peer_id = crate::util::peer_handshake_io(
                 &mut socket,
                 backend.clone() as Arc<dyn MultiPeerBackend>,
             )

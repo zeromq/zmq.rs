@@ -10,6 +10,7 @@ mod error;
 mod fair_queue;
 mod message;
 mod pair;
+mod peer_io;
 mod r#pub;
 mod pull;
 mod push;
@@ -212,7 +213,6 @@ use crate::transport::AcceptStopHandle;
 use util::PeerIdentity;
 
 use async_trait::async_trait;
-use asynchronous_codec::FramedWrite;
 use futures::channel::mpsc;
 use futures::{select, FutureExt};
 use parking_lot::Mutex;
@@ -389,7 +389,7 @@ impl SocketOptions {
 pub trait MultiPeerBackend: SocketBackend {
     /// This should not be public..
     /// Find a better way of doing this
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo);
+    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: crate::peer_io::PeerIo);
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity);
 }
@@ -445,7 +445,7 @@ pub trait Socket: Sized + Send {
         let endpoint = TryIntoEndpoint::try_into(endpoint)?;
 
         let cloned_backend = self.backend();
-        let cback = move |result: ZmqResult<(FramedIo, Endpoint)>| {
+        let cback = move |result: ZmqResult<(crate::peer_io::PeerIo, Endpoint)>| {
             let cloned_backend = cloned_backend.clone();
             async move {
                 let result = match result {
@@ -520,7 +520,7 @@ pub trait Socket: Sized + Send {
         let (socket, endpoint, peer_id) = util::run_with_timeout(connect_timeout, async {
             let (mut socket, endpoint) =
                 util::connect_forever(endpoint, backend.socket_options().context.clone()).await?;
-            let peer_id = util::peer_handshake(&mut socket, backend.clone()).await?;
+            let peer_id = util::peer_handshake_io(&mut socket, backend.clone()).await?;
             Ok((socket, endpoint, peer_id))
         })
         .await?;

@@ -19,7 +19,7 @@ async fn push_pull_inproc_roundtrip() -> Result<(), Box<dyn Error>> {
     let mut push = PushSocket::with_options(push_opts);
     push.connect("inproc://push-pull").await?;
 
-    // Give the accept task a moment to complete the ZMTP handshake.
+    // Give the accept task a moment to register the peer.
     async_rt::task::sleep(Duration::from_millis(50)).await;
 
     push.send("hello-inproc".into()).await?;

@@ -15,12 +15,12 @@ use std::sync::Arc;
 
 struct RepPeer {
     pub(crate) _identity: PeerIdentity,
-    pub(crate) send_queue: ZmqFramedWrite,
+    pub(crate) send_queue: futures::channel::mpsc::Sender<Message>,
 }
 
 struct RepSocketBackend {
     pub(crate) peers: scc::HashMap<PeerIdentity, RepPeer>,
-    fair_queue_inner: Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>,
+    fair_queue_inner: Arc<Mutex<QueueInner<crate::peer_io::PeerRecv, PeerIdentity>>>,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
     socket_options: SocketOptions,
 }
@@ -29,7 +29,7 @@ pub struct RepSocket {
     backend: Arc<RepSocketBackend>,
     envelope: Option<ZmqMessage>,
     current_request: Option<PeerIdentity>,
-    fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
+    fair_queue: FairQueue<crate::peer_io::PeerRecv, PeerIdentity>,
     binds: HashMap<Endpoint, AcceptStopHandle>,
 }
 
@@ -83,8 +83,13 @@ impl Socket for RepSocket {
 
 #[async_trait]
 impl MultiPeerBackend for RepSocketBackend {
-    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
-        let (recv_queue, send_queue) = io.into_parts();
+    async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: crate::peer_io::PeerIo) {
+        let backend = self.clone();
+        let writer_peer_id = peer_id.clone();
+        let (send_queue, recv_queue) =
+            crate::peer_io::install_peer_io(io, move || {
+                backend.peer_disconnected(&writer_peer_id);
+            });
 
         self.peers
             .upsert_async(
