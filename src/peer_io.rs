@@ -123,9 +123,9 @@ pub(crate) fn install_peer_io(
                 if write_message_queue(queue_receiver, send_queue)
                     .await
                     .is_err()
-                    {
-                        on_write_fail();
-                    }
+                {
+                    on_write_fail();
+                }
             });
             (queue_sender, PeerRecv::Framed(recv_queue))
         }

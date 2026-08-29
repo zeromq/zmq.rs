@@ -122,7 +122,9 @@ impl MultiPeerBackend for PairBackend {
             recv_queue
         };
 
-        self.fair_queue_inner.lock().insert(peer_id.clone(), recv_queue);
+        self.fair_queue_inner
+            .lock()
+            .insert(peer_id.clone(), recv_queue);
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
