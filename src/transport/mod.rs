@@ -50,16 +50,22 @@ macro_rules! do_if_enabled {
 ///
 /// # Panics
 /// Panics if the requested endpoint uses a transport type that isn't enabled
-pub(crate) async fn connect(endpoint: &Endpoint) -> ZmqResult<(FramedIo, Endpoint)> {
+pub(crate) async fn connect(
+    endpoint: &Endpoint,
+    read_buffer_recovery: bool,
+) -> ZmqResult<(FramedIo, Endpoint)> {
     match endpoint {
         Endpoint::Tcp(_host, _port) => {
-            do_if_enabled!("tcp-transport", tcp::connect(_host, *_port).await)
+            do_if_enabled!(
+                "tcp-transport",
+                tcp::connect(_host, *_port, read_buffer_recovery).await
+            )
         }
         Endpoint::Ipc(_path) => {
             #[cfg(all(feature = "ipc-transport", any(target_family = "unix", windows)))]
             {
                 if let Some(path) = _path {
-                    ipc::connect(path).await
+                    ipc::connect(path, read_buffer_recovery).await
                 } else {
                     Err(crate::error::ZmqError::Socket(
                         "Cannot connect to an unnamed ipc socket",
@@ -87,6 +93,7 @@ pub struct AcceptStopHandle(pub(crate) TaskHandle<()>);
 /// Panics if the requested endpoint uses a transport type that isn't enabled
 pub(crate) async fn begin_accept<T>(
     endpoint: Endpoint,
+    read_buffer_recovery: bool,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
 ) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
@@ -96,13 +103,13 @@ where
     match endpoint {
         Endpoint::Tcp(_host, _port) => do_if_enabled!(
             "tcp-transport",
-            tcp::begin_accept(_host, _port, _cback).await
+            tcp::begin_accept(_host, _port, read_buffer_recovery, _cback).await
         ),
         Endpoint::Ipc(_path) => {
             #[cfg(all(feature = "ipc-transport", any(target_family = "unix", windows)))]
             {
                 if let Some(path) = _path {
-                    ipc::begin_accept(&path, _cback).await
+                    ipc::begin_accept(&path, read_buffer_recovery, _cback).await
                 } else {
                     Err(crate::error::ZmqError::Socket(
                         "Cannot begin accepting peers at an unnamed ipc socket",
@@ -117,6 +124,7 @@ where
 
 pub(crate) async fn begin_accept_listener<T>(
     listener: Listener,
+    read_buffer_recovery: bool,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
 ) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
@@ -124,30 +132,38 @@ where
 {
     match listener {
         #[cfg(feature = "tcp-transport")]
-        Listener::Tcp(listener) => tcp::begin_accept_listener(listener, cback).await,
+        Listener::Tcp(listener) => {
+            tcp::begin_accept_listener(listener, read_buffer_recovery, cback).await
+        }
         #[cfg(all(feature = "ipc-transport", target_family = "unix"))]
-        Listener::Ipc(listener) => ipc::begin_accept_listener(listener, cback).await,
+        Listener::Ipc(listener) => {
+            ipc::begin_accept_listener(listener, read_buffer_recovery, cback).await
+        }
     }
 }
 
 #[allow(unused)]
 #[cfg(feature = "tokio-runtime")]
-fn make_framed<T>(stream: T) -> FramedIo
+fn make_framed<T>(stream: T, read_buffer_recovery: bool) -> FramedIo
 where
     T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Sync + 'static,
 {
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
     let (read, write) = tokio::io::split(stream);
-    FramedIo::new(Box::new(read.compat()), Box::new(write.compat_write()))
+    FramedIo::new(
+        Box::new(read.compat()),
+        Box::new(write.compat_write()),
+        read_buffer_recovery,
+    )
 }
 
 #[allow(unused)]
 #[cfg(any(feature = "async-std-runtime", feature = "async-dispatcher-runtime"))]
-fn make_framed<T>(stream: T) -> FramedIo
+fn make_framed<T>(stream: T, read_buffer_recovery: bool) -> FramedIo
 where
     T: futures::AsyncRead + futures::AsyncWrite + Send + Sync + 'static,
 {
     use futures::AsyncReadExt;
     let (read, write) = stream.split();
-    FramedIo::new(Box::new(read), Box::new(write))
+    FramedIo::new(Box::new(read), Box::new(write), read_buffer_recovery)
 }

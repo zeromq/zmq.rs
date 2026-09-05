@@ -173,3 +173,72 @@ Full TCP-only benchmark harness check without running measurements:
 ```sh
 ZMQRS_BENCH_TRANSPORTS=tcp cargo bench --bench compare_libzmq -- --test
 ```
+
+## Receive-buffer recovery
+
+`SocketOptions::read_buffer_recovery(true)` enables one complete receive policy.
+The default remains grow-only: start at 128 bytes, double full reads up to 64 KiB.
+Recovery waits for two consecutive qualifying short positive reads before
+shrinking; frames larger than 128 KiB reserve a full 64 KiB of headroom, including space for
+the read after a retained frame is split. Single large messages may retain more
+capacity. Neither policy is a message-size or total-memory limit.
+
+```rust
+use zeromq::{Socket, SocketOptions, SubSocket};
+
+let mut options = SocketOptions::default();
+options.read_buffer_recovery(true);
+let socket = SubSocket::with_options(options);
+```
+
+`framed_read/retained` compares both policies on identical synthetic ZMTP bytes,
+retaining up to 64 messages. It covers burst/small/burst transitions, continuous
+bursts, gapped 64-message batches, single and repeated large frames, and multipart
+messages. Repeated large and multipart frames include both continuous input and
+per-message availability boundaries. These are deterministic `AsyncRead` models,
+not TCP packet boundaries or network latency tests.
+
+```sh
+cargo bench --features bench-internals --bench framed_read -- framed_read/retained
+cargo bench --features bench-internals --bench framed_read -- framed_read/steady
+```
+
+Retained iterations include reader construction and destruction. The `steady`
+group primes and then reuses one reader across timed batches, including its
+adaptive state and prefetched messages. Use it to assess ongoing receive work;
+do not interpret a single-message construction benchmark as per-message cost on
+a long-lived connection.
+
+The retained benchmark prints separate `read_work` counters once per policy:
+`prepared_bytes` is the sum of slices supplied to `poll_read` (including EOF),
+and `read_calls` counts those calls. In this reader, these slices correspond to
+newly initialized buffer space. Neither counter measures allocator requests,
+RSS, live heap or bytes copied. Timed iterations do not collect these counters.
+
+The real socket `throughput` and `compare_libzmq` benches select recovery at socket
+construction with `ZMQRS_BENCH_READ_BUFFER_RECOVERY=true`; absent or `false` keeps
+the default. This setting only affects zmq.rs sockets, so libzmq cases can remain
+controls. Run policies and binaries serially after all builds finish:
+
+```sh
+ZMQRS_BENCH_READ_BUFFER_RECOVERY=false cargo bench --bench throughput
+ZMQRS_BENCH_READ_BUFFER_RECOVERY=true cargo bench --bench throughput
+ZMQRS_BENCH_READ_BUFFER_RECOVERY=false cargo bench --bench compare_libzmq
+ZMQRS_BENCH_READ_BUFFER_RECOVERY=true cargo bench --bench compare_libzmq
+```
+
+Both receive policies reject wire frame lengths that cannot fit the reader's
+frame-plus-chunk capacity before reserving memory. This converts an existing
+capacity panic into a decode error; it does not make allocation failure recoverable.
+
+
+The retained and steady groups also include `frame_65535_boundaries`,
+`frame_65536_boundaries`, `frame_65537_boundaries`, `frame_131071_boundaries`,
+`frame_131072_boundaries`, and `frame_131073_boundaries`. Each cycle contains 64
+single-frame messages, with reads stopping at each message boundary and up to
+64 messages retained. These cases cover both sides of the reader chunk and
+headroom cutoffs. Sharing a spare chunk with a retained preceding frame can
+force `BytesMut::reserve` to allocate and copy an almost-complete next frame;
+realloc counters alone do not observe that copy. The headroom cutoff therefore
+excludes frames of at most two chunks; it is a measured policy, not a claim of a
+universally optimal allocation boundary.

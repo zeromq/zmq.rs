@@ -156,7 +156,14 @@ pub mod __bench {
     where
         T: futures::AsyncRead + Unpin + Send + Sync + 'static,
     {
-        ZmqFramedRead::new(Box::new(inner))
+        ZmqFramedRead::new(Box::new(inner), false)
+    }
+
+    pub fn zmq_framed_read_with_recovery<T>(inner: T, enabled: bool) -> ZmqFramedRead
+    where
+        T: futures::AsyncRead + Unpin + Send + Sync + 'static,
+    {
+        ZmqFramedRead::new(Box::new(inner), enabled)
     }
 
     pub fn fair_queue_insert<S, K>(queue: &mut FairQueue<S, K>, key: K, stream: S)
@@ -342,6 +349,7 @@ pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct SocketOptions {
     pub(crate) peer_id: Option<PeerIdentity>,
     pub(crate) connect_timeout: Option<Duration>,
+    pub(crate) read_buffer_recovery: bool,
 }
 
 impl Default for SocketOptions {
@@ -349,11 +357,35 @@ impl Default for SocketOptions {
         Self {
             peer_id: None,
             connect_timeout: Some(DEFAULT_CONNECT_TIMEOUT),
+            read_buffer_recovery: false,
         }
     }
 }
 
 impl SocketOptions {
+    /// Enables receive-buffer recovery after bursts for all peers, including
+    /// accepted and reconnected peers. Disabled by default to preserve the
+    /// grow-only reader (128-byte initial chunk, doubling up to 64 KiB).
+    ///
+    /// Recovery waits for two consecutive short positive reads before shrinking
+    /// the chunk. Frames larger than 128 KiB reserve one full chunk of headroom
+    /// to avoid growing shared storage at the frame boundary. This reduces allocation and
+    /// initialization traffic for bursty inputs, but can increase the capacity
+    /// retained by a single large message. It is not a message-size or memory limit.
+    /// Set this option before constructing the socket; it affects receive I/O only.
+    ///
+    /// ```
+    /// use zeromq::{Socket, SocketOptions, SubSocket};
+    ///
+    /// let mut options = SocketOptions::default();
+    /// options.read_buffer_recovery(true);
+    /// let socket = SubSocket::with_options(options);
+    /// ```
+    pub fn read_buffer_recovery(&mut self, enabled: bool) -> &mut Self {
+        self.read_buffer_recovery = enabled;
+        self
+    }
+
     pub fn peer_identity(&mut self, peer_id: PeerIdentity) -> &mut Self {
         self.peer_id = Some(peer_id);
         self
@@ -446,10 +478,13 @@ where
         }
     };
 
+    let read_buffer_recovery = backend.socket_options().read_buffer_recovery;
     let (endpoint, stop_handle) = match target {
-        BindTarget::Endpoint(endpoint) => transport::begin_accept(endpoint, callback).await?,
+        BindTarget::Endpoint(endpoint) => {
+            transport::begin_accept(endpoint, read_buffer_recovery, callback).await?
+        }
         BindTarget::Listener(listener) => {
-            transport::begin_accept_listener(listener, callback).await?
+            transport::begin_accept_listener(listener, read_buffer_recovery, callback).await?
         }
     };
 
@@ -537,7 +572,9 @@ pub trait Socket: Sized + Send {
         let connect_timeout = backend.socket_options().connect_timeout;
 
         let (socket, endpoint, peer_id) = util::run_with_timeout(connect_timeout, async {
-            let (mut socket, endpoint) = util::connect_forever(endpoint).await?;
+            let (mut socket, endpoint) =
+                util::connect_forever(endpoint, backend.socket_options().read_buffer_recovery)
+                    .await?;
             let peer_id = util::peer_handshake(&mut socket, backend.clone()).await?;
             Ok((socket, endpoint, peer_id))
         })

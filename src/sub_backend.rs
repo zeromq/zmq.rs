@@ -338,8 +338,11 @@ pub(crate) async fn connect_with_reconnect(
     // Initial connection
     let (socket, resolved_endpoint, peer_id) =
         crate::util::run_with_timeout(connect_timeout, async {
-            let (mut socket, resolved_endpoint) =
-                crate::util::connect_forever(endpoint.clone()).await?;
+            let (mut socket, resolved_endpoint) = crate::util::connect_forever(
+                endpoint.clone(),
+                backend.socket_options().read_buffer_recovery,
+            )
+            .await?;
             let peer_id = crate::util::peer_handshake(
                 &mut socket,
                 backend.clone() as Arc<dyn MultiPeerBackend>,

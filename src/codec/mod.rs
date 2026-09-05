@@ -8,6 +8,9 @@ mod greeting;
 pub(crate) mod mechanism;
 mod zmq_codec;
 
+// Shared by read preparation and decoder reservation.
+const MAX_READ_CHUNK_SIZE: usize = 64 * 1024;
+
 pub(crate) use command::{ZmqCommand, ZmqCommandName};
 pub use error::CodecError;
 pub(crate) use error::CodecResult;

@@ -17,7 +17,11 @@ use futures::{select, FutureExt};
 #[cfg(feature = "tokio-runtime")]
 const TCP_SOCKET_BUFFER_SIZE: usize = 4 * 1024 * 1024;
 
-pub(crate) async fn connect(host: &Host, port: Port) -> ZmqResult<(FramedIo, Endpoint)> {
+pub(crate) async fn connect(
+    host: &Host,
+    port: Port,
+    read_buffer_recovery: bool,
+) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = TcpStream::connect((host.to_string().as_str(), port)).await?;
     // For some reason set_nodelay doesn't work on windows. See
     // https://github.com/zeromq/zmq.rs/issues/148 for details
@@ -26,12 +30,16 @@ pub(crate) async fn connect(host: &Host, port: Port) -> ZmqResult<(FramedIo, End
     tune_socket_buffers(&raw_socket);
     let peer_addr = raw_socket.peer_addr()?;
 
-    Ok((make_framed(raw_socket), Endpoint::from_tcp_addr(peer_addr)))
+    Ok((
+        make_framed(raw_socket, read_buffer_recovery),
+        Endpoint::from_tcp_addr(peer_addr),
+    ))
 }
 
 pub(crate) async fn begin_accept<T>(
     host: Host,
     port: Port,
+    read_buffer_recovery: bool,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
 ) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
@@ -41,11 +49,12 @@ where
     let resolved_addr = listener.local_addr()?;
     debug_assert_ne!(resolved_addr.port(), 0);
     let endpoint = Endpoint::Tcp(host, resolved_addr.port());
-    begin_accept_bound(listener, endpoint, cback).await
+    begin_accept_bound(listener, endpoint, read_buffer_recovery, cback).await
 }
 
 pub(crate) async fn begin_accept_listener<T>(
     listener: std::net::TcpListener,
+    read_buffer_recovery: bool,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
 ) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
@@ -59,12 +68,19 @@ where
     #[cfg(any(feature = "async-std-runtime", feature = "async-dispatcher-runtime"))]
     let listener = TcpListener::from(listener);
 
-    begin_accept_bound(listener, Endpoint::from_tcp_addr(resolved_addr), cback).await
+    begin_accept_bound(
+        listener,
+        Endpoint::from_tcp_addr(resolved_addr),
+        read_buffer_recovery,
+        cback,
+    )
+    .await
 }
 
 async fn begin_accept_bound<T>(
     listener: TcpListener,
     endpoint: Endpoint,
+    read_buffer_recovery: bool,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
 ) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
@@ -87,7 +103,7 @@ where
                         })
                         .map(|(raw_socket, remote_addr)| {
                             (
-                                make_framed(raw_socket),
+                                make_framed(raw_socket, read_buffer_recovery),
                                 Endpoint::from_tcp_addr(remote_addr),
                             )
                         })
