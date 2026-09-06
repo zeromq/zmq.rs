@@ -1,7 +1,8 @@
 use crate::codec::ZmqCodec;
+use crate::SocketOptions;
 
 use super::error::{CodecError, CodecResult};
-use super::{Message, MAX_READ_CHUNK_SIZE};
+use super::Message;
 
 use asynchronous_codec::{Decoder, FramedWrite};
 use bytes::BytesMut;
@@ -9,9 +10,8 @@ use futures::{ready, AsyncRead, AsyncWrite, Stream};
 
 use std::io;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
-
-const INITIAL_READ_CHUNK_SIZE: usize = 128;
 
 // Enables us to have multiple bounds on the dyn trait in `InnerFramed`
 pub trait FrameableRead: AsyncRead + Unpin + Send + Sync {}
@@ -25,25 +25,27 @@ pub(crate) type ZmqFramedWrite = asynchronous_codec::FramedWrite<Box<dyn Frameab
 ///
 /// Starts with a small read chunk and grows only when the transport keeps
 /// filling the requested space. This avoids a large default allocation while
-/// still reducing read/poll loops for large receive bursts. Optional short-read
+/// still reducing read/poll loops for large receive bursts. Short-read
 /// recovery reduces initialization and allocation traffic after a burst ends.
 pub struct ZmqFramedRead {
     inner: Box<dyn FrameableRead>,
     codec: ZmqCodec,
     buffer: BytesMut,
     read_chunk_size: usize,
-    // None disables recovery; Some records the previous successful short read.
-    short_read_seen: Option<bool>,
+    // Configuration is shared; adaptation state belongs to this connection.
+    options: Arc<SocketOptions>,
+    short_reads: usize,
 }
 
 impl ZmqFramedRead {
-    pub(crate) fn new(inner: Box<dyn FrameableRead>, read_buffer_recovery: bool) -> Self {
+    pub(crate) fn new(inner: Box<dyn FrameableRead>, options: Arc<SocketOptions>) -> Self {
         Self {
             inner,
-            codec: ZmqCodec::with_frame_headroom(read_buffer_recovery),
-            buffer: BytesMut::with_capacity(INITIAL_READ_CHUNK_SIZE),
-            read_chunk_size: INITIAL_READ_CHUNK_SIZE,
-            short_read_seen: read_buffer_recovery.then_some(false),
+            codec: ZmqCodec::with_options(&options),
+            buffer: BytesMut::with_capacity(options.read_buffer_initial_size),
+            read_chunk_size: options.read_buffer_initial_size,
+            options,
+            short_reads: 0,
         }
     }
 
@@ -56,37 +58,37 @@ impl ZmqFramedRead {
         let read_size = self
             .read_chunk_size
             .max(min_read_size)
-            .min(MAX_READ_CHUNK_SIZE);
+            .min(self.options.read_buffer_max_size);
 
         // futures::AsyncRead requires an initialized &mut [u8]. Grow BytesMut
         // first, then trim back to the actual read length so the read path does
         // not need a scratch buffer and a second data copy.
-        // The decoder checks frame length + MAX_READ_CHUNK_SIZE at the wire
+        // The decoder checks frame length + maximum chunk size at the wire
         // boundary, so preparing this slice cannot overflow its length.
         self.buffer.resize(start + read_size, 0);
 
         match Pin::new(&mut self.inner).poll_read(cx, &mut self.buffer[start..]) {
             Poll::Ready(Ok(bytes_read)) => {
                 self.buffer.truncate(start + bytes_read);
-                if bytes_read >= read_size && self.read_chunk_size < MAX_READ_CHUNK_SIZE {
-                    self.read_chunk_size = (self.read_chunk_size * 2).min(MAX_READ_CHUNK_SIZE);
+                if bytes_read >= read_size
+                    && self.read_chunk_size < self.options.read_buffer_max_size
+                {
+                    self.read_chunk_size =
+                        (self.read_chunk_size * 2).min(self.options.read_buffer_max_size);
                 }
-                if let Some(short_read_seen) = &mut self.short_read_seen {
-                    if bytes_read > 0 && bytes_read < self.read_chunk_size / 2 {
-                        if *short_read_seen {
-                            // Confirm a short read before shrinking: an isolated burst tail
-                            // otherwise makes the next batch repeatedly grow and shrink.
-                            // Leave room above the observation without increasing the chunk.
-                            self.read_chunk_size = (bytes_read.next_power_of_two() * 2)
-                                .max(256)
-                                .min(self.read_chunk_size);
-                            *short_read_seen = false;
-                        } else {
-                            *short_read_seen = true;
-                        }
-                    } else if bytes_read > 0 {
-                        *short_read_seen = false;
+                if bytes_read > 0 && bytes_read < self.read_chunk_size / 2 {
+                    self.short_reads += 1;
+                    if self.short_reads == self.options.read_buffer_short_reads {
+                        // Confirm short reads before shrinking: an isolated burst tail
+                        // otherwise makes the next batch repeatedly grow and shrink.
+                        // Leave room above the observation without increasing the chunk.
+                        self.read_chunk_size = (bytes_read.next_power_of_two() * 2)
+                            .max(self.options.read_buffer_initial_size * 2)
+                            .min(self.read_chunk_size);
+                        self.short_reads = 0;
                     }
+                } else if bytes_read > 0 {
+                    self.short_reads = 0;
                 }
                 Poll::Ready(Ok(bytes_read))
             }
@@ -153,9 +155,9 @@ impl FramedIo {
     pub fn new(
         read_half: Box<dyn FrameableRead>,
         write_half: Box<dyn FrameableWrite>,
-        read_buffer_recovery: bool,
+        options: Arc<SocketOptions>,
     ) -> Self {
-        let read_half = ZmqFramedRead::new(read_half, read_buffer_recovery);
+        let read_half = ZmqFramedRead::new(read_half, options);
         let write_half = FramedWrite::new(write_half, ZmqCodec::new());
         Self {
             read_half,
@@ -182,6 +184,9 @@ mod tests {
     use futures::{io::Cursor, AsyncRead};
     use std::io::ErrorKind;
     use std::sync::{Arc, Mutex};
+
+    const INITIAL_READ_CHUNK_SIZE: usize = 128;
+    const MAX_READ_CHUNK_SIZE: usize = 64 * 1024;
 
     struct RecordingReader {
         input: Vec<u8>,
@@ -238,7 +243,10 @@ mod tests {
     #[async_rt::test]
     async fn test_zmq_framed_read_yields_buffered_messages_before_reading_more() {
         let input = encoded_stream(&[b"first", b"second"]);
-        let mut reader = ZmqFramedRead::new(Box::new(Cursor::new(input)), false);
+        let mut reader = ZmqFramedRead::new(
+            Box::new(Cursor::new(input)),
+            Arc::new(SocketOptions::default()),
+        );
 
         assert!(matches!(
             reader.next().await,
@@ -272,7 +280,10 @@ mod tests {
     async fn test_zmq_framed_read_reports_truncated_frame_at_eof() {
         let mut input = BytesMut::from(ZmqGreeting::default()).to_vec();
         input.extend_from_slice(&[0, 5, b'a']);
-        let mut reader = ZmqFramedRead::new(Box::new(Cursor::new(input)), false);
+        let mut reader = ZmqFramedRead::new(
+            Box::new(Cursor::new(input)),
+            Arc::new(SocketOptions::default()),
+        );
 
         assert!(matches!(
             reader.next().await,
@@ -298,7 +309,7 @@ mod tests {
         let input_len = input.len();
         let mut reader = ZmqFramedRead::new(
             Box::new(RecordingReader::new(input, Arc::clone(&requested_sizes))),
-            false,
+            Arc::new(SocketOptions::default()),
         );
 
         assert!(matches!(

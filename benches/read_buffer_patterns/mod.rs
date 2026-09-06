@@ -10,7 +10,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use zeromq::{
-    __bench::{zmq_framed_read_with_recovery, Message, ZmqCodec, ZmqFramedRead},
+    __bench::{zmq_framed_read, Message, ZmqCodec, ZmqFramedRead},
     ZmqMessage,
 };
 
@@ -165,7 +165,6 @@ async fn drain_retained(mut reader: ZmqFramedRead) -> usize {
 }
 
 pub fn bench_read_buffer_patterns(c: &mut Criterion) {
-    let configs = [("default", false), ("recovery", true)];
     let patterns = [
         ("burst_small_burst", Pattern::small_messages(true)),
         ("continuous_burst", Pattern::small_messages(false)),
@@ -219,29 +218,27 @@ pub fn bench_read_buffer_patterns(c: &mut Criterion) {
     bench_runtime::configure_group(&mut group);
     for (name, pattern) in patterns {
         group.throughput(Throughput::Bytes(pattern.wire.len() as u64));
-        for (policy, config) in configs {
-            // Collect deterministic work counts separately; timed readers have no counters.
-            let counts = Arc::new(Mutex::new(ReadCounts::default()));
-            let counted = CountingReader {
-                inner: PatternReader::new(pattern.clone()),
-                counts: Arc::clone(&counts),
-            };
-            let reader = zmq_framed_read_with_recovery(counted, config);
-            assert_eq!(block_on(drain_retained(reader)), pattern.messages);
-            eprintln!("read_work {name}/{policy}: {:?}", counts.lock().unwrap());
-            group.bench_with_input(BenchmarkId::new(name, policy), &pattern, |b, pattern| {
-                b.iter_batched(
-                    || PatternReader::new(pattern.clone()),
-                    |source| {
-                        let reader = zmq_framed_read_with_recovery(source, config);
-                        let messages = block_on(drain_retained(reader));
-                        assert_eq!(messages, pattern.messages);
-                        black_box(messages);
-                    },
-                    BatchSize::SmallInput,
-                );
-            });
-        }
+        // Collect deterministic work counts separately; timed readers have no counters.
+        let counts = Arc::new(Mutex::new(ReadCounts::default()));
+        let counted = CountingReader {
+            inner: PatternReader::new(pattern.clone()),
+            counts: Arc::clone(&counts),
+        };
+        let reader = zmq_framed_read(counted);
+        assert_eq!(block_on(drain_retained(reader)), pattern.messages);
+        eprintln!("read_work {name}/default: {:?}", counts.lock().unwrap());
+        group.bench_with_input(BenchmarkId::new(name, "default"), &pattern, |b, pattern| {
+            b.iter_batched(
+                || PatternReader::new(pattern.clone()),
+                |source| {
+                    let reader = zmq_framed_read(source);
+                    let messages = block_on(drain_retained(reader));
+                    assert_eq!(messages, pattern.messages);
+                    black_box(messages);
+                },
+                BatchSize::SmallInput,
+            );
+        });
     }
     group.finish();
 }
@@ -302,40 +299,35 @@ pub fn bench_read_buffer_steady(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(
             (pattern.wire.len() - GREETING_STUB.len()) as u64,
         ));
-        for (policy, enabled) in [("default", false), ("recovery", true)] {
-            let mut reader = zmq_framed_read_with_recovery(
-                RepeatingReader(PatternReader::new(pattern.clone())),
-                enabled,
-            );
-            assert!(matches!(
-                block_on(reader.next()),
-                Some(Ok(Message::Greeting(_)))
-            ));
-            let mut retained = VecDeque::with_capacity(65);
-            // Prime a complete workload cycle before measuring the persistent reader.
-            block_on(async {
-                for _ in 0..pattern.messages {
-                    black_box(reader.next().await.unwrap().unwrap());
-                }
-            });
-            group.bench_function(BenchmarkId::new(name, policy), |b| {
-                b.iter(|| {
-                    block_on(async {
-                        for _ in 0..pattern.messages {
-                            let Message::Message(message) = reader.next().await.unwrap().unwrap()
-                            else {
-                                panic!("expected message");
-                            };
-                            retained.push_back(message);
-                            if retained.len() > 64 {
-                                retained.pop_front();
-                            }
+        let mut reader = zmq_framed_read(RepeatingReader(PatternReader::new(pattern.clone())));
+        assert!(matches!(
+            block_on(reader.next()),
+            Some(Ok(Message::Greeting(_)))
+        ));
+        let mut retained = VecDeque::with_capacity(65);
+        // Prime a complete workload cycle before measuring the persistent reader.
+        block_on(async {
+            for _ in 0..pattern.messages {
+                black_box(reader.next().await.unwrap().unwrap());
+            }
+        });
+        group.bench_function(BenchmarkId::new(name, "default"), |b| {
+            b.iter(|| {
+                block_on(async {
+                    for _ in 0..pattern.messages {
+                        let Message::Message(message) = reader.next().await.unwrap().unwrap()
+                        else {
+                            panic!("expected message");
+                        };
+                        retained.push_back(message);
+                        if retained.len() > 64 {
+                            retained.pop_front();
                         }
-                        black_box(&retained);
-                    });
+                    }
+                    black_box(&retained);
                 });
             });
-        }
+        });
     }
     group.finish();
 }

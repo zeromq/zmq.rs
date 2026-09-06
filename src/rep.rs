@@ -22,7 +22,7 @@ struct RepSocketBackend {
     pub(crate) peers: scc::HashMap<PeerIdentity, RepPeer>,
     fair_queue_inner: Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
-    socket_options: SocketOptions,
+    socket_options: Arc<SocketOptions>,
 }
 
 pub struct RepSocket {
@@ -47,7 +47,7 @@ impl Socket for RepSocket {
             peers: scc::HashMap::new(),
             fair_queue_inner: fair_queue.inner(),
             socket_monitor: Mutex::new(None),
-            socket_options: options,
+            socket_options: Arc::new(options),
         });
 
         let backend_weak = Arc::downgrade(&backend);
@@ -113,7 +113,7 @@ impl SocketBackend for RepSocketBackend {
         SocketType::REP
     }
 
-    fn socket_options(&self) -> &SocketOptions {
+    fn socket_options(&self) -> &Arc<SocketOptions> {
         &self.socket_options
     }
 

@@ -45,21 +45,6 @@ pub fn tune_libzmq_socket(socket: &zmq2::Socket) {
     socket.set_rcvhwm(LIBZMQ_HWM).expect("set libzmq rcvhwm");
 }
 
-/// Select the complete receive policy at socket construction, outside timed I/O.
-#[allow(dead_code)]
-pub fn socket_options() -> zeromq::SocketOptions {
-    let enabled = match std::env::var("ZMQRS_BENCH_READ_BUFFER_RECOVERY") {
-        Ok(value) => value
-            .parse::<bool>()
-            .expect("ZMQRS_BENCH_READ_BUFFER_RECOVERY must be true or false"),
-        Err(std::env::VarError::NotPresent) => false,
-        Err(error) => panic!("invalid read-buffer recovery setting: {error}"),
-    };
-    let mut options = zeromq::SocketOptions::default();
-    options.read_buffer_recovery(enabled);
-    options
-}
-
 #[cfg(feature = "tokio-runtime")]
 use tokio::runtime::{Builder, Runtime};
 

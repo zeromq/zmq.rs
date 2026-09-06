@@ -221,7 +221,7 @@ async fn try_reconnect(
 ) -> crate::ZmqResult<(PeerIdentity, Endpoint)> {
     // Attempt transport-level connection
     let (mut raw_socket, resolved_endpoint) =
-        transport::connect(endpoint, backend.socket_options().read_buffer_recovery).await?;
+        transport::connect(endpoint, Arc::clone(backend.socket_options())).await?;
 
     // Perform ZMTP handshake
     greet_exchange(&mut raw_socket).await?;

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 #[cfg(feature = "tokio-runtime")]
 use tokio::net::{TcpListener, TcpStream};
 
@@ -20,7 +22,7 @@ const TCP_SOCKET_BUFFER_SIZE: usize = 4 * 1024 * 1024;
 pub(crate) async fn connect(
     host: &Host,
     port: Port,
-    read_buffer_recovery: bool,
+    options: Arc<crate::SocketOptions>,
 ) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = TcpStream::connect((host.to_string().as_str(), port)).await?;
     // For some reason set_nodelay doesn't work on windows. See
@@ -31,7 +33,7 @@ pub(crate) async fn connect(
     let peer_addr = raw_socket.peer_addr()?;
 
     Ok((
-        make_framed(raw_socket, read_buffer_recovery),
+        make_framed(raw_socket, options),
         Endpoint::from_tcp_addr(peer_addr),
     ))
 }
@@ -39,7 +41,7 @@ pub(crate) async fn connect(
 pub(crate) async fn begin_accept<T>(
     host: Host,
     port: Port,
-    read_buffer_recovery: bool,
+    options: Arc<crate::SocketOptions>,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
 ) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
@@ -49,12 +51,12 @@ where
     let resolved_addr = listener.local_addr()?;
     debug_assert_ne!(resolved_addr.port(), 0);
     let endpoint = Endpoint::Tcp(host, resolved_addr.port());
-    begin_accept_bound(listener, endpoint, read_buffer_recovery, cback).await
+    begin_accept_bound(listener, endpoint, options, cback).await
 }
 
 pub(crate) async fn begin_accept_listener<T>(
     listener: std::net::TcpListener,
-    read_buffer_recovery: bool,
+    options: Arc<crate::SocketOptions>,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
 ) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
@@ -71,7 +73,7 @@ where
     begin_accept_bound(
         listener,
         Endpoint::from_tcp_addr(resolved_addr),
-        read_buffer_recovery,
+        options,
         cback,
     )
     .await
@@ -80,7 +82,7 @@ where
 async fn begin_accept_bound<T>(
     listener: TcpListener,
     endpoint: Endpoint,
-    read_buffer_recovery: bool,
+    options: Arc<crate::SocketOptions>,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
 ) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
@@ -103,7 +105,7 @@ where
                         })
                         .map(|(raw_socket, remote_addr)| {
                             (
-                                make_framed(raw_socket, read_buffer_recovery),
+                                make_framed(raw_socket, Arc::clone(&options)),
                                 Endpoint::from_tcp_addr(remote_addr),
                             )
                         })

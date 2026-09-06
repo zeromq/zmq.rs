@@ -140,11 +140,11 @@ fn bench_zmqrs_pub_pipelined_one(
 ) {
     let endpoint = endpoint(&format!("zmqrs-pub-{n_subs}-{msg_size}"), transport);
     let (mut pub_sock, mut subs) = rt.block_on(async {
-        let mut p = PubSocket::with_options(bench_runtime::socket_options());
+        let mut p = PubSocket::new();
         let bound = p.bind(&endpoint).await.expect("pub bind").to_string();
         let mut subs = Vec::with_capacity(n_subs);
         for _ in 0..n_subs {
-            let mut s = SubSocket::with_options(bench_runtime::socket_options());
+            let mut s = SubSocket::new();
             s.connect(bound.as_str()).await.expect("sub connect");
             s.subscribe("").await.expect("subscribe");
             subs.push(s);
@@ -323,9 +323,9 @@ fn bench_zmqrs_dealer_router_one(
 ) {
     let endpoint = endpoint(&format!("zmqrs-dr-{msg_size}"), transport);
     let (mut send, mut recv, router_task, stop_router) = rt.block_on(async {
-        let mut r = RouterSocket::with_options(bench_runtime::socket_options());
+        let mut r = RouterSocket::new();
         let bound = r.bind(&endpoint).await.expect("router bind").to_string();
-        let mut d = DealerSocket::with_options(bench_runtime::socket_options());
+        let mut d = DealerSocket::new();
         d.connect(bound.as_str()).await.expect("dealer connect");
         task::sleep(Duration::from_millis(50)).await;
         let (send, recv) = d.split();
@@ -399,13 +399,13 @@ fn bench_zmqrs_dealer_router_one_way_one(
 ) {
     let endpoint = endpoint(&format!("zmqrs-dr-one-way-{msg_size}"), transport);
     let (mut router, mut send) = rt.block_on(async {
-        let mut router = RouterSocket::with_options(bench_runtime::socket_options());
+        let mut router = RouterSocket::new();
         let bound = router
             .bind(&endpoint)
             .await
             .expect("router bind")
             .to_string();
-        let mut dealer = DealerSocket::with_options(bench_runtime::socket_options());
+        let mut dealer = DealerSocket::new();
         dealer
             .connect(bound.as_str())
             .await
@@ -454,9 +454,9 @@ fn bench_zmqrs_push_pull_one_way_one(
 ) {
     let endpoint = endpoint(&format!("zmqrs-pp-one-way-{msg_size}"), transport);
     let (mut pull, mut push) = rt.block_on(async {
-        let mut pull = PullSocket::with_options(bench_runtime::socket_options());
+        let mut pull = PullSocket::new();
         let bound = pull.bind(&endpoint).await.expect("pull bind").to_string();
-        let mut push = PushSocket::with_options(bench_runtime::socket_options());
+        let mut push = PushSocket::new();
         push.connect(bound.as_str()).await.expect("push connect");
         task::sleep(Duration::from_millis(50)).await;
         (pull, push)

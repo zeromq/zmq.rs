@@ -18,7 +18,7 @@ struct ReqSocketBackend {
     pub(crate) peers: scc::HashMap<PeerIdentity, Peer>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
     socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
-    socket_options: SocketOptions,
+    socket_options: Arc<SocketOptions>,
 }
 
 pub struct ReqSocket {
@@ -112,7 +112,7 @@ impl Socket for ReqSocket {
                 peers: scc::HashMap::new(),
                 round_robin: SegQueue::new(),
                 socket_monitor: Mutex::new(None),
-                socket_options: options,
+                socket_options: Arc::new(options),
             }),
             current_request: None,
             binds: HashMap::new(),
@@ -161,7 +161,7 @@ impl SocketBackend for ReqSocketBackend {
         SocketType::REQ
     }
 
-    fn socket_options(&self) -> &SocketOptions {
+    fn socket_options(&self) -> &Arc<SocketOptions> {
         &self.socket_options
     }
 

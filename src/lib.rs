@@ -110,7 +110,7 @@ pub mod __bench {
                 subscribers: scc::HashMap::new(),
                 subscriber_count: AtomicUsize::new(0),
                 socket_monitor: Mutex::new(None),
-                socket_options: SocketOptions::default(),
+                socket_options: Arc::new(SocketOptions::default()),
             });
             let mut receivers = Vec::with_capacity(subscriber_count);
 
@@ -156,14 +156,14 @@ pub mod __bench {
     where
         T: futures::AsyncRead + Unpin + Send + Sync + 'static,
     {
-        ZmqFramedRead::new(Box::new(inner), false)
+        ZmqFramedRead::new(Box::new(inner), Arc::new(SocketOptions::default()))
     }
 
-    pub fn zmq_framed_read_with_recovery<T>(inner: T, enabled: bool) -> ZmqFramedRead
+    pub fn zmq_framed_read_with_options<T>(inner: T, options: Arc<SocketOptions>) -> ZmqFramedRead
     where
         T: futures::AsyncRead + Unpin + Send + Sync + 'static,
     {
-        ZmqFramedRead::new(Box::new(inner), enabled)
+        ZmqFramedRead::new(Box::new(inner), options)
     }
 
     pub fn fair_queue_insert<S, K>(queue: &mut FairQueue<S, K>, key: K, stream: S)
@@ -349,7 +349,10 @@ pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct SocketOptions {
     pub(crate) peer_id: Option<PeerIdentity>,
     pub(crate) connect_timeout: Option<Duration>,
-    pub(crate) read_buffer_recovery: bool,
+    pub(crate) read_buffer_initial_size: usize,
+    // Shared by read preparation and decoder reservation.
+    pub(crate) read_buffer_max_size: usize,
+    pub(crate) read_buffer_short_reads: usize,
 }
 
 impl Default for SocketOptions {
@@ -357,32 +360,62 @@ impl Default for SocketOptions {
         Self {
             peer_id: None,
             connect_timeout: Some(DEFAULT_CONNECT_TIMEOUT),
-            read_buffer_recovery: false,
+            read_buffer_initial_size: 128,
+            read_buffer_max_size: 64 * 1024,
+            read_buffer_short_reads: 2,
         }
     }
 }
 
 impl SocketOptions {
-    /// Enables receive-buffer recovery after bursts for all peers, including
-    /// accepted and reconnected peers. Disabled by default to preserve the
-    /// grow-only reader (128-byte initial chunk, doubling up to 64 KiB).
+    /// Tunes adaptive receive-buffer sizing for all peers, including accepted
+    /// and reconnected peers. Defaults to 128-byte initial reads, a 64 KiB maximum,
+    /// and two consecutive short positive reads before shrinking.
     ///
-    /// Recovery waits for two consecutive short positive reads before shrinking
-    /// the chunk. Frames larger than 128 KiB reserve one full chunk of headroom
+    /// Full reads double the chunk up to `max_size`. Reads below half the current
+    /// chunk count toward `short_reads`; a larger positive read resets the count.
+    /// Recovery leaves twice the next power of two above the observed read size,
+    /// with a floor of twice `initial_size`, capped at the current chunk size.
+    /// Frames larger than twice `max_size` reserve one maximum chunk of headroom
     /// to avoid growing shared storage at the frame boundary. This reduces allocation and
     /// initialization traffic for bursty inputs, but can increase the capacity
     /// retained by a single large message. It is not a message-size or memory limit.
-    /// Set this option before constructing the socket; it affects receive I/O only.
+    /// Set these values before constructing the socket; they affect receive I/O only.
+    /// Recovery is always enabled. Counts refer to transport reads, not packets or messages.
+    ///
+    /// # Panics
+    /// Panics unless `0 < initial_size <= max_size <= isize::MAX / 2` and
+    /// `short_reads > 0`. The maximum leaves room for chunk growth and frame headroom.
     ///
     /// ```
     /// use zeromq::{Socket, SocketOptions, SubSocket};
     ///
     /// let mut options = SocketOptions::default();
-    /// options.read_buffer_recovery(true);
+    /// options.read_buffer(256, 32 * 1024, 3);
     /// let socket = SubSocket::with_options(options);
     /// ```
-    pub fn read_buffer_recovery(&mut self, enabled: bool) -> &mut Self {
-        self.read_buffer_recovery = enabled;
+    pub fn read_buffer(
+        &mut self,
+        initial_size: usize,
+        max_size: usize,
+        short_reads: usize,
+    ) -> &mut Self {
+        assert!(
+            initial_size > 0,
+            "initial read buffer size must be positive"
+        );
+        assert!(
+            initial_size <= max_size,
+            "initial read buffer size exceeds maximum"
+        );
+        assert!(
+            max_size <= isize::MAX as usize / 2,
+            "maximum read buffer size exceeds capacity"
+        );
+        assert!(short_reads > 0, "short read count must be positive");
+        self.read_buffer_initial_size = initial_size;
+        self.read_buffer_max_size = max_size;
+        self.read_buffer_short_reads = short_reads;
         self
     }
 
@@ -413,7 +446,8 @@ pub trait MultiPeerBackend: SocketBackend {
 
 pub trait SocketBackend: Send + Sync {
     fn socket_type(&self) -> SocketType;
-    fn socket_options(&self) -> &SocketOptions;
+    /// Shared, immutable options used by every connection of this socket.
+    fn socket_options(&self) -> &Arc<SocketOptions>;
     fn shutdown(&self);
     fn monitor(&self) -> &Mutex<Option<mpsc::Sender<SocketEvent>>>;
 }
@@ -478,13 +512,13 @@ where
         }
     };
 
-    let read_buffer_recovery = backend.socket_options().read_buffer_recovery;
+    let options = Arc::clone(backend.socket_options());
     let (endpoint, stop_handle) = match target {
         BindTarget::Endpoint(endpoint) => {
-            transport::begin_accept(endpoint, read_buffer_recovery, callback).await?
+            transport::begin_accept(endpoint, options, callback).await?
         }
         BindTarget::Listener(listener) => {
-            transport::begin_accept_listener(listener, read_buffer_recovery, callback).await?
+            transport::begin_accept_listener(listener, options, callback).await?
         }
     };
 
@@ -573,8 +607,7 @@ pub trait Socket: Sized + Send {
 
         let (socket, endpoint, peer_id) = util::run_with_timeout(connect_timeout, async {
             let (mut socket, endpoint) =
-                util::connect_forever(endpoint, backend.socket_options().read_buffer_recovery)
-                    .await?;
+                util::connect_forever(endpoint, Arc::clone(backend.socket_options())).await?;
             let peer_id = util::peer_handshake(&mut socket, backend.clone()).await?;
             Ok((socket, endpoint, peer_id))
         })

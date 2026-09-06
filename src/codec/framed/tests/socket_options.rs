@@ -14,7 +14,7 @@ use std::time::Duration;
 // Capture the actual framed connection after the normal socket handshake so
 // the tests detect configuration lost anywhere between SocketOptions and I/O.
 struct RecordingBackend {
-    options: SocketOptions,
+    options: Arc<SocketOptions>,
     peers: mpsc::UnboundedSender<(PeerIdentity, FramedIo)>,
     monitor: ParkingMutex<Option<mpsc::Sender<SocketEvent>>>,
 }
@@ -23,7 +23,7 @@ impl SocketBackend for RecordingBackend {
     fn socket_type(&self) -> SocketType {
         SocketType::PAIR
     }
-    fn socket_options(&self) -> &SocketOptions {
+    fn socket_options(&self) -> &Arc<SocketOptions> {
         &self.options
     }
     fn shutdown(&self) {}
@@ -52,7 +52,7 @@ impl Socket for RecordingSocket {
         let (sender, peers) = mpsc::unbounded();
         Self {
             backend: Arc::new(RecordingBackend {
-                options,
+                options: Arc::new(options),
                 peers: sender,
                 monitor: ParkingMutex::new(None),
             }),
@@ -84,7 +84,7 @@ impl RecordingSocket {
 
 fn configured_socket() -> RecordingSocket {
     let mut options = SocketOptions::default();
-    options.read_buffer_recovery(true);
+    options.read_buffer(256, 32 * 1024, 3);
     RecordingSocket::with_options(options)
 }
 
@@ -92,14 +92,14 @@ async fn exchange(left: &mut RecordingSocket, right: &mut RecordingSocket, endpo
     right.connect(&endpoint.to_string()).await.unwrap();
     let (_, mut left_io) = left.connected_peer().await;
     let (_, mut right_io) = right.connected_peer().await;
-    assert_eq!(
-        left_io.read_half.short_read_seen.is_some(),
-        left.backend.options.read_buffer_recovery
-    );
-    assert_eq!(
-        right_io.read_half.short_read_seen.is_some(),
-        right.backend.options.read_buffer_recovery
-    );
+    assert!(Arc::ptr_eq(
+        &left_io.read_half.options,
+        &left.backend.options,
+    ));
+    assert!(Arc::ptr_eq(
+        &right_io.read_half.options,
+        &right.backend.options,
+    ));
     let mut message = crate::ZmqMessage::from(Bytes::from(vec![1; 338_729]));
     message.push_back(Bytes::from_static(b"last part"));
     // IPC can backpressure a large write before the whole message is sent.
@@ -169,11 +169,23 @@ async fn read_buffer_reconnect_preserves_socket_options() {
     notifier.send(peer_id).await.unwrap();
     let (_, reconnected_io) = right.connected_peer().await;
     handle.shutdown();
-    assert_eq!(
-        reconnected_io.read_half.short_read_seen.is_some(),
-        right.backend.options.read_buffer_recovery
-    );
+    assert!(Arc::ptr_eq(
+        &reconnected_io.read_half.options,
+        &right.backend.options,
+    ));
     drop(left.connected_peer().await);
+    assert!(left.close().await.is_empty());
+    assert!(right.close().await.is_empty());
+}
+
+#[cfg(feature = "tcp-transport")]
+#[async_rt::test]
+async fn read_buffer_adopted_tcp_listener_uses_socket_options() {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let mut left = configured_socket();
+    let mut right = RecordingSocket::new();
+    let endpoint = left.bind_listener(listener).await.unwrap();
+    exchange(&mut left, &mut right, endpoint).await;
     assert!(left.close().await.is_empty());
     assert!(right.close().await.is_empty());
 }

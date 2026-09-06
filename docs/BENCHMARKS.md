@@ -176,22 +176,30 @@ ZMQRS_BENCH_TRANSPORTS=tcp cargo bench --bench compare_libzmq -- --test
 
 ## Receive-buffer recovery
 
-`SocketOptions::read_buffer_recovery(true)` enables one complete receive policy.
-The default remains grow-only: start at 128 bytes, double full reads up to 64 KiB.
-Recovery waits for two consecutive qualifying short positive reads before
-shrinking; frames larger than 128 KiB reserve a full 64 KiB of headroom, including space for
-the read after a retained frame is split. Single large messages may retain more
-capacity. Neither policy is a message-size or total-memory limit.
+Receive-buffer recovery is always enabled. By default the reader starts at
+128 bytes, doubles full reads up to 64 KiB, and waits for two consecutive
+qualifying short positive reads before shrinking. Frames larger than twice
+the configured maximum reserve a full maximum chunk of headroom, including
+space for the read after a retained frame is split. Single large messages may
+retain more capacity. These settings are not message-size or total-memory limits.
+
+Tune the initial size, maximum size, and short-read confirmation count before
+constructing a socket:
 
 ```rust
 use zeromq::{Socket, SocketOptions, SubSocket};
 
 let mut options = SocketOptions::default();
-options.read_buffer_recovery(true);
+options.read_buffer(256, 32 * 1024, 3);
 let socket = SubSocket::with_options(options);
 ```
 
-`framed_read/retained` compares both policies on identical synthetic ZMTP bytes,
+All connection paths share the socket's immutable `Arc<SocketOptions>`, while
+each reader maintains its own adaptive state. `Socket::with_options` still takes
+options by value; custom `SocketBackend` implementations now return
+`&Arc<SocketOptions>` from `socket_options`.
+
+`framed_read/retained` exercises the default policy on synthetic ZMTP bytes,
 retaining up to 64 messages. It covers burst/small/burst transitions, continuous
 bursts, gapped 64-message batches, single and repeated large frames, and multipart
 messages. Repeated large and multipart frames include both continuous input and
@@ -209,25 +217,24 @@ adaptive state and prefetched messages. Use it to assess ongoing receive work;
 do not interpret a single-message construction benchmark as per-message cost on
 a long-lived connection.
 
-The retained benchmark prints separate `read_work` counters once per policy:
+The retained benchmark prints separate `read_work` counters once per case:
 `prepared_bytes` is the sum of slices supplied to `poll_read` (including EOF),
 and `read_calls` counts those calls. In this reader, these slices correspond to
 newly initialized buffer space. Neither counter measures allocator requests,
 RSS, live heap or bytes copied. Timed iterations do not collect these counters.
 
-The real socket `throughput` and `compare_libzmq` benches select recovery at socket
-construction with `ZMQRS_BENCH_READ_BUFFER_RECOVERY=true`; absent or `false` keeps
-the default. This setting only affects zmq.rs sockets, so libzmq cases can remain
-controls. Run policies and binaries serially after all builds finish:
+The real socket `throughput` and `compare_libzmq` benches use the default socket
+options. Compare an upstream checkout and this change with separate build/target
+directories and the same dependency versions. Use identical benchmark sources
+in both checkouts when comparing a group added by this change. Finish all builds
+before running binaries serially; do not use an in-process disable switch as a baseline.
 
 ```sh
-ZMQRS_BENCH_READ_BUFFER_RECOVERY=false cargo bench --bench throughput
-ZMQRS_BENCH_READ_BUFFER_RECOVERY=true cargo bench --bench throughput
-ZMQRS_BENCH_READ_BUFFER_RECOVERY=false cargo bench --bench compare_libzmq
-ZMQRS_BENCH_READ_BUFFER_RECOVERY=true cargo bench --bench compare_libzmq
+cargo bench --bench throughput
+cargo bench --bench compare_libzmq
 ```
 
-Both receive policies reject wire frame lengths that cannot fit the reader's
+The decoder rejects wire frame lengths that cannot fit the reader's configured
 frame-plus-chunk capacity before reserving memory. This converts an existing
 capacity panic into a decode error; it does not make allocation failure recoverable.
 

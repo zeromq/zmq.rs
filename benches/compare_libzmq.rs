@@ -255,7 +255,7 @@ fn bench_native_pub_send_one(
     msg_size: usize,
 ) {
     let (mut pub_sock, stop, handles) = rt.block_on(async {
-        let mut p = PubSocket::with_options(bench_runtime::socket_options());
+        let mut p = PubSocket::new();
         let bound = p
             .bind(hotpath_native_endpoint())
             .await
@@ -263,7 +263,7 @@ fn bench_native_pub_send_one(
             .to_string();
         let mut subs = Vec::with_capacity(n_subs);
         for _ in 0..n_subs {
-            let mut sub = SubSocket::with_options(bench_runtime::socket_options());
+            let mut sub = SubSocket::new();
             sub.connect(bound.as_str()).await.expect("sub connect");
             sub.subscribe("").await.expect("subscribe");
             subs.push(sub);
@@ -306,13 +306,13 @@ fn bench_native_pub_send_one(
 
 fn bench_native_push_send_one(b: &mut criterion::Bencher<'_>, rt: &BenchRuntime, msg_size: usize) {
     let (mut push, stop, handle) = rt.block_on(async {
-        let mut pull = PullSocket::with_options(bench_runtime::socket_options());
+        let mut pull = PullSocket::new();
         let bound = pull
             .bind(hotpath_native_endpoint())
             .await
             .expect("pull bind")
             .to_string();
-        let mut push = PushSocket::with_options(bench_runtime::socket_options());
+        let mut push = PushSocket::new();
         push.connect(bound.as_str()).await.expect("push connect");
         task::sleep(Duration::from_millis(50)).await;
 
@@ -350,13 +350,13 @@ fn bench_native_dealer_send_one(
     msg_size: usize,
 ) {
     let (mut dealer, stop, handle) = rt.block_on(async {
-        let mut router = RouterSocket::with_options(bench_runtime::socket_options());
+        let mut router = RouterSocket::new();
         let bound = router
             .bind(hotpath_native_endpoint())
             .await
             .expect("router bind")
             .to_string();
-        let mut dealer = DealerSocket::with_options(bench_runtime::socket_options());
+        let mut dealer = DealerSocket::new();
         dealer
             .connect(bound.as_str())
             .await
@@ -608,7 +608,7 @@ fn bench_native_pub_delivered_one(
     msg_size: usize,
 ) {
     let (mut pub_sock, mut subs) = rt.block_on(async {
-        let mut p = PubSocket::with_options(bench_runtime::socket_options());
+        let mut p = PubSocket::new();
         let bound = p
             .bind(hotpath_native_endpoint())
             .await
@@ -616,7 +616,7 @@ fn bench_native_pub_delivered_one(
             .to_string();
         let mut subs = Vec::with_capacity(n_subs);
         for _ in 0..n_subs {
-            let mut sub = SubSocket::with_options(bench_runtime::socket_options());
+            let mut sub = SubSocket::new();
             sub.connect(bound.as_str()).await.expect("sub connect");
             sub.subscribe("").await.expect("subscribe");
             subs.push(sub);
@@ -649,13 +649,13 @@ fn bench_native_push_delivered_one(
     msg_size: usize,
 ) {
     let (mut push, mut pull) = rt.block_on(async {
-        let mut pull = PullSocket::with_options(bench_runtime::socket_options());
+        let mut pull = PullSocket::new();
         let bound = pull
             .bind(hotpath_native_endpoint())
             .await
             .expect("pull bind")
             .to_string();
-        let mut push = PushSocket::with_options(bench_runtime::socket_options());
+        let mut push = PushSocket::new();
         push.connect(bound.as_str()).await.expect("push connect");
         task::sleep(Duration::from_millis(50)).await;
         (push, pull)
@@ -678,13 +678,13 @@ fn bench_native_dealer_delivered_one(
     msg_size: usize,
 ) {
     let (mut dealer, mut router) = rt.block_on(async {
-        let mut router = RouterSocket::with_options(bench_runtime::socket_options());
+        let mut router = RouterSocket::new();
         let bound = router
             .bind(hotpath_native_endpoint())
             .await
             .expect("router bind")
             .to_string();
-        let mut dealer = DealerSocket::with_options(bench_runtime::socket_options());
+        let mut dealer = DealerSocket::new();
         dealer
             .connect(bound.as_str())
             .await
@@ -713,13 +713,13 @@ fn bench_native_xpub_to_xsub_delivered_one(
     msg_size: usize,
 ) {
     let (mut xpub, mut xsub) = rt.block_on(async {
-        let mut xpub = XPubSocket::with_options(bench_runtime::socket_options());
+        let mut xpub = XPubSocket::new();
         let bound = xpub
             .bind(hotpath_native_endpoint())
             .await
             .expect("xpub bind")
             .to_string();
-        let mut xsub = XSubSocket::with_options(bench_runtime::socket_options());
+        let mut xsub = XSubSocket::new();
         xsub.connect(bound.as_str()).await.expect("xsub connect");
         xsub.subscribe("").await.expect("xsub subscribe");
         task::timeout(Duration::from_secs(2), xpub.recv())
@@ -747,13 +747,13 @@ fn bench_native_xsub_to_xpub_delivered_one(
     msg_size: usize,
 ) {
     let (mut xsub, mut xpub) = rt.block_on(async {
-        let mut xpub = XPubSocket::with_options(bench_runtime::socket_options());
+        let mut xpub = XPubSocket::new();
         let bound = xpub
             .bind(hotpath_native_endpoint())
             .await
             .expect("xpub bind")
             .to_string();
-        let mut xsub = XSubSocket::with_options(bench_runtime::socket_options());
+        let mut xsub = XSubSocket::new();
         xsub.connect(bound.as_str()).await.expect("xsub connect");
         task::sleep(Duration::from_millis(50)).await;
         (xsub, xpub)
@@ -1032,11 +1032,11 @@ fn bench_zmqrs_pub_sub_one(
     endpoint: &str,
 ) {
     let (mut pub_sock, mut subs) = rt.block_on(async {
-        let mut p = PubSocket::with_options(bench_runtime::socket_options());
+        let mut p = PubSocket::new();
         let bound = p.bind(endpoint).await.expect("pub bind").to_string();
         let mut subs = Vec::with_capacity(n_subs);
         for _ in 0..n_subs {
-            let mut s = SubSocket::with_options(bench_runtime::socket_options());
+            let mut s = SubSocket::new();
             s.connect(bound.as_str()).await.expect("sub connect");
             s.subscribe("").await.expect("subscribe");
             subs.push(s);
@@ -1142,9 +1142,9 @@ fn bench_zmqrs_req_rep_one(
     endpoint: &str,
 ) {
     let (mut req, mut rep) = rt.block_on(async {
-        let mut r = RepSocket::with_options(bench_runtime::socket_options());
+        let mut r = RepSocket::new();
         let bound = r.bind(endpoint).await.expect("rep bind").to_string();
-        let mut q = ReqSocket::with_options(bench_runtime::socket_options());
+        let mut q = ReqSocket::new();
         q.connect(bound.as_str()).await.expect("req connect");
         task::sleep(Duration::from_millis(50)).await;
         (q, r)
@@ -1231,9 +1231,9 @@ fn bench_zmqrs_push_pull_one(
     endpoint: &str,
 ) {
     let (mut push, mut pull) = rt.block_on(async {
-        let mut p = PullSocket::with_options(bench_runtime::socket_options());
+        let mut p = PullSocket::new();
         let bound = p.bind(endpoint).await.expect("pull bind").to_string();
-        let mut s = PushSocket::with_options(bench_runtime::socket_options());
+        let mut s = PushSocket::new();
         s.connect(bound.as_str()).await.expect("push connect");
         task::sleep(Duration::from_millis(50)).await;
         (s, p)
@@ -1333,9 +1333,9 @@ fn bench_zmqrs_dealer_router_one(
     endpoint: &str,
 ) {
     let (mut dealer, mut router) = rt.block_on(async {
-        let mut r = RouterSocket::with_options(bench_runtime::socket_options());
+        let mut r = RouterSocket::new();
         let bound = r.bind(endpoint).await.expect("router bind").to_string();
-        let mut d = DealerSocket::with_options(bench_runtime::socket_options());
+        let mut d = DealerSocket::new();
         d.connect(bound.as_str()).await.expect("dealer connect");
         task::sleep(Duration::from_millis(50)).await;
         (d, r)

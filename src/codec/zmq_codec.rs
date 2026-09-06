@@ -1,8 +1,8 @@
 use super::command::ZmqCommand;
 use super::error::CodecError;
 use super::greeting::ZmqGreeting;
-use super::{Message, MAX_READ_CHUNK_SIZE};
-use crate::ZmqMessage;
+use super::Message;
+use crate::{SocketOptions, ZmqMessage};
 
 use asynchronous_codec::{Decoder, Encoder};
 use bytes::{Buf, Bytes, BytesMut};
@@ -32,20 +32,20 @@ pub struct ZmqCodec {
     // This allows to encapsulate its processing inside codec and not expose
     // internal details to higher levels
     buffered_message: Option<ZmqMessage>,
-    reserve_read_headroom: bool,
+    max_read_chunk_size: usize,
 }
 
 impl ZmqCodec {
     pub fn new() -> Self {
-        Self::with_frame_headroom(false)
+        Self::with_options(&SocketOptions::default())
     }
 
-    pub(crate) fn with_frame_headroom(enabled: bool) -> Self {
+    pub(crate) fn with_options(options: &SocketOptions) -> Self {
         Self {
             state: DecoderState::Greeting,
             waiting_for: 64, // len of the greeting frame
             buffered_message: None,
-            reserve_read_headroom: enabled,
+            max_read_chunk_size: options.read_buffer_max_size,
         }
     }
 
@@ -74,13 +74,12 @@ impl Decoder for ZmqCodec {
             // almost-complete frame copy its body when reserve detaches it from
             // a retained predecessor. Limit headroom to frames spanning more
             // than two chunks, where it adds less than half the body size.
-            let reserve_to =
-                if self.reserve_read_headroom && self.waiting_for > 2 * MAX_READ_CHUNK_SIZE {
-                    // Frame lengths are validated with this headroom before entering Frame.
-                    self.waiting_for + MAX_READ_CHUNK_SIZE
-                } else {
-                    self.waiting_for
-                };
+            let reserve_to = if self.waiting_for > 2 * self.max_read_chunk_size {
+                // Frame lengths are validated with this headroom before entering Frame.
+                self.waiting_for + self.max_read_chunk_size
+            } else {
+                self.waiting_for
+            };
             src.reserve(reserve_to - src.len());
             return Ok(None);
         }
@@ -112,9 +111,9 @@ impl Decoder for ZmqCodec {
                     let len = usize::try_from(src.get_u64()).map_err(|_error| {
                         CodecError::Decode("Frame length exceeds read buffer capacity")
                     })?;
-                    // Both policies may prepare a full read chunk at the frame tail.
+                    // The reader may prepare a full read chunk at the frame tail.
                     // Reject unrepresentable lengths here, before reserve or resize.
-                    len.checked_add(MAX_READ_CHUNK_SIZE)
+                    len.checked_add(self.max_read_chunk_size)
                         .filter(|&capacity| isize::try_from(capacity).is_ok())
                         .ok_or(CodecError::Decode(
                             "Frame length exceeds read buffer capacity",
