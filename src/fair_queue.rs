@@ -59,6 +59,13 @@ impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
         }
     }
 
+    fn register_waker(&mut self, waker: &Waker) {
+        match &mut self.waker {
+            Some(current) => current.clone_from(waker),
+            None => self.waker = Some(waker.clone()),
+        }
+    }
+
     fn push_ready(&mut self, k: K) {
         if self.queued.insert(k.clone()) {
             self.ready_queue.push(ReadyEvent {
@@ -139,7 +146,7 @@ where
         let fair_queue = self.get_mut();
         let mut remaining_ready = {
             let mut inner = fair_queue.inner.lock();
-            inner.waker = Some(cx.waker().clone());
+            inner.register_waker(cx.waker());
             inner.ready_queue.len()
         };
 
@@ -147,7 +154,7 @@ where
             remaining_ready -= 1;
             let (event, mut io_stream) = {
                 let mut inner = fair_queue.inner.lock();
-                inner.waker = Some(cx.waker().clone());
+                inner.register_waker(cx.waker());
                 let event = match inner.ready_queue.pop() {
                     Some(s) => s,
                     None => {
@@ -200,7 +207,7 @@ where
         }
 
         let mut inner = fair_queue.inner.lock();
-        inner.waker = Some(cx.waker().clone());
+        inner.register_waker(cx.waker());
         let should_wake = !inner.ready_queue.is_empty();
         let result = if !inner.streams.is_empty() || fair_queue.block_on_no_clients {
             Poll::Pending
