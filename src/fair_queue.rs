@@ -15,7 +15,9 @@ pub(crate) struct QueueInner<S, K: Clone> {
     counter: atomic::AtomicUsize,
     ready_queue: BinaryHeap<ReadyEvent<K>>,
     queued: HashSet<K>,
-    streams: HashMap<K, StreamEntry<S, K>>,
+    // None keeps the registration while its stream is polled outside the lock.
+    // Only one poll can be active; insert replaces the slot and remove deletes it.
+    streams: HashMap<K, Option<StreamEntry<S, K>>>,
     waker: Option<Waker>,
     /// Callback invoked when a stream ends (peer disconnected).
     /// Wrapped in Arc so it can be cloned and called outside the lock.
@@ -26,13 +28,13 @@ impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
     pub fn insert(&mut self, k: K, s: S) {
         self.streams.insert(
             k.clone(),
-            StreamEntry {
+            Some(StreamEntry {
                 stream: Box::pin(s),
                 waker: Arc::new(StreamWaker {
                     inner: self.inner.clone(),
                     key: k.clone(),
                 }),
-            },
+            }),
         );
         self.push_ready(k);
         if let Some(w) = &self.waker {
@@ -166,7 +168,7 @@ where
                     }
                 };
                 inner.queued.remove(&event.key);
-                match inner.streams.remove(&event.key) {
+                match inner.streams.get_mut(&event.key).and_then(Option::take) {
                     Some(stream) => (event, stream),
                     None => continue,
                 }
@@ -179,8 +181,10 @@ where
                     let key = event.key.clone();
                     let item = Some((key.clone(), res));
                     let mut inner = fair_queue.inner.lock();
-                    inner.streams.insert(event.key, io_stream);
-                    inner.push_ready(key);
+                    if let Some(slot @ None) = inner.streams.get_mut(&event.key) {
+                        *slot = Some(io_stream);
+                        inner.push_ready(key);
+                    }
                     return Poll::Ready(item);
                 }
                 Poll::Ready(None) => {
@@ -188,8 +192,13 @@ where
                     // Clone the callback Arc so we can call it outside the lock
                     // (to avoid deadlock if callback accesses inner)
                     let callback = {
-                        let inner = fair_queue.inner.lock();
-                        inner.on_disconnect.clone()
+                        let mut inner = fair_queue.inner.lock();
+                        if matches!(inner.streams.get(&event.key), Some(None)) {
+                            inner.remove(&event.key);
+                            inner.on_disconnect.clone()
+                        } else {
+                            None
+                        }
                     };
                     // Call callback outside the lock
                     if let Some(callback) = callback {
@@ -200,7 +209,9 @@ where
                 }
                 Poll::Pending => {
                     let mut inner = fair_queue.inner.lock();
-                    inner.streams.insert(event.key, io_stream);
+                    if let Some(slot @ None) = inner.streams.get_mut(&event.key) {
+                        *slot = Some(io_stream);
+                    }
                     continue;
                 }
             }
@@ -259,6 +270,7 @@ impl<S, K: Clone> FairQueue<S, K> {
 #[cfg(test)]
 mod test {
     mod cached_waker;
+    mod poll_registration;
 
     use crate::async_rt;
     use crate::fair_queue::FairQueue;
@@ -601,6 +613,7 @@ mod test {
             .streams
             .values_mut()
             .map(|stream| {
+                let stream = stream.as_mut().unwrap();
                 let UnifiedStream::CountPending(stream) = stream.stream.as_mut().get_mut() else {
                     panic!("unexpected stream type");
                 };
@@ -647,6 +660,7 @@ mod test {
             "wake generated during poll should be tracked as queued"
         );
         let stream = lock.streams.get_mut("pending").unwrap();
+        let stream = stream.as_mut().unwrap();
         let UnifiedStream::WakePending(stream) = stream.stream.as_mut().get_mut() else {
             panic!("unexpected stream type");
         };
