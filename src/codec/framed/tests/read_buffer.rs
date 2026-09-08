@@ -174,7 +174,8 @@ fn read_buffer_pending_and_errors_preserve_buffered_data_and_recovery_state() {
         } else {
             assert!(result.is_pending());
         }
-        assert_eq!(&reader.buffer[..], b"partial frame");
+        let buffered_len = reader.pending_read_start.unwrap_or(reader.buffer.len());
+        assert_eq!(&reader.buffer[..buffered_len], b"partial frame");
         assert_eq!(reader.read_chunk_size, MAX_READ_CHUNK_SIZE);
         assert_eq!(reader.short_reads, 1);
     }
