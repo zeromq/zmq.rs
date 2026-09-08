@@ -66,89 +66,88 @@ impl Decoder for ZmqCodec {
     type Item = Message;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if src.len() < self.waiting_for {
-            // The final read may coalesce bytes from the following frame. Reserve
-            // its headroom now rather than grow shared storage again at the frame tail.
-            // Qualifying retained frames must leave a full chunk for the next read.
-            // For frames near one chunk, spare shared storage makes the next
-            // almost-complete frame copy its body when reserve detaches it from
-            // a retained predecessor. Limit headroom to frames spanning more
-            // than two chunks, where it adds less than half the body size.
-            let reserve_to = if self.waiting_for > 2 * self.max_read_chunk_size {
-                // Frame lengths are validated with this headroom before entering Frame.
-                self.waiting_for + self.max_read_chunk_size
-            } else {
-                self.waiting_for
-            };
-            src.reserve(reserve_to - src.len());
-            return Ok(None);
-        }
-        match self.state {
-            DecoderState::Greeting => {
-                if src[0] != 0xff {
-                    return Err(CodecError::Decode("Bad first byte of greeting"));
-                }
-                self.state = DecoderState::FrameHeader;
-                self.waiting_for = 1;
-                Ok(Some(Message::Greeting(ZmqGreeting::try_from(
-                    src.split_to(64).freeze(),
-                )?)))
-            }
-            DecoderState::FrameHeader => {
-                let flags = src.get_u8();
-
-                let frame = Frame {
-                    command: (flags & 0b0000_0100) != 0,
-                    long: (flags & 0b0000_0010) != 0,
-                    more: (flags & 0b0000_0001) != 0,
-                };
-                self.state = DecoderState::FrameLen(frame);
-                self.waiting_for = if frame.long { 8 } else { 1 };
-                self.decode(src)
-            }
-            DecoderState::FrameLen(frame) => {
-                let frame_len = if frame.long {
-                    let len = usize::try_from(src.get_u64()).map_err(|_error| {
-                        CodecError::Decode("Frame length exceeds read buffer capacity")
-                    })?;
-                    // The reader may prepare a full read chunk at the frame tail.
-                    // Reject unrepresentable lengths here, before reserve or resize.
-                    len.checked_add(self.max_read_chunk_size)
-                        .filter(|&capacity| isize::try_from(capacity).is_ok())
-                        .ok_or(CodecError::Decode(
-                            "Frame length exceeds read buffer capacity",
-                        ))?;
-                    len
+        // A single read can contain thousands of frames; keep stack use independent of that count.
+        loop {
+            if src.len() < self.waiting_for {
+                // The final read may coalesce bytes from the following frame. Reserve
+                // its headroom now rather than grow shared storage again at the frame tail.
+                // Qualifying retained frames must leave a full chunk for the next read.
+                // For frames near one chunk, spare shared storage makes the next
+                // almost-complete frame copy its body when reserve detaches it from
+                // a retained predecessor. Limit headroom to frames spanning more
+                // than two chunks, where it adds less than half the body size.
+                let reserve_to = if self.waiting_for > 2 * self.max_read_chunk_size {
+                    // Frame lengths are validated with this headroom before entering Frame.
+                    self.waiting_for + self.max_read_chunk_size
                 } else {
-                    usize::from(src.get_u8())
+                    self.waiting_for
                 };
-                self.state = DecoderState::Frame(frame);
-                self.waiting_for = frame_len;
-                self.decode(src)
+                src.reserve(reserve_to - src.len());
+                return Ok(None);
             }
-            DecoderState::Frame(frame) => {
-                let data = src.split_to(self.waiting_for);
-                self.state = DecoderState::FrameHeader;
-                self.waiting_for = 1;
-                if frame.command {
-                    return Ok(Some(Message::Command(ZmqCommand::try_from(data.freeze())?)));
+            match self.state {
+                DecoderState::Greeting => {
+                    if src[0] != 0xff {
+                        return Err(CodecError::Decode("Bad first byte of greeting"));
+                    }
+                    self.state = DecoderState::FrameHeader;
+                    self.waiting_for = 1;
+                    return Ok(Some(Message::Greeting(ZmqGreeting::try_from(
+                        src.split_to(64).freeze(),
+                    )?)));
                 }
+                DecoderState::FrameHeader => {
+                    let flags = src.get_u8();
 
-                // process incoming message frame
-                match &mut self.buffered_message {
-                    Some(v) => v.push_back(data.freeze()),
-                    None => self.buffered_message = Some(ZmqMessage::from(data.freeze())),
+                    let frame = Frame {
+                        command: (flags & 0b0000_0100) != 0,
+                        long: (flags & 0b0000_0010) != 0,
+                        more: (flags & 0b0000_0001) != 0,
+                    };
+                    self.state = DecoderState::FrameLen(frame);
+                    self.waiting_for = if frame.long { 8 } else { 1 };
                 }
+                DecoderState::FrameLen(frame) => {
+                    let frame_len = if frame.long {
+                        let len = usize::try_from(src.get_u64()).map_err(|_error| {
+                            CodecError::Decode("Frame length exceeds read buffer capacity")
+                        })?;
+                        // The reader may prepare a full read chunk at the frame tail.
+                        // Reject unrepresentable lengths here, before reserve or resize.
+                        len.checked_add(self.max_read_chunk_size)
+                            .filter(|&capacity| isize::try_from(capacity).is_ok())
+                            .ok_or(CodecError::Decode(
+                                "Frame length exceeds read buffer capacity",
+                            ))?;
+                        len
+                    } else {
+                        usize::from(src.get_u8())
+                    };
+                    self.state = DecoderState::Frame(frame);
+                    self.waiting_for = frame_len;
+                }
+                DecoderState::Frame(frame) => {
+                    let data = src.split_to(self.waiting_for);
+                    self.state = DecoderState::FrameHeader;
+                    self.waiting_for = 1;
+                    if frame.command {
+                        return Ok(Some(Message::Command(ZmqCommand::try_from(data.freeze())?)));
+                    }
 
-                if frame.more {
-                    self.decode(src)
-                } else {
-                    // Quoth the Raven “Nevermore.”
-                    Ok(Some(Message::Message(
-                        self.buffered_message
-                            .take()
-                            .expect("Corrupted decoder state"),
-                    )))
+                    // process incoming message frame
+                    match &mut self.buffered_message {
+                        Some(v) => v.push_back(data.freeze()),
+                        None => self.buffered_message = Some(ZmqMessage::from(data.freeze())),
+                    }
+
+                    if !frame.more {
+                        // Quoth the Raven “Nevermore.”
+                        return Ok(Some(Message::Message(
+                            self.buffered_message
+                                .take()
+                                .expect("Corrupted decoder state"),
+                        )));
+                    }
                 }
             }
         }
@@ -196,6 +195,7 @@ impl Encoder for ZmqCodec {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod multipart;
     mod read_buffer;
 
     use super::*;
