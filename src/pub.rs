@@ -70,7 +70,7 @@ pub(crate) struct PubSocketBackend {
     pub(crate) subscribers: scc::HashMap<PeerIdentity, Subscriber>,
     pub(crate) subscriber_count: AtomicUsize,
     pub(crate) socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
-    pub(crate) socket_options: SocketOptions,
+    pub(crate) socket_options: Arc<SocketOptions>,
 }
 
 struct PubFanoutQueue {
@@ -188,7 +188,7 @@ impl SocketBackend for PubSocketBackend {
         SocketType::PUB
     }
 
-    fn socket_options(&self) -> &SocketOptions {
+    fn socket_options(&self) -> &Arc<SocketOptions> {
         &self.socket_options
     }
 
@@ -311,7 +311,7 @@ impl Socket for PubSocket {
             subscribers: scc::HashMap::new(),
             subscriber_count: AtomicUsize::new(0),
             socket_monitor: Mutex::new(None),
-            socket_options: options,
+            socket_options: Arc::new(options),
         });
         let fanout_queue = spawn_pub_fanout_queue(backend.clone());
 
@@ -351,7 +351,7 @@ mod tests {
             subscribers: scc::HashMap::new(),
             subscriber_count: AtomicUsize::new(0),
             socket_monitor: Mutex::new(None),
-            socket_options: SocketOptions::default(),
+            socket_options: Arc::new(SocketOptions::default()),
         }
     }
 

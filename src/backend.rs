@@ -55,7 +55,7 @@ pub(crate) struct GenericSocketBackend {
     fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
     pub(crate) round_robin: SegQueue<PeerIdentity>,
     socket_type: SocketType,
-    socket_options: SocketOptions,
+    socket_options: Arc<SocketOptions>,
     pub(crate) socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
     single_peer: Mutex<Option<SinglePeer>>,
     peer_count: AtomicUsize,
@@ -74,7 +74,7 @@ impl GenericSocketBackend {
             fair_queue_inner,
             round_robin: SegQueue::new(),
             socket_type,
-            socket_options: options,
+            socket_options: Arc::new(options),
             socket_monitor: Mutex::new(None),
             single_peer: Mutex::new(None),
             peer_count: AtomicUsize::new(0),
@@ -263,7 +263,7 @@ impl SocketBackend for GenericSocketBackend {
         self.socket_type
     }
 
-    fn socket_options(&self) -> &SocketOptions {
+    fn socket_options(&self) -> &Arc<SocketOptions> {
         &self.socket_options
     }
 

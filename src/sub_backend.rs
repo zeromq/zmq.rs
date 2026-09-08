@@ -45,7 +45,7 @@ pub(crate) struct SubSocketBackend {
     pub(crate) peers: scc::HashMap<PeerIdentity, SubPeer>,
     fair_queue_inner: Option<Arc<Mutex<QueueInner<ZmqFramedRead, PeerIdentity>>>>,
     socket_type: SocketType,
-    socket_options: SocketOptions,
+    socket_options: Arc<SocketOptions>,
     pub(crate) socket_monitor: Mutex<Option<mpsc::Sender<SocketEvent>>>,
     subs: Mutex<HashSet<Vec<u8>>>,
     /// Notifiers for reconnection tasks - keyed by `peer_id`
@@ -62,7 +62,7 @@ impl SubSocketBackend {
             peers: scc::HashMap::new(),
             fair_queue_inner,
             socket_type,
-            socket_options: options,
+            socket_options: Arc::new(options),
             socket_monitor: Mutex::new(None),
             subs: Mutex::new(HashSet::new()),
             disconnect_notifiers: Mutex::new(HashMap::new()),
@@ -259,7 +259,7 @@ impl SocketBackend for SubSocketBackend {
         self.socket_type
     }
 
-    fn socket_options(&self) -> &SocketOptions {
+    fn socket_options(&self) -> &Arc<SocketOptions> {
         &self.socket_options
     }
 
@@ -338,8 +338,11 @@ pub(crate) async fn connect_with_reconnect(
     // Initial connection
     let (socket, resolved_endpoint, peer_id) =
         crate::util::run_with_timeout(connect_timeout, async {
-            let (mut socket, resolved_endpoint) =
-                crate::util::connect_forever(endpoint.clone()).await?;
+            let (mut socket, resolved_endpoint) = crate::util::connect_forever(
+                endpoint.clone(),
+                Arc::clone(backend.socket_options()),
+            )
+            .await?;
             let peer_id = crate::util::peer_handshake(
                 &mut socket,
                 backend.clone() as Arc<dyn MultiPeerBackend>,

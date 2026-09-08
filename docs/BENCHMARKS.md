@@ -173,3 +173,79 @@ Full TCP-only benchmark harness check without running measurements:
 ```sh
 ZMQRS_BENCH_TRANSPORTS=tcp cargo bench --bench compare_libzmq -- --test
 ```
+
+## Receive-buffer recovery
+
+Receive-buffer recovery is always enabled. By default the reader starts at
+128 bytes, doubles full reads up to 64 KiB, and waits for two consecutive
+qualifying short positive reads before shrinking. Frames larger than twice
+the configured maximum reserve a full maximum chunk of headroom, including
+space for the read after a retained frame is split. Single large messages may
+retain more capacity. These settings are not message-size or total-memory limits.
+
+Tune the initial size, maximum size, and short-read confirmation count before
+constructing a socket:
+
+```rust
+use zeromq::{Socket, SocketOptions, SubSocket};
+
+let mut options = SocketOptions::default();
+options.read_buffer(256, 32 * 1024, 3);
+let socket = SubSocket::with_options(options);
+```
+
+All connection paths share the socket's immutable `Arc<SocketOptions>`, while
+each reader maintains its own adaptive state. `Socket::with_options` still takes
+options by value; custom `SocketBackend` implementations now return
+`&Arc<SocketOptions>` from `socket_options`.
+
+`framed_read/retained` exercises the default policy on synthetic ZMTP bytes,
+retaining up to 64 messages. It covers burst/small/burst transitions, continuous
+bursts, gapped 64-message batches, single and repeated large frames, and multipart
+messages. Repeated large and multipart frames include both continuous input and
+per-message availability boundaries. These are deterministic `AsyncRead` models,
+not TCP packet boundaries or network latency tests.
+
+```sh
+cargo bench --features bench-internals --bench framed_read -- framed_read/retained
+cargo bench --features bench-internals --bench framed_read -- framed_read/steady
+```
+
+Retained iterations include reader construction and destruction. The `steady`
+group primes and then reuses one reader across timed batches, including its
+adaptive state and prefetched messages. Use it to assess ongoing receive work;
+do not interpret a single-message construction benchmark as per-message cost on
+a long-lived connection.
+
+The retained benchmark prints separate `read_work` counters once per case:
+`prepared_bytes` is the sum of slices supplied to `poll_read` (including EOF),
+and `read_calls` counts those calls. In this reader, these slices correspond to
+newly initialized buffer space. Neither counter measures allocator requests,
+RSS, live heap or bytes copied. Timed iterations do not collect these counters.
+
+The real socket `throughput` and `compare_libzmq` benches use the default socket
+options. Compare an upstream checkout and this change with separate build/target
+directories and the same dependency versions. Use identical benchmark sources
+in both checkouts when comparing a group added by this change. Finish all builds
+before running binaries serially; do not use an in-process disable switch as a baseline.
+
+```sh
+cargo bench --bench throughput
+cargo bench --bench compare_libzmq
+```
+
+The decoder rejects wire frame lengths that cannot fit the reader's configured
+frame-plus-chunk capacity before reserving memory. This converts an existing
+capacity panic into a decode error; it does not make allocation failure recoverable.
+
+
+The retained and steady groups also include `frame_65535_boundaries`,
+`frame_65536_boundaries`, `frame_65537_boundaries`, `frame_131071_boundaries`,
+`frame_131072_boundaries`, and `frame_131073_boundaries`. Each cycle contains 64
+single-frame messages, with reads stopping at each message boundary and up to
+64 messages retained. These cases cover both sides of the reader chunk and
+headroom cutoffs. Sharing a spare chunk with a retained preceding frame can
+force `BytesMut::reserve` to allocate and copy an almost-complete next frame;
+realloc counters alone do not observe that copy. The headroom cutoff therefore
+excludes frames of at most two chunks; it is a measured policy, not a claim of a
+universally optimal allocation boundary.

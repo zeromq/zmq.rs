@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 #[cfg(all(feature = "tokio-runtime", target_family = "unix"))]
 use tokio::net::{UnixListener, UnixStream};
 
@@ -49,13 +51,16 @@ impl UnixSocketAddrExt for tokio::net::unix::SocketAddr {
 }
 
 #[cfg(windows)]
-fn make_framed(stream: UnixStream) -> FramedIo {
+fn make_framed(stream: UnixStream, options: Arc<crate::SocketOptions>) -> FramedIo {
     use futures::AsyncReadExt;
     let (read, write) = stream.split();
-    FramedIo::new(Box::new(read), Box::new(write))
+    FramedIo::new(Box::new(read), Box::new(write), options)
 }
 
-pub(crate) async fn connect(path: &Path) -> ZmqResult<(FramedIo, Endpoint)> {
+pub(crate) async fn connect(
+    path: &Path,
+    options: Arc<crate::SocketOptions>,
+) -> ZmqResult<(FramedIo, Endpoint)> {
     let raw_socket = UnixStream::connect(path).await?;
 
     #[cfg(target_family = "unix")]
@@ -66,11 +71,12 @@ pub(crate) async fn connect(path: &Path) -> ZmqResult<(FramedIo, Endpoint)> {
     #[cfg(windows)]
     let peer_addr = Some(path.to_owned());
 
-    Ok((make_framed(raw_socket), Endpoint::Ipc(peer_addr)))
+    Ok((make_framed(raw_socket, options), Endpoint::Ipc(peer_addr)))
 }
 
 pub(crate) async fn begin_accept<T>(
     path: &Path,
+    options: Arc<crate::SocketOptions>,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
 ) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
@@ -96,12 +102,13 @@ where
     #[cfg(windows)]
     let resolved_addr = Some(path.to_owned());
 
-    begin_accept_bound(listener, resolved_addr, cback).await
+    begin_accept_bound(listener, resolved_addr, options, cback).await
 }
 
 #[cfg(target_family = "unix")]
 pub(crate) async fn begin_accept_listener<T>(
     listener: std::os::unix::net::UnixListener,
+    options: Arc<crate::SocketOptions>,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
 ) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
@@ -116,12 +123,13 @@ where
     #[cfg(any(feature = "async-std-runtime", feature = "async-dispatcher-runtime"))]
     let listener = UnixListener::from(listener);
 
-    begin_accept_bound(listener, resolved_addr, cback).await
+    begin_accept_bound(listener, resolved_addr, options, cback).await
 }
 
 async fn begin_accept_bound<T>(
     listener: UnixListener,
     resolved_addr: Option<std::path::PathBuf>,
+    options: Arc<crate::SocketOptions>,
     cback: impl Fn(ZmqResult<(FramedIo, Endpoint)>) -> T + Send + 'static,
 ) -> ZmqResult<(Endpoint, AcceptStopHandle)>
 where
@@ -142,7 +150,7 @@ where
                             let _ = peer_addr;
                             None
                         };
-                        (make_framed(raw_socket), Endpoint::Ipc(peer_addr))
+                        (make_framed(raw_socket, Arc::clone(&options)), Endpoint::Ipc(peer_addr))
                     }).map_err(|err| err.into());
                     async_rt::task::spawn(cback(maybe_accepted));
                 },

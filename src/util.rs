@@ -235,7 +235,10 @@ fn is_retryable_connect_error(endpoint: &Endpoint, error: &ZmqError) -> bool {
     }
 }
 
-pub(crate) async fn connect_forever(endpoint: Endpoint) -> ZmqResult<(FramedIo, Endpoint)> {
+pub(crate) async fn connect_forever(
+    endpoint: Endpoint,
+    options: Arc<crate::SocketOptions>,
+) -> ZmqResult<(FramedIo, Endpoint)> {
     // Exponential backoff that starts small and grows, so a peer whose port is
     // not bound yet (ConnectionRefused) is reached after a few short sleeps
     // rather than waiting out a large opening delay. Mirrors the semantics of
@@ -244,7 +247,7 @@ pub(crate) async fn connect_forever(endpoint: Endpoint) -> ZmqResult<(FramedIo, 
     const MAX: Duration = Duration::from_secs(30);
     let mut delay = INITIAL;
     loop {
-        match transport::connect(&endpoint).await {
+        match transport::connect(&endpoint, Arc::clone(&options)).await {
             Ok(res) => return Ok(res),
             Err(e) if is_retryable_connect_error(&endpoint, &e) => {
                 let jitter = rand::rng().random_range(0.0f64..0.1f64);

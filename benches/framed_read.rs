@@ -2,6 +2,7 @@
 
 #[allow(dead_code)]
 mod bench_runtime;
+mod read_buffer_patterns;
 
 use asynchronous_codec::{Encoder, FramedRead};
 use bytes::{Bytes, BytesMut};
@@ -113,5 +114,10 @@ fn bench_framed_read(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_framed_read);
+criterion_group!(
+    benches,
+    bench_framed_read,
+    read_buffer_patterns::bench_read_buffer_patterns,
+    read_buffer_patterns::bench_read_buffer_steady
+);
 criterion_main!(benches);

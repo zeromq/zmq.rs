@@ -57,6 +57,8 @@ socket2 = { version = "0.6", optional = true }
 win_uds = { version = "=0.2.2", features = ["async"], optional = true }
 
 [dev-dependencies]
+# Bytes::is_unique needs 1.6; 1.6.1 fixes its BytesMut-sharing result.
+bytes = "1.6.1"
 async-dispatcher = { version = "0.1", features = ["macros"] }
 chrono = "0.4"
 criterion = "0.7"
