@@ -31,6 +31,8 @@ pub(crate) async fn write_message_queue(
 
 #[cfg(test)]
 mod tests {
+    mod batch_boundaries;
+
     use super::*;
     use crate::codec::{CodecError, ZmqCodec};
     use crate::ZmqMessage;
