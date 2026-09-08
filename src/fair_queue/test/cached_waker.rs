@@ -1,4 +1,5 @@
 use super::*;
+use crate::fair_queue::QueueInner;
 use futures::task::{waker, ArcWake};
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -145,6 +146,46 @@ impl ArcWake for ParentWakeCount {
     fn wake_by_ref(this: &Arc<Self>) {
         this.0.fetch_add(1, Ordering::Relaxed);
     }
+}
+
+struct LockCheckingParent {
+    inner: Arc<Mutex<QueueInner<RecordingStream, usize>>>,
+    wakes: AtomicUsize,
+}
+
+impl ArcWake for LockCheckingParent {
+    fn wake_by_ref(this: &Arc<Self>) {
+        assert!(
+            this.inner.try_lock().is_some(),
+            "parent wake holds queue lock"
+        );
+        this.wakes.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[test]
+fn transport_wake_releases_queue_lock_before_notifying_parent() {
+    let state = Arc::new(Mutex::new(StreamState::default()));
+    let mut queue = FairQueue::new(false);
+    queue.inner().lock().insert(
+        1,
+        RecordingStream {
+            state: state.clone(),
+            self_wake: false,
+        },
+    );
+    let parent = Arc::new(LockCheckingParent {
+        inner: queue.inner(),
+        wakes: AtomicUsize::new(0),
+    });
+    assert!(Pin::new(&mut queue)
+        .poll_next(&mut Context::from_waker(&waker(parent.clone())))
+        .is_pending());
+
+    let transport_waker = state.lock().wakers[0].clone();
+    transport_waker.wake_by_ref();
+
+    assert_eq!(parent.wakes.load(Ordering::Relaxed), 1);
 }
 
 #[test]

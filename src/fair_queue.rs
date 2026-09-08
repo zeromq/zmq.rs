@@ -127,9 +127,12 @@ where
         let Some(inner) = arc_self.inner.upgrade() else {
             return;
         };
-        let mut inner = inner.lock();
-        inner.push_ready(arc_self.key.clone());
-        if let Some(waker) = inner.waker.take() {
+        let waker = {
+            let mut inner = inner.lock();
+            inner.push_ready(arc_self.key.clone());
+            inner.waker.take()
+        };
+        if let Some(waker) = waker {
             waker.wake_by_ref();
         }
     }
