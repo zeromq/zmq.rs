@@ -25,6 +25,30 @@
         "rounds": 1
       }
     },
+    "pushpull-omq": {
+      "description": "Focused PUSH/PULL throughput profile matching the standard OMQ peer and message-size grid.",
+      "criterion_args": ["--sample-size", "10", "--measurement-time", "1", "--warm-up-time", "1"],
+      "zmqrs_runtimes": ["tokio-runtime"],
+      "benches": [
+        {
+          "name": "throughput",
+          "implementations": ["zmqrs", "libzmq"],
+          "templates": [
+            "{impl}/throughput/push_pull/{transport}/peers={peers}/{size}"
+          ],
+          "sizes": [128, 2048, 8192],
+          "peers": [1, 8]
+        }
+      ],
+      "omq": {
+        "packages": ["omq-tokio", "omq-compio"],
+        "benches": ["push_pull"],
+        "sizes": [128, 2048, 8192],
+        "peers": [1, 8],
+        "round_ms": 100,
+        "rounds": 1
+      }
+    },
     "standard": {
       "description": "Day-to-day comparison profile for decision making before and after hot-path changes.",
       "criterion_args": ["--sample-size", "10", "--measurement-time", "3", "--warm-up-time", "1"],
@@ -51,6 +75,16 @@
           ],
           "sizes": [256, 4096],
           "subs": [1, 8]
+        },
+        {
+          "id": "throughput_push_pull_omq_key",
+          "name": "throughput",
+          "implementations": ["zmqrs", "libzmq"],
+          "templates": [
+            "{impl}/throughput/push_pull/{transport}/peers={peers}/{size}"
+          ],
+          "sizes": [8192],
+          "peers": [8]
         },
         {
           "name": "codec",
