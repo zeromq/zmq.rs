@@ -304,11 +304,28 @@ impl MultiPeerBackend for SubSocketBackend {
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+        self.report_disconnected(peer_id);
+        self.peers.remove_sync(peer_id);
+        self.forget_peer(peer_id);
+    }
+}
+
+impl SubSocketBackend {
+    /// [`MultiPeerBackend::peer_disconnected`] for the fair queue's disconnect
+    /// callback, which runs inside `poll_next` and must not block on the peer map.
+    pub(crate) async fn peer_disconnected_async(&self, peer_id: &PeerIdentity) {
+        self.report_disconnected(peer_id);
+        self.peers.remove_async(peer_id).await;
+        self.forget_peer(peer_id);
+    }
+
+    fn report_disconnected(&self, peer_id: &PeerIdentity) {
         if let Some(monitor) = self.monitor().lock().as_mut() {
             let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
         }
+    }
 
-        self.peers.remove_sync(peer_id);
+    fn forget_peer(&self, peer_id: &PeerIdentity) {
         if let Some(inner) = &self.fair_queue_inner {
             inner.lock().remove(peer_id);
         }

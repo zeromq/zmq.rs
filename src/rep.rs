@@ -53,7 +53,9 @@ impl Socket for RepSocket {
         let backend_weak = Arc::downgrade(&backend);
         fair_queue.set_on_disconnect(move |peer_id: PeerIdentity| {
             if let Some(backend) = backend_weak.upgrade() {
-                backend.peer_disconnected(&peer_id);
+                crate::async_rt::task::spawn(async move {
+                    backend.peer_disconnected_async(&peer_id).await;
+                });
             }
         });
 
@@ -101,10 +103,23 @@ impl MultiPeerBackend for RepSocketBackend {
     }
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
+        self.report_disconnected(peer_id);
+        self.peers.remove_sync(peer_id);
+    }
+}
+
+impl RepSocketBackend {
+    /// [`MultiPeerBackend::peer_disconnected`] for the fair queue's disconnect
+    /// callback, which runs inside `poll_next` and must not block on the peer map.
+    async fn peer_disconnected_async(&self, peer_id: &PeerIdentity) {
+        self.report_disconnected(peer_id);
+        self.peers.remove_async(peer_id).await;
+    }
+
+    fn report_disconnected(&self, peer_id: &PeerIdentity) {
         if let Some(monitor) = self.monitor().lock().as_mut() {
             let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
         }
-        self.peers.remove_sync(peer_id);
     }
 }
 
@@ -188,5 +203,66 @@ impl SocketRecv for RepSocket {
                 }
             };
         }
+    }
+}
+
+#[cfg(all(test, feature = "tokio-runtime"))]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// The fair queue's disconnect callback runs inside `recv`. When it blocks
+    /// on the peer map while another task holds that peer's entry, the runtime
+    /// thread stops and `recv` never returns.
+    #[test]
+    fn a_disconnect_while_the_peer_entry_is_held_does_not_block_recv() {
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let mut rep = RepSocket::new();
+                let endpoint = rep.bind("tcp://127.0.0.1:0").await.unwrap();
+                let mut req = ReqSocket::new();
+                req.connect(&endpoint.to_string()).await.unwrap();
+                req.send("ping".into()).await.unwrap();
+                rep.recv().await.unwrap();
+                let peer = rep.current_request.clone().unwrap();
+                let backend = rep.backend.clone();
+
+                let (held_tx, held_rx) = tokio::sync::oneshot::channel::<()>();
+                let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+                let holder_backend = backend.clone();
+                let holder_peer = peer.clone();
+                tokio::spawn(async move {
+                    let entry = holder_backend.peers.get_async(&holder_peer).await;
+                    let _ = held_tx.send(());
+                    let _ = release_rx.await;
+                    drop(entry);
+                });
+                held_rx.await.unwrap();
+
+                drop(req);
+                let _ = tokio::time::timeout(Duration::from_millis(500), rep.recv()).await;
+                let _ = release_tx.send(());
+
+                for _ in 0..100 {
+                    if backend.peers.get_async(&peer).await.is_none() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                assert!(
+                    backend.peers.get_async(&peer).await.is_none(),
+                    "the disconnected peer was never removed"
+                );
+            });
+            let _ = done_tx.send(());
+        });
+        done_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("recv blocked on the peer map after a disconnect");
     }
 }

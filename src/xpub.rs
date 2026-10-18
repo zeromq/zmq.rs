@@ -116,6 +116,16 @@ impl MultiPeerBackend for XPubSocketBackend {
     }
 }
 
+impl XPubSocketBackend {
+    /// [`MultiPeerBackend::peer_disconnected`] for the fair queue's disconnect
+    /// callback, which runs inside `poll_next` and must not block on the peer map.
+    async fn peer_disconnected_async(&self, peer_id: &PeerIdentity) {
+        log::info!("Client disconnected {:?}", peer_id);
+        self.subscribers.remove_async(peer_id).await;
+        self.fair_queue_inner.lock().remove(peer_id);
+    }
+}
+
 pub struct XPubSocket {
     pub(crate) backend: Arc<XPubSocketBackend>,
     fair_queue: FairQueue<ZmqFramedRead, PeerIdentity>,
@@ -220,7 +230,9 @@ impl Socket for XPubSocket {
         let backend_weak = Arc::downgrade(&backend);
         fair_queue.set_on_disconnect(move |peer_id: PeerIdentity| {
             if let Some(backend) = backend_weak.upgrade() {
-                backend.peer_disconnected(&peer_id);
+                crate::async_rt::task::spawn(async move {
+                    backend.peer_disconnected_async(&peer_id).await;
+                });
             }
         });
 

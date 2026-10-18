@@ -42,7 +42,9 @@ impl Socket for RouterSocket {
         let backend_weak = Arc::downgrade(&backend);
         fair_queue.set_on_disconnect(move |peer_id: PeerIdentity| {
             if let Some(backend) = backend_weak.upgrade() {
-                backend.peer_disconnected(&peer_id);
+                crate::async_rt::task::spawn(async move {
+                    backend.peer_disconnected_async(&peer_id).await;
+                });
             }
         });
 
