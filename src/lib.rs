@@ -353,6 +353,7 @@ pub struct SocketOptions {
     // Shared by read preparation and decoder reservation.
     pub(crate) read_buffer_max_size: usize,
     pub(crate) read_buffer_short_reads: usize,
+    pub(crate) max_message_size: Option<usize>,
 }
 
 impl Default for SocketOptions {
@@ -363,6 +364,7 @@ impl Default for SocketOptions {
             read_buffer_initial_size: 128,
             read_buffer_max_size: 64 * 1024,
             read_buffer_short_reads: 2,
+            max_message_size: None,
         }
     }
 }
@@ -416,6 +418,28 @@ impl SocketOptions {
         self.read_buffer_initial_size = initial_size;
         self.read_buffer_max_size = max_size;
         self.read_buffer_short_reads = short_reads;
+        self
+    }
+
+    /// Limits the size of an inbound message to `max_size` bytes, counted over
+    /// all frames of a multipart message, like libzmq's `ZMQ_MAXMSGSIZE`.
+    /// Unlimited by default.
+    ///
+    /// The limit is checked against the length each frame header announces,
+    /// before any buffer is reserved for the frame body, so a peer cannot make
+    /// the receiver allocate more than `max_size` bytes for a message. A frame
+    /// that would exceed it, a ZMTP command included, fails the receive with
+    /// [`ZmqError::Codec`](crate::ZmqError::Codec) and ends the connection.
+    ///
+    /// ```
+    /// use zeromq::{ReqSocket, Socket, SocketOptions};
+    ///
+    /// let mut options = SocketOptions::default();
+    /// options.max_message_size(64 * 1024 * 1024);
+    /// let socket = ReqSocket::with_options(options);
+    /// ```
+    pub fn max_message_size(&mut self, max_size: usize) -> &mut Self {
+        self.max_message_size = Some(max_size);
         self
     }
 
