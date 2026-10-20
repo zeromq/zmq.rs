@@ -7,6 +7,8 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Runtime-neutral adoption of already-bound TCP and Unix-domain listeners via
   `Socket::bind_listener`
+- `SocketOptions::max_message_size` to bound the size of an inbound message,
+  like libzmq's `ZMQ_MAXMSGSIZE`
 
 ## [0.6.0] - 2026-05-04
 
