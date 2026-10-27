@@ -4,9 +4,37 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-27
+
+### Breaking changes
+- Raise the minimum supported Rust version from 1.85 to 1.89.
+- `SocketBackend::socket_options` now returns `&Arc<SocketOptions>` instead of
+  `&SocketOptions`, sharing immutable options across a socket's connections.
+
 ### Added
 - Runtime-neutral adoption of already-bound TCP and Unix-domain listeners via
   `Socket::bind_listener`
+- Configurable adaptive receive-buffer sizing via `SocketOptions::read_buffer`.
+- Performance benchmarks and libzmq comparison tooling.
+
+### Changed
+- Replace `win_uds` with an internal Windows IPC adapter using `socket2` and
+  `async-io`, removing the Unlicense-only dependency while retaining Windows IPC.
+- Use bounded writer queues and optimize single-peer and fan-out send paths.
+  Successful sends into these queues indicate local acceptance, not delivery or
+  a completed transport flush. Non-PUB queues apply backpressure; PUB retains its
+  slow-subscriber drop policy.
+- Enable adaptive receive-buffer recovery by default and tune Tokio TCP buffers.
+- Reduce dependency features, remove `once_cell`, and update dependency versions.
+- Test all three runtimes on Windows, including Rust 1.89.
+
+### Fixed
+- Preserve pending REQ replies when a receive future is cancelled.
+- Guard short ZMTP command payloads and bound multipart decoder stack use.
+- Avoid a fair-queue spin when pending streams wake themselves.
+- Start connection retries with a short exponential backoff.
+- Emit disconnect events from generic socket backends.
+- Verify writer ordering across batch boundaries.
 
 ## [0.6.0] - 2026-05-04
 

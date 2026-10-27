@@ -49,10 +49,7 @@ async fn adopts_ipc_listener_and_owns_socket_path() {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let path = std::env::temp_dir().join(format!(
-        "zeromq-inherited-listener-{}-{nonce}.sock",
-        std::process::id()
-    ));
+    let path = std::env::temp_dir().join(format!("zmq-bind-{}-{nonce}.sock", std::process::id()));
     let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
 
     let mut router = RouterSocket::new();

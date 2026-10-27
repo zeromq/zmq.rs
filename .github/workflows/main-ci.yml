@@ -90,11 +90,12 @@ jobs:
         run: python3 scripts/run_perf_suite.py --profile smoke --impl zmqrs,libzmq --transport tcp --run-id ci-smoke
 
   windows-ipc:
-    name: Windows IPC (${{ matrix.toolchain }})
+    name: Windows IPC (${{ matrix.toolchain }}, ${{ matrix.runtime }})
     runs-on: windows-latest
     strategy:
       matrix:
-        toolchain: [stable, "1.85.0"]
+        toolchain: [stable, "1.89.0"]
+        runtime: [tokio-runtime, async-std-runtime, async-dispatcher-runtime]
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -103,9 +104,9 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           override: true
       - name: Check Windows IPC
-        run: cargo check --lib --no-default-features --features tokio-runtime,ipc-transport,tcp-transport
+        run: cargo check --lib --no-default-features --features ${{ matrix.runtime }},ipc-transport,tcp-transport
       - name: Test Windows IPC
-        run: cargo test --no-default-features --features tokio-runtime,ipc-transport,tcp-transport
+        run: cargo test --no-default-features --features ${{ matrix.runtime }},ipc-transport,tcp-transport,async-dispatcher-macros
 
   msrv:
     name: MSRV Check
