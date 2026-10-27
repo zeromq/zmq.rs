@@ -19,7 +19,7 @@ async-std-runtime = ["async-std", "async-std/attributes"]
 async-dispatcher-runtime = ["async-std", "async-dispatcher"]
 async-dispatcher-macros = ["async-dispatcher/macros"]
 all-transport = ["ipc-transport", "tcp-transport"]
-ipc-transport = ["dep:win_uds"]
+ipc-transport = ["dep:async-io", "dep:socket2"]
 tcp-transport = []
 bench-internals = []
 
@@ -54,9 +54,11 @@ async-std = { version = "1", optional = true }
 socket2 = { version = "0.6", optional = true }
 
 [target.'cfg(windows)'.dependencies]
-win_uds = { version = "=0.2.2", features = ["async"], optional = true }
+async-io = { version = "2", optional = true }
 
 [dev-dependencies]
+async-io = "2"
+socket2 = "0.6"
 # Bytes::is_unique needs 1.6; 1.6.1 fixes its BytesMut-sharing result.
 bytes = "1.6.1"
 async-dispatcher = { version = "0.1", features = ["macros"] }

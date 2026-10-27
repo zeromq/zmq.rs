@@ -9,8 +9,12 @@ use tokio::net::{UnixListener, UnixStream};
 ))]
 use async_std::os::unix::net::{UnixListener, UnixStream};
 
+// Compile the adapter on Unix in unit tests as well, so its I/O behavior can
+// be exercised locally without replacing the native Unix runtime transports.
+#[cfg(any(windows, test))]
+mod windows;
 #[cfg(windows)]
-use win_uds::net::{AsyncListener as UnixListener, AsyncStream as UnixStream};
+use windows::{UnixListener, UnixStream};
 
 #[cfg(target_family = "unix")]
 use super::make_framed;
