@@ -11,7 +11,7 @@ Basic ZMTP implementation is working and tested against the reference implementa
 ### Supported transport types:
 
 * TCP
-* IPC (unix only)
+* IPC (Unix and Windows)
 
 ### Supported socket patterns:
 
@@ -21,6 +21,8 @@ Basic ZMTP implementation is working and tested against the reference implementa
 
 ## Usage
 
+Requires Rust 1.89 or newer.
+
 See the [examples](examples) for some ways to get up and running quickly. You can also generate the documentation by doing `cargo doc --open` on the source code.
 
 ### Choosing your async runtime
@@ -28,7 +30,7 @@ See the [examples](examples) for some ways to get up and running quickly. You ca
 The project currently supports [`tokio`](tokio.rs), [`async-std`](async.rs), and [`async-dispatcher`](https://github.com/zed-industries/async-dispatcher) controllable via feature flags. `tokio` is used by default. If you want to use `async-std`, you would disable the default features, and then select the `async-std-runtime` feature. For example in your `Cargo.toml`, you might specify the dependency as follows:
 
 ```toml
-zeromq = { version = "*", default-features = false, features = ["async-std-runtime", "all-transport"] }
+zeromq = { version = "0.7", default-features = false, features = ["async-std-runtime", "all-transport"] }
 ```
 
 See the section about feature flags for more info.
