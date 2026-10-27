@@ -92,12 +92,9 @@ jobs:
   windows-ipc:
     name: Windows IPC (${{ matrix.toolchain }}, ${{ matrix.runtime }})
     runs-on: windows-latest
-    env:
-      # Resolve dependencies compatible with the declared MSRV in both lanes.
-      CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
     strategy:
       matrix:
-        toolchain: [stable, "1.85.0"]
+        toolchain: [stable, "1.89.0"]
         runtime: [tokio-runtime, async-std-runtime, async-dispatcher-runtime]
     steps:
       - uses: actions/checkout@v2
