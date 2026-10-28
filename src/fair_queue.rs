@@ -14,6 +14,7 @@ pub(crate) struct QueueInner<S, K: Clone> {
     counter: atomic::AtomicUsize,
     ready_queue: BinaryHeap<ReadyEvent<K>>,
     queued: HashSet<K>,
+    single_stream: Option<(K, Pin<Box<S>>)>,
     streams: HashMap<K, Pin<Box<S>>>,
     waker: Option<Waker>,
     /// Callback invoked when a stream ends (peer disconnected).
@@ -23,14 +24,40 @@ pub(crate) struct QueueInner<S, K: Clone> {
 
 impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
     pub fn insert(&mut self, k: K, s: S) {
-        self.streams.insert(k.clone(), Box::pin(s));
-        self.push_ready(k);
+        let stream = Box::pin(s);
+        match self.single_stream.take() {
+            Some((single_key, _single_stream)) if single_key == k => {
+                self.single_stream = Some((k, stream));
+            }
+            Some((single_key, single_stream)) => {
+                // Restore the fair-queue path once a second peer connects so the single-peer fast path does not affect multi-peer polling semantics.
+                self.streams.insert(single_key.clone(), single_stream);
+                self.push_ready(single_key);
+                self.streams.insert(k.clone(), stream);
+                self.push_ready(k);
+            }
+            None if self.streams.is_empty() => {
+                self.single_stream = Some((k, stream));
+            }
+            None => {
+                self.streams.insert(k.clone(), stream);
+                self.push_ready(k);
+            }
+        }
         if let Some(w) = &self.waker {
             w.wake_by_ref();
         }
     }
 
     pub fn remove(&mut self, k: &K) {
+        if self
+            .single_stream
+            .as_ref()
+            .is_some_and(|(single_key, _)| single_key == k)
+        {
+            self.single_stream = None;
+            return;
+        }
         self.streams.remove(k);
         self.queued.remove(k);
     }
@@ -40,6 +67,7 @@ impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
     /// Used during shutdown to ensure TCP connections are closed even when
     /// other components (like reconnect tasks) hold Arc references to the inner.
     pub fn clear(&mut self) {
+        self.single_stream = None;
         self.streams.clear();
         self.ready_queue.clear();
         self.queued.clear();
@@ -118,6 +146,31 @@ where
     #[allow(clippy::needless_continue)]
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let fair_queue = self.get_mut();
+        let disconnected_single = {
+            let mut inner = fair_queue.inner.lock();
+            inner.waker = Some(cx.waker().clone());
+            if let Some((key, stream)) = inner.single_stream.as_mut() {
+                match stream.as_mut().poll_next(cx) {
+                    Poll::Ready(Some(item)) => {
+                        return Poll::Ready(Some((key.clone(), item)));
+                    }
+                    Poll::Ready(None) => {
+                        let key = key.clone();
+                        inner.single_stream = None;
+                        Some((key, inner.on_disconnect.clone()))
+                    }
+                    Poll::Pending => {
+                        return Poll::Pending;
+                    }
+                }
+            } else {
+                None
+            }
+        };
+        if let Some((key, Some(callback))) = disconnected_single {
+            callback(key);
+        }
+
         let mut remaining_ready = {
             let mut inner = fair_queue.inner.lock();
             inner.waker = Some(cx.waker().clone());
@@ -131,13 +184,7 @@ where
                 inner.waker = Some(cx.waker().clone());
                 let event = match inner.ready_queue.pop() {
                     Some(s) => s,
-                    None => {
-                        return if !inner.streams.is_empty() || fair_queue.block_on_no_clients {
-                            Poll::Pending
-                        } else {
-                            Poll::Ready(None)
-                        }
-                    }
+                    None => return queue_empty_poll(&inner, fair_queue.block_on_no_clients),
                 };
                 inner.queued.remove(&event.key);
                 match inner.streams.remove(&event.key) {
@@ -187,17 +234,27 @@ where
         let mut inner = fair_queue.inner.lock();
         inner.waker = Some(cx.waker().clone());
         let should_wake = !inner.ready_queue.is_empty();
-        let result = if !inner.streams.is_empty() || fair_queue.block_on_no_clients {
-            Poll::Pending
-        } else {
-            Poll::Ready(None)
-        };
+        let result = queue_empty_poll(&inner, fair_queue.block_on_no_clients);
         drop(inner);
 
         if should_wake {
             cx.waker().wake_by_ref();
         }
         result
+    }
+}
+
+fn queue_empty_poll<S, K: Clone>(
+    inner: &QueueInner<S, K>,
+    block_on_no_clients: bool,
+) -> Poll<Option<(K, S::Item)>>
+where
+    S: Stream,
+{
+    if inner.single_stream.is_some() || !inner.streams.is_empty() || block_on_no_clients {
+        Poll::Pending
+    } else {
+        Poll::Ready(None)
     }
 }
 
@@ -209,6 +266,7 @@ impl<S, K: Clone> FairQueue<S, K> {
                 counter: atomic::AtomicUsize::new(0),
                 ready_queue: BinaryHeap::new(),
                 queued: HashSet::new(),
+                single_stream: None,
                 streams: HashMap::new(),
                 waker: None,
                 on_disconnect: None,
@@ -240,6 +298,8 @@ mod test {
     use futures::{stream, Stream, StreamExt};
     use std::collections::VecDeque;
     use std::pin::Pin;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use std::task::{Context, Poll};
 
     /// Test stream that yields Pending for the first N polls, then emits messages FIFO
@@ -442,6 +502,71 @@ mod test {
         );
     }
 
+    #[async_rt::test]
+    async fn test_fair_queue_single_stream_fast_path_yields_all_items() {
+        let stream = stream::iter(vec!["a1", "a2", "a3"]);
+        let mut fair_queue: FairQueue<_, u64> = FairQueue::new(false);
+        {
+            let inner = fair_queue.inner();
+            inner.lock().insert(1, stream);
+        }
+
+        let mut results = Vec::new();
+        while let Some(item) = fair_queue.next().await {
+            results.push(item);
+        }
+
+        assert_eq!(results, vec![(1, "a1"), (1, "a2"), (1, "a3")]);
+    }
+
+    #[async_rt::test]
+    async fn test_fair_queue_promotes_single_stream_when_second_stream_is_inserted() {
+        let first = stream::iter(vec!["a1", "a2"]);
+        let second = stream::iter(vec!["b1", "b2"]);
+        let mut fair_queue: FairQueue<_, u64> = FairQueue::new(false);
+        {
+            let inner = fair_queue.inner();
+            let mut lock = inner.lock();
+            lock.insert(1, first);
+            assert!(lock.single_stream.is_some());
+            assert!(lock.streams.is_empty());
+            assert!(lock.ready_queue.is_empty());
+
+            lock.insert(2, second);
+            assert!(lock.single_stream.is_none());
+            assert_eq!(lock.streams.len(), 2);
+            assert_eq!(lock.ready_queue.len(), 2);
+            assert_eq!(lock.queued.len(), 2);
+        }
+
+        let mut results = Vec::new();
+        while let Some(item) = fair_queue.next().await {
+            results.push(item);
+        }
+
+        assert_eq!(results, vec![(1, "a1"), (2, "b1"), (1, "a2"), (2, "b2")]);
+    }
+
+    #[async_rt::test]
+    async fn test_fair_queue_single_stream_disconnect_invokes_callback() {
+        let stream = stream::iter(vec!["a1"]);
+        let disconnect_count = Arc::new(AtomicUsize::new(0));
+        let disconnect_count_for_callback = disconnect_count.clone();
+        let mut fair_queue: FairQueue<_, u64> = FairQueue::new(false);
+        fair_queue.set_on_disconnect(move |peer_id| {
+            assert_eq!(peer_id, 1);
+            disconnect_count_for_callback.fetch_add(1, Ordering::Relaxed);
+        });
+        {
+            let inner = fair_queue.inner();
+            inner.lock().insert(1, stream);
+        }
+
+        assert_eq!(fair_queue.next().await, Some((1, "a1")));
+        assert_eq!(fair_queue.next().await, None);
+        assert_eq!(disconnect_count.load(Ordering::Relaxed), 1);
+    }
+
     #[test]
     fn test_fair_queue_continues_on_pending() {
         let waker = noop_waker();
@@ -598,6 +723,10 @@ mod test {
             lock.insert(
                 "pending",
                 UnifiedStream::WakePending(WakePendingStream { poll_count: 0 }),
+            );
+            lock.insert(
+                "other",
+                UnifiedStream::CountPending(CountPendingStream { poll_count: 0 }),
             );
         }
 
