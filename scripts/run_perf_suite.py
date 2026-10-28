@@ -101,7 +101,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--candidate-path", help="zmq.rs checkout to benchmark")
     parser.add_argument("--config", default=DEFAULT_CONFIG)
-    parser.add_argument("--profile", choices=["smoke", "standard", "full"], default="standard")
+    parser.add_argument(
+        "--profile",
+        choices=["smoke", "pushpull-omq", "standard", "full"],
+        default="standard",
+    )
     parser.add_argument("--impl", default="zmqrs,libzmq")
     parser.add_argument("--transport", default="tcp,ipc")
     parser.add_argument("--runtime", help="Comma-separated zmq.rs runtime features")
@@ -294,7 +298,7 @@ def run_criterion_entry(
     env = os.environ.copy()
     env.update(criterion_env(criterion_args))
     run_command(cmd, cwd=candidate_root, env=env, manifest=manifest, dry_run=args.dry_run)
-    artifact_dir = run_dir / "artifacts" / safe_name(f"{implementation}-{runtime}") / bench["name"]
+    artifact_dir = run_dir / "artifacts" / safe_name(f"{implementation}-{runtime}") / artifact_name(bench)
     if not args.dry_run and target_criterion.exists():
         shutil.copytree(target_criterion, artifact_dir / "criterion")
         rows = criterion_rows(
@@ -332,6 +336,7 @@ def expand_filters(bench: dict[str, Any], implementation: str, transports: list[
         "transport": transports,
         "size": bench.get("sizes", [None]),
         "subs": bench.get("subs", [None]),
+        "peers": bench.get("peers", [None]),
         "frames": bench.get("frames", [None]),
     }
     filters: list[str] = []
@@ -558,6 +563,10 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
 
 def safe_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")
+
+
+def artifact_name(bench: dict[str, Any]) -> str:
+    return safe_name(str(bench.get("id", bench["name"])))
 
 
 if __name__ == "__main__":
