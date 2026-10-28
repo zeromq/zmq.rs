@@ -7,14 +7,17 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::hash::Hash;
 use std::pin::Pin;
 use std::sync::atomic;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Waker};
 
 pub(crate) struct QueueInner<S, K: Clone> {
+    inner: Weak<Mutex<QueueInner<S, K>>>,
     counter: atomic::AtomicUsize,
     ready_queue: BinaryHeap<ReadyEvent<K>>,
     queued: HashSet<K>,
-    streams: HashMap<K, Pin<Box<S>>>,
+    // None keeps the registration while its stream is polled outside the lock.
+    // Only one poll can be active; insert replaces the slot and remove deletes it.
+    streams: HashMap<K, Option<StreamEntry<S, K>>>,
     waker: Option<Waker>,
     /// Callback invoked when a stream ends (peer disconnected).
     /// Wrapped in Arc so it can be cloned and called outside the lock.
@@ -23,7 +26,16 @@ pub(crate) struct QueueInner<S, K: Clone> {
 
 impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
     pub fn insert(&mut self, k: K, s: S) {
-        self.streams.insert(k.clone(), Box::pin(s));
+        self.streams.insert(
+            k.clone(),
+            Some(StreamEntry {
+                stream: Box::pin(s),
+                waker: Arc::new(StreamWaker {
+                    inner: self.inner.clone(),
+                    key: k.clone(),
+                }),
+            }),
+        );
         self.push_ready(k);
         if let Some(w) = &self.waker {
             w.wake_by_ref();
@@ -46,6 +58,13 @@ impl<S, K: Clone + Eq + Hash> QueueInner<S, K> {
         // Wake the waker so any pending poll_next returns
         if let Some(w) = self.waker.take() {
             w.wake();
+        }
+    }
+
+    fn register_waker(&mut self, waker: &Waker) {
+        match &mut self.waker {
+            Some(current) => current.clone_from(waker),
+            None => self.waker = Some(waker.clone()),
         }
     }
 
@@ -88,9 +107,15 @@ impl<K: Clone> Ord for ReadyEvent<K> {
     }
 }
 
+struct StreamEntry<S, K: Clone> {
+    stream: Pin<Box<S>>,
+    waker: Arc<StreamWaker<S, K>>,
+}
+
 struct StreamWaker<S, K: Clone> {
-    inner: Arc<Mutex<QueueInner<S, K>>>,
-    event: ReadyEvent<K>,
+    // The stream may retain its waker; a weak reference avoids an ownership cycle.
+    inner: Weak<Mutex<QueueInner<S, K>>>,
+    key: K,
 }
 
 impl<S, K> ArcWake for StreamWaker<S, K>
@@ -99,9 +124,15 @@ where
     K: Clone + Eq + Hash + Send + Sync,
 {
     fn wake_by_ref(arc_self: &Arc<Self>) {
-        let mut inner = arc_self.inner.lock();
-        inner.push_ready(arc_self.event.key.clone());
-        if let Some(waker) = inner.waker.take() {
+        let Some(inner) = arc_self.inner.upgrade() else {
+            return;
+        };
+        let waker = {
+            let mut inner = inner.lock();
+            inner.push_ready(arc_self.key.clone());
+            inner.waker.take()
+        };
+        if let Some(waker) = waker {
             waker.wake_by_ref();
         }
     }
@@ -120,7 +151,7 @@ where
         let fair_queue = self.get_mut();
         let mut remaining_ready = {
             let mut inner = fair_queue.inner.lock();
-            inner.waker = Some(cx.waker().clone());
+            inner.register_waker(cx.waker());
             inner.ready_queue.len()
         };
 
@@ -128,7 +159,7 @@ where
             remaining_ready -= 1;
             let (event, mut io_stream) = {
                 let mut inner = fair_queue.inner.lock();
-                inner.waker = Some(cx.waker().clone());
+                inner.register_waker(cx.waker());
                 let event = match inner.ready_queue.pop() {
                     Some(s) => s,
                     None => {
@@ -140,25 +171,23 @@ where
                     }
                 };
                 inner.queued.remove(&event.key);
-                match inner.streams.remove(&event.key) {
+                match inner.streams.get_mut(&event.key).and_then(Option::take) {
                     Some(stream) => (event, stream),
                     None => continue,
                 }
             };
 
-            let waker = Arc::new(StreamWaker {
-                inner: fair_queue.inner.clone(),
-                event: event.clone(),
-            });
-            let waker_ref = waker_ref(&waker);
+            let waker_ref = waker_ref(&io_stream.waker);
             let mut cx = Context::from_waker(&waker_ref);
-            match io_stream.as_mut().poll_next(&mut cx) {
+            match io_stream.stream.as_mut().poll_next(&mut cx) {
                 Poll::Ready(Some(res)) => {
                     let key = event.key.clone();
                     let item = Some((key.clone(), res));
                     let mut inner = fair_queue.inner.lock();
-                    inner.streams.insert(event.key, io_stream);
-                    inner.push_ready(key);
+                    if let Some(slot @ None) = inner.streams.get_mut(&event.key) {
+                        *slot = Some(io_stream);
+                        inner.push_ready(key);
+                    }
                     return Poll::Ready(item);
                 }
                 Poll::Ready(None) => {
@@ -166,8 +195,13 @@ where
                     // Clone the callback Arc so we can call it outside the lock
                     // (to avoid deadlock if callback accesses inner)
                     let callback = {
-                        let inner = fair_queue.inner.lock();
-                        inner.on_disconnect.clone()
+                        let mut inner = fair_queue.inner.lock();
+                        if matches!(inner.streams.get(&event.key), Some(None)) {
+                            inner.remove(&event.key);
+                            inner.on_disconnect.clone()
+                        } else {
+                            None
+                        }
                     };
                     // Call callback outside the lock
                     if let Some(callback) = callback {
@@ -178,14 +212,16 @@ where
                 }
                 Poll::Pending => {
                     let mut inner = fair_queue.inner.lock();
-                    inner.streams.insert(event.key, io_stream);
+                    if let Some(slot @ None) = inner.streams.get_mut(&event.key) {
+                        *slot = Some(io_stream);
+                    }
                     continue;
                 }
             }
         }
 
         let mut inner = fair_queue.inner.lock();
-        inner.waker = Some(cx.waker().clone());
+        inner.register_waker(cx.waker());
         let should_wake = !inner.ready_queue.is_empty();
         let result = if !inner.streams.is_empty() || fair_queue.block_on_no_clients {
             Poll::Pending
@@ -205,14 +241,17 @@ impl<S, K: Clone> FairQueue<S, K> {
     pub fn new(block_on_no_clients: bool) -> Self {
         Self {
             block_on_no_clients,
-            inner: Arc::new(Mutex::new(QueueInner {
-                counter: atomic::AtomicUsize::new(0),
-                ready_queue: BinaryHeap::new(),
-                queued: HashSet::new(),
-                streams: HashMap::new(),
-                waker: None,
-                on_disconnect: None,
-            })),
+            inner: Arc::new_cyclic(|inner| {
+                Mutex::new(QueueInner {
+                    inner: inner.clone(),
+                    counter: atomic::AtomicUsize::new(0),
+                    ready_queue: BinaryHeap::new(),
+                    queued: HashSet::new(),
+                    streams: HashMap::new(),
+                    waker: None,
+                    on_disconnect: None,
+                })
+            }),
         }
     }
 
@@ -233,6 +272,9 @@ impl<S, K: Clone> FairQueue<S, K> {
 
 #[cfg(test)]
 mod test {
+    mod cached_waker;
+    mod poll_registration;
+
     use crate::async_rt;
     use crate::fair_queue::FairQueue;
     use futures::task::noop_waker;
@@ -574,7 +616,8 @@ mod test {
             .streams
             .values_mut()
             .map(|stream| {
-                let UnifiedStream::CountPending(stream) = stream.as_mut().get_mut() else {
+                let stream = stream.as_mut().unwrap();
+                let UnifiedStream::CountPending(stream) = stream.stream.as_mut().get_mut() else {
                     panic!("unexpected stream type");
                 };
                 stream.poll_count
@@ -620,7 +663,8 @@ mod test {
             "wake generated during poll should be tracked as queued"
         );
         let stream = lock.streams.get_mut("pending").unwrap();
-        let UnifiedStream::WakePending(stream) = stream.as_mut().get_mut() else {
+        let stream = stream.as_mut().unwrap();
+        let UnifiedStream::WakePending(stream) = stream.stream.as_mut().get_mut() else {
             panic!("unexpected stream type");
         };
         assert_eq!(
