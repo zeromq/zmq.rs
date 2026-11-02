@@ -207,7 +207,7 @@ impl MultiPeerBackend for PubSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (mut recv_queue, send_queue) = io.into_parts();
         // TODO provide handling for recv_queue
-        let (queue_sender, queue_receiver) = mpsc::channel(PUB_SEND_QUEUE_CAPACITY);
+        let (queue_sender, queue_receiver) = mpsc::channel(self.socket_options.send_queue_capacity);
         let (sender, stop_receiver) = oneshot::channel();
         let old_subscriber = self
             .subscribers

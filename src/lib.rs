@@ -346,6 +346,10 @@ pub enum SocketEvent {
 
 pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Default number of messages each peer's send queue holds; see
+/// [`SocketOptions::send_queue_capacity`].
+pub const DEFAULT_SEND_QUEUE_CAPACITY: usize = 100_000;
+
 pub struct SocketOptions {
     pub(crate) peer_id: Option<PeerIdentity>,
     pub(crate) connect_timeout: Option<Duration>,
@@ -353,6 +357,7 @@ pub struct SocketOptions {
     // Shared by read preparation and decoder reservation.
     pub(crate) read_buffer_max_size: usize,
     pub(crate) read_buffer_short_reads: usize,
+    pub(crate) send_queue_capacity: usize,
 }
 
 impl Default for SocketOptions {
@@ -363,6 +368,7 @@ impl Default for SocketOptions {
             read_buffer_initial_size: 128,
             read_buffer_max_size: 64 * 1024,
             read_buffer_short_reads: 2,
+            send_queue_capacity: DEFAULT_SEND_QUEUE_CAPACITY,
         }
     }
 }
@@ -416,6 +422,32 @@ impl SocketOptions {
         self.read_buffer_initial_size = initial_size;
         self.read_buffer_max_size = max_size;
         self.read_buffer_short_reads = short_reads;
+        self
+    }
+
+    /// Sets how many messages each peer's send queue holds, the counterpart of
+    /// libzmq's `ZMQ_SNDHWM`. Defaults to [`DEFAULT_SEND_QUEUE_CAPACITY`].
+    ///
+    /// A send succeeds once its message is in the queue. When a peer's queue is
+    /// full, sockets that apply backpressure wait in `send` until the peer's writer
+    /// makes room, and PUB drops the message for that subscriber. The bound counts
+    /// messages, not bytes, so the memory a stalled peer holds follows message size.
+    /// Set this before constructing the socket; it applies to every peer connected
+    /// afterwards, including reconnected ones.
+    ///
+    /// # Panics
+    /// Panics if `capacity` is zero.
+    ///
+    /// ```
+    /// use zeromq::{PushSocket, Socket, SocketOptions};
+    ///
+    /// let mut options = SocketOptions::default();
+    /// options.send_queue_capacity(1_000);
+    /// let socket = PushSocket::with_options(options);
+    /// ```
+    pub fn send_queue_capacity(&mut self, capacity: usize) -> &mut Self {
+        assert!(capacity > 0, "send queue capacity must be positive");
+        self.send_queue_capacity = capacity;
         self
     }
 
