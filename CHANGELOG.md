@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Configurable per-peer send queue capacity via `SocketOptions::send_queue_capacity`,
+  the counterpart of libzmq's `ZMQ_SNDHWM`. The default stays at 100,000 messages.
+
 ## [0.7.0] - 2026-10-27
 
 ### Breaking changes

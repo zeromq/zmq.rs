@@ -19,7 +19,6 @@ use std::sync::Arc;
 
 /// Sender for notifying reconnection tasks when a peer disconnects.
 pub(crate) type DisconnectNotifier = mpsc::Sender<PeerIdentity>;
-const PEER_SEND_QUEUE_CAPACITY: usize = 100_000;
 
 pub(crate) struct Peer {
     pub(crate) send_queue: mpsc::Sender<Message>,
@@ -287,7 +286,7 @@ impl SocketBackend for GenericSocketBackend {
 impl MultiPeerBackend for GenericSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, send_queue) = io.into_parts();
-        let (queue_sender, queue_receiver) = mpsc::channel(PEER_SEND_QUEUE_CAPACITY);
+        let (queue_sender, queue_receiver) = mpsc::channel(self.socket_options.send_queue_capacity);
         self.peers
             .upsert_async(
                 peer_id.clone(),
