@@ -345,10 +345,12 @@ pub enum SocketEvent {
 }
 
 pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+pub const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct SocketOptions {
     pub(crate) peer_id: Option<PeerIdentity>,
     pub(crate) connect_timeout: Option<Duration>,
+    pub(crate) handshake_timeout: Option<Duration>,
     pub(crate) read_buffer_initial_size: usize,
     // Shared by read preparation and decoder reservation.
     pub(crate) read_buffer_max_size: usize,
@@ -360,6 +362,7 @@ impl Default for SocketOptions {
         Self {
             peer_id: None,
             connect_timeout: Some(DEFAULT_CONNECT_TIMEOUT),
+            handshake_timeout: Some(DEFAULT_HANDSHAKE_TIMEOUT),
             read_buffer_initial_size: 128,
             read_buffer_max_size: 64 * 1024,
             read_buffer_short_reads: 2,
@@ -431,6 +434,20 @@ impl SocketOptions {
 
     pub fn no_connect_timeout(&mut self) -> &mut Self {
         self.connect_timeout = None;
+        self
+    }
+
+    /// Sets the maximum time accepted peers may take to complete the ZMTP
+    /// greeting and READY exchange. The default is 30 seconds.
+    pub fn handshake_timeout(&mut self, timeout: Duration) -> &mut Self {
+        self.handshake_timeout = Some(timeout);
+        self
+    }
+
+    /// Allows accepted peers to take an unlimited amount of time to complete
+    /// the ZMTP handshake.
+    pub fn no_handshake_timeout(&mut self) -> &mut Self {
+        self.handshake_timeout = None;
         self
     }
 }
