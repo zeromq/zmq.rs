@@ -10,6 +10,8 @@ use crate::endpoint::Endpoint;
 use crate::task_handle::TaskHandle;
 use crate::ZmqResult;
 
+const ACCEPT_ERROR_BACKOFF: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// An already-bound transport listener that a `ZeroMQ` socket can adopt.
 #[derive(Debug)]
 #[non_exhaustive]

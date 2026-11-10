@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Configurable timeout for handshakes from accepted peers, defaulting to 30 seconds.
+
+### Fixed
+- Back off after transport accept errors instead of immediately retrying in a busy loop.
+
 ## [0.7.0] - 2026-10-27
 
 ### Breaking changes

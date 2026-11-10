@@ -191,7 +191,15 @@ pub(crate) async fn peer_connected(
     mut raw_socket: FramedIo,
     backend: Arc<dyn MultiPeerBackend>,
 ) -> ZmqResult<PeerIdentity> {
-    let peer_id = peer_handshake(&mut raw_socket, backend.clone()).await?;
+    let handshake_timeout = backend.socket_options().handshake_timeout;
+    let handshake = peer_handshake(&mut raw_socket, backend.clone());
+    let peer_id = match handshake_timeout {
+        Some(duration) => match async_rt::task::timeout(duration, handshake).await {
+            Ok(result) => result?,
+            Err(_) => return Err(ZmqError::HandshakeTimeout(duration)),
+        },
+        None => handshake.await?,
+    };
     backend.peer_connected(&peer_id, raw_socket).await;
     Ok(peer_id)
 }

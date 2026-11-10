@@ -18,7 +18,7 @@ use windows::{UnixListener, UnixStream};
 
 #[cfg(target_family = "unix")]
 use super::make_framed;
-use super::AcceptStopHandle;
+use super::{AcceptStopHandle, ACCEPT_ERROR_BACKOFF};
 use crate::async_rt;
 use crate::codec::FramedIo;
 use crate::endpoint::Endpoint;
@@ -156,7 +156,16 @@ where
                         };
                         (make_framed(raw_socket, Arc::clone(&options)), Endpoint::Ipc(peer_addr))
                     }).map_err(|err| err.into());
+                    let accept_failed = maybe_accepted.is_err();
                     async_rt::task::spawn(cback(maybe_accepted));
+                    if accept_failed {
+                        let retry_delay = async_rt::task::sleep(ACCEPT_ERROR_BACKOFF).fuse();
+                        futures::pin_mut!(retry_delay);
+                        select! {
+                            _ = retry_delay => {},
+                            _ = stop_callback => break,
+                        }
+                    }
                 },
                 _ = stop_callback => {
                     log::debug!("Accept task received stop signal. {:?}", listener_addr);

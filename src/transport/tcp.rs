@@ -7,7 +7,7 @@ use tokio::net::{TcpListener, TcpStream};
 use async_std::net::{TcpListener, TcpStream};
 
 use super::make_framed;
-use super::AcceptStopHandle;
+use super::{AcceptStopHandle, ACCEPT_ERROR_BACKOFF};
 use crate::async_rt;
 use crate::codec::FramedIo;
 use crate::endpoint::{Endpoint, Host, Port};
@@ -110,7 +110,16 @@ where
                             )
                         })
                         .map_err(|err| err.into());
+                    let accept_failed = maybe_accepted.is_err();
                     async_rt::task::spawn(cback(maybe_accepted));
+                    if accept_failed {
+                        let retry_delay = async_rt::task::sleep(ACCEPT_ERROR_BACKOFF).fuse();
+                        futures::pin_mut!(retry_delay);
+                        select! {
+                            _ = retry_delay => {},
+                            _ = stop_callback => break,
+                        }
+                    }
                 }
                 _ = stop_callback => {
                     break

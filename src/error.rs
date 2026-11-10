@@ -51,6 +51,8 @@ pub enum ZmqError {
     UnsupportedVersion(ZmtpVersion),
     #[error("Connect timed out after {0:?}")]
     ConnectTimeout(Duration),
+    #[error("Handshake timed out after {0:?}")]
+    HandshakeTimeout(Duration),
 }
 
 impl From<mpsc::TrySendError<Message>> for ZmqError {
