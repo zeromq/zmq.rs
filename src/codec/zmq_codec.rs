@@ -32,7 +32,10 @@ pub struct ZmqCodec {
     // This allows to encapsulate its processing inside codec and not expose
     // internal details to higher levels
     buffered_message: Option<ZmqMessage>,
+    // Bytes held in `buffered_message`, counted against `max_message_size`.
+    buffered_len: usize,
     max_read_chunk_size: usize,
+    max_message_size: Option<usize>,
 }
 
 impl ZmqCodec {
@@ -45,7 +48,9 @@ impl ZmqCodec {
             state: DecoderState::Greeting,
             waiting_for: 64, // len of the greeting frame
             buffered_message: None,
+            buffered_len: 0,
             max_read_chunk_size: options.read_buffer_max_size,
+            max_message_size: options.max_message_size,
         }
     }
 
@@ -123,6 +128,15 @@ impl Decoder for ZmqCodec {
                     } else {
                         usize::from(src.get_u8())
                     };
+                    // Before the body is reserved: a command is a message of its own.
+                    if let Some(max) = self.max_message_size {
+                        let held = if frame.command { 0 } else { self.buffered_len };
+                        if frame_len > max.saturating_sub(held) {
+                            return Err(CodecError::Decode(
+                                "Message exceeds the maximum message size",
+                            ));
+                        }
+                    }
                     self.state = DecoderState::Frame(frame);
                     self.waiting_for = frame_len;
                 }
@@ -135,12 +149,14 @@ impl Decoder for ZmqCodec {
                     }
 
                     // process incoming message frame
+                    self.buffered_len += data.len();
                     match &mut self.buffered_message {
                         Some(v) => v.push_back(data.freeze()),
                         None => self.buffered_message = Some(ZmqMessage::from(data.freeze())),
                     }
 
                     if !frame.more {
+                        self.buffered_len = 0;
                         // Quoth the Raven “Nevermore.”
                         return Ok(Some(Message::Message(
                             self.buffered_message
@@ -195,6 +211,7 @@ impl Encoder for ZmqCodec {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod max_message_size;
     mod multipart;
     mod read_buffer;
 

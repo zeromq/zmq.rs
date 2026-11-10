@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- `SocketOptions::max_message_size` to bound the size of an inbound message,
+  like libzmq's `ZMQ_MAXMSGSIZE`
+
 ## [0.7.0] - 2026-10-27
 
 ### Breaking changes
