@@ -6,6 +6,14 @@ mod test {
 
     use std::time::Duration;
 
+    async fn recv_text(sub_socket: &mut zeromq::SubSocket) -> String {
+        let message = async_rt::task::timeout(Duration::from_secs(2), sub_socket.recv())
+            .await
+            .expect("timeout waiting for subscriber message")
+            .expect("failed to receive subscriber message");
+        String::from_utf8(message.get(0).unwrap().to_vec()).unwrap()
+    }
+
     #[async_rt::test]
     async fn test_xpub_basic_pubsub() {
         pretty_env_logger::try_init().ok();
@@ -181,5 +189,130 @@ mod test {
         // SUB should only receive "topic1-message"
         let received = sub_handle.await.expect("SUB task failed");
         assert_eq!(received, "topic1-message");
+    }
+
+    #[async_rt::test]
+    async fn test_xpub_late_subscriber_filter_state_is_isolated() {
+        pretty_env_logger::try_init().ok();
+
+        let mut xpub_socket = zeromq::XPubSocket::new();
+        let endpoint = xpub_socket
+            .bind("tcp://127.0.0.1:0")
+            .await
+            .expect("Failed to bind");
+
+        let mut early_sub = zeromq::SubSocket::new();
+        early_sub
+            .connect(&endpoint.to_string())
+            .await
+            .expect("Failed to connect early subscriber");
+        early_sub
+            .subscribe("early")
+            .await
+            .expect("Failed to subscribe early subscriber");
+
+        let early_sub_msg = async_rt::task::timeout(Duration::from_secs(2), xpub_socket.recv())
+            .await
+            .expect("Timeout waiting for early subscription")
+            .expect("Failed to receive early subscription");
+        assert_eq!(early_sub_msg.get(0).unwrap().as_ref(), b"\x01early");
+
+        let mut late_sub = zeromq::SubSocket::new();
+        late_sub
+            .connect(&endpoint.to_string())
+            .await
+            .expect("Failed to connect late subscriber");
+        late_sub
+            .subscribe("late")
+            .await
+            .expect("Failed to subscribe late subscriber");
+
+        let late_sub_msg = async_rt::task::timeout(Duration::from_secs(2), xpub_socket.recv())
+            .await
+            .expect("Timeout waiting for late subscription")
+            .expect("Failed to receive late subscription");
+        assert_eq!(late_sub_msg.get(0).unwrap().as_ref(), b"\x01late");
+
+        xpub_socket
+            .send(ZmqMessage::from("early-after-late-join"))
+            .await
+            .expect("Failed to send early message");
+        xpub_socket
+            .send(ZmqMessage::from("late-after-join"))
+            .await
+            .expect("Failed to send late message");
+
+        assert_eq!(recv_text(&mut early_sub).await, "early-after-late-join");
+        assert_eq!(recv_text(&mut late_sub).await, "late-after-join");
+    }
+
+    #[async_rt::test]
+    async fn test_xpub_unsubscribe_updates_fanout_state() {
+        pretty_env_logger::try_init().ok();
+
+        let mut xpub_socket = zeromq::XPubSocket::new();
+        let endpoint = xpub_socket
+            .bind("tcp://127.0.0.1:0")
+            .await
+            .expect("Failed to bind");
+
+        let mut sub_socket = zeromq::SubSocket::new();
+        sub_socket
+            .connect(&endpoint.to_string())
+            .await
+            .expect("Failed to connect subscriber");
+        sub_socket
+            .subscribe("gone")
+            .await
+            .expect("Failed to subscribe initial filter");
+
+        let sub_msg = async_rt::task::timeout(Duration::from_secs(2), xpub_socket.recv())
+            .await
+            .expect("Timeout waiting for subscription")
+            .expect("Failed to receive subscription");
+        assert_eq!(sub_msg.get(0).unwrap().as_ref(), b"\x01gone");
+
+        xpub_socket
+            .send(ZmqMessage::from("gone-before-unsubscribe"))
+            .await
+            .expect("Failed to send subscribed message");
+        assert_eq!(recv_text(&mut sub_socket).await, "gone-before-unsubscribe");
+
+        sub_socket
+            .unsubscribe("gone")
+            .await
+            .expect("Failed to unsubscribe initial filter");
+        let unsub_msg = async_rt::task::timeout(Duration::from_secs(2), xpub_socket.recv())
+            .await
+            .expect("Timeout waiting for unsubscribe")
+            .expect("Failed to receive unsubscribe");
+        assert_eq!(unsub_msg.get(0).unwrap().as_ref(), b"\x00gone");
+
+        sub_socket
+            .subscribe("stay")
+            .await
+            .expect("Failed to subscribe replacement filter");
+        let replacement_sub = async_rt::task::timeout(Duration::from_secs(2), xpub_socket.recv())
+            .await
+            .expect("Timeout waiting for replacement subscription")
+            .expect("Failed to receive replacement subscription");
+        assert_eq!(replacement_sub.get(0).unwrap().as_ref(), b"\x01stay");
+
+        xpub_socket
+            .send(ZmqMessage::from("gone-after-unsubscribe"))
+            .await
+            .expect("Failed to send unsubscribed message");
+        assert!(
+            async_rt::task::timeout(Duration::from_millis(150), sub_socket.recv())
+                .await
+                .is_err(),
+            "subscriber received a message for an unsubscribed prefix"
+        );
+
+        xpub_socket
+            .send(ZmqMessage::from("stay-after-unsubscribe"))
+            .await
+            .expect("Failed to send replacement message");
+        assert_eq!(recv_text(&mut sub_socket).await, "stay-after-unsubscribe");
     }
 }

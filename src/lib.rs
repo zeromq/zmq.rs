@@ -9,6 +9,7 @@ mod error;
 mod fair_queue;
 mod message;
 mod r#pub;
+mod pub_fanout;
 mod pull;
 mod push;
 mod reconnect;
