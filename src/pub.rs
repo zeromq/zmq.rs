@@ -44,7 +44,7 @@ fn subscription_matches(subscriptions: &[Vec<u8>], first_frame: &Bytes) -> bool 
         })
 }
 
-fn send_to_subscriber(mut send_queue: PubSendQueue, message: &ZmqMessage) {
+fn send_to_subscriber(send_queue: &mut PubSendQueue, message: &ZmqMessage) {
     let message = Message::Message(message.clone());
     match send_queue.try_send(message) {
         Ok(()) => {}
@@ -135,9 +135,10 @@ impl PubSocketBackend {
         };
 
         let mut iter = self.subscribers.begin_async().await;
-        while let Some(subscriber) = iter {
+        while let Some(mut subscriber) = iter {
             if subscription_matches(&subscriber.subscriptions, first_frame) {
-                send_to_subscriber(subscriber.send_queue.clone(), &message);
+                // Reuse the sender's parked state; a fresh clone can bypass a full queue.
+                send_to_subscriber(&mut subscriber.send_queue, &message);
             }
             iter = subscriber.next_async().await;
         }
@@ -339,6 +340,8 @@ impl Socket for PubSocket {
 
 #[cfg(test)]
 mod tests {
+    mod bounded_queue;
+
     use super::*;
     use crate::util::tests::{
         test_bind_to_any_port_helper, test_bind_to_unspecified_interface_helper,
@@ -582,7 +585,7 @@ mod tests {
         }
         assert!(prefilled_count > 0);
 
-        send_to_subscriber(queue_sender, &ZmqMessage::from("dropped payload"));
+        send_to_subscriber(&mut queue_sender, &ZmqMessage::from("dropped payload"));
 
         assert!(backend.subscribers.get_sync(&peer_id).is_some());
         assert_eq!(backend.subscriber_count.load(Ordering::Relaxed), 1);
@@ -608,7 +611,7 @@ mod tests {
     async fn test_send_to_subscriber_drops_closed_queue_without_disconnect() {
         let backend = test_backend();
         let peer_id = PeerIdentity::new();
-        let (queue_sender, queue_receiver) = mpsc::channel(1);
+        let (mut queue_sender, queue_receiver) = mpsc::channel(1);
         drop(queue_receiver);
 
         insert_test_subscriber(
@@ -619,7 +622,7 @@ mod tests {
         )
         .await;
 
-        send_to_subscriber(queue_sender, &ZmqMessage::from("payload"));
+        send_to_subscriber(&mut queue_sender, &ZmqMessage::from("payload"));
 
         assert!(backend.subscribers.get_sync(&peer_id).is_some());
         assert_eq!(backend.subscriber_count.load(Ordering::Relaxed), 1);
