@@ -10,6 +10,7 @@ use crate::{
 use async_trait::async_trait;
 use crossbeam_queue::SegQueue;
 use futures::channel::mpsc;
+use futures::lock::Mutex as AsyncMutex;
 use futures::SinkExt;
 use parking_lot::Mutex;
 
@@ -21,25 +22,36 @@ use std::sync::Arc;
 pub(crate) type DisconnectNotifier = mpsc::Sender<PeerIdentity>;
 const PEER_SEND_QUEUE_CAPACITY: usize = 100_000;
 
+type PeerSendQueue = Arc<AsyncMutex<mpsc::Sender<Message>>>;
+
 pub(crate) struct Peer {
-    pub(crate) send_queue: mpsc::Sender<Message>,
+    send_queue: PeerSendQueue,
+}
+
+impl Peer {
+    pub(crate) fn new(send_queue: mpsc::Sender<Message>) -> Self {
+        Self {
+            send_queue: Arc::new(AsyncMutex::new(send_queue)),
+        }
+    }
 }
 
 #[derive(Clone)]
 struct SinglePeer {
     peer_id: PeerIdentity,
-    send_queue: mpsc::Sender<Message>,
+    send_queue: PeerSendQueue,
 }
 
 enum CachedSend {
     Sent,
-    Full {
+    Pending {
         peer_id: PeerIdentity,
-        send_queue: mpsc::Sender<Message>,
+        send_queue: PeerSendQueue,
         message: Message,
     },
     Disconnected {
         peer_id: PeerIdentity,
+        send_queue: PeerSendQueue,
         error: mpsc::SendError,
     },
     Miss(Message),
@@ -132,17 +144,22 @@ impl GenericSocketBackend {
                     }
                 },
             };
-            let send_result = match self.peers.get_async(&next_peer_id).await {
-                Some(mut peer) => send_to_peer_queue(&mut peer.send_queue, message).await,
+            let send_queue = match self
+                .peers
+                .read_async(&next_peer_id, |_, peer| peer.send_queue.clone())
+                .await
+            {
+                Some(send_queue) => send_queue,
                 None => continue,
             };
+            let send_result = send_to_peer_queue(&send_queue, message).await;
             return match send_result {
                 Ok(()) => {
                     self.round_robin.push(next_peer_id);
                     Ok(())
                 }
                 Err(e) => {
-                    self.peer_disconnected(&next_peer_id);
+                    self.peer_disconnected_if_current(&next_peer_id, &send_queue);
                     Err(e.into())
                 }
             };
@@ -162,14 +179,19 @@ impl GenericSocketBackend {
             SendResolution::Miss(message) => message,
         };
 
-        let send_result = match self.peers.get_async(peer_id).await {
-            Some(mut peer) => send_to_peer_queue(&mut peer.send_queue, message).await,
+        let send_queue = match self
+            .peers
+            .read_async(peer_id, |_, peer| peer.send_queue.clone())
+            .await
+        {
+            Some(send_queue) => send_queue,
             None => return Err(ZmqError::Other("Destination client not found by identity")),
         };
+        let send_result = send_to_peer_queue(&send_queue, message).await;
         match send_result {
             Ok(()) => Ok(()),
             Err(e) => {
-                self.peer_disconnected(peer_id);
+                self.peer_disconnected_if_current(peer_id, &send_queue);
                 Err(e.into())
             }
         }
@@ -184,8 +206,8 @@ impl GenericSocketBackend {
             return CachedSend::Miss(message);
         }
 
-        let mut single_peer = self.single_peer.lock();
-        let Some(single_peer) = single_peer.as_mut() else {
+        let single_peer = self.single_peer.lock();
+        let Some(single_peer) = single_peer.as_ref() else {
             return CachedSend::Miss(message);
         };
 
@@ -195,16 +217,17 @@ impl GenericSocketBackend {
             }
         }
 
-        match single_peer.send_queue.try_send(message) {
-            Ok(()) => CachedSend::Sent,
-            Err(error) if error.is_full() => CachedSend::Full {
+        match try_send_to_peer_queue(&single_peer.send_queue, message) {
+            QueueSend::Sent => CachedSend::Sent,
+            QueueSend::Pending(message) => CachedSend::Pending {
                 peer_id: single_peer.peer_id.clone(),
                 send_queue: single_peer.send_queue.clone(),
-                message: error.into_inner(),
+                message,
             },
-            Err(error) => CachedSend::Disconnected {
+            QueueSend::Disconnected(error) => CachedSend::Disconnected {
                 peer_id: single_peer.peer_id.clone(),
-                error: error.into_send_error(),
+                send_queue: single_peer.send_queue.clone(),
+                error,
             },
         }
     }
@@ -212,19 +235,23 @@ impl GenericSocketBackend {
     async fn finish_cached_send(&self, cached_send: CachedSend) -> ZmqResult<SendResolution> {
         match cached_send {
             CachedSend::Sent => Ok(SendResolution::Sent),
-            CachedSend::Full {
+            CachedSend::Pending {
                 peer_id,
-                mut send_queue,
+                send_queue,
                 message,
-            } => match send_queue.send(message).await {
+            } => match send_to_peer_queue(&send_queue, message).await {
                 Ok(()) => Ok(SendResolution::Sent),
                 Err(e) => {
-                    self.peer_disconnected(&peer_id);
+                    self.peer_disconnected_if_current(&peer_id, &send_queue);
                     Err(e.into())
                 }
             },
-            CachedSend::Disconnected { peer_id, error } => {
-                self.peer_disconnected(&peer_id);
+            CachedSend::Disconnected {
+                peer_id,
+                send_queue,
+                error,
+            } => {
+                self.peer_disconnected_if_current(&peer_id, &send_queue);
                 Err(error.into())
             }
             CachedSend::Miss(message) => Ok(SendResolution::Miss(message)),
@@ -245,12 +272,60 @@ impl GenericSocketBackend {
             *single_peer = None;
         }
     }
+
+    fn peer_disconnected_if_current(&self, peer_id: &PeerIdentity, send_queue: &PeerSendQueue) {
+        let peer_removed = self
+            .peers
+            .remove_if_sync(peer_id, |peer| Arc::ptr_eq(&peer.send_queue, send_queue))
+            .is_some();
+        if peer_removed {
+            self.finish_peer_disconnected(peer_id, true);
+        }
+    }
+
+    fn finish_peer_disconnected(&self, peer_id: &PeerIdentity, peer_removed: bool) {
+        self.refresh_single_peer_cache();
+        match &self.fair_queue_inner {
+            None => {}
+            Some(inner) => {
+                inner.lock().remove(peer_id);
+            }
+        };
+
+        if peer_removed {
+            if let Some(monitor) = self.monitor().lock().as_mut() {
+                let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
+            }
+        }
+
+        if let Some(mut notifier) = self.disconnect_notifiers.lock().remove(peer_id) {
+            let _ = notifier.try_send(peer_id.clone());
+        }
+    }
+}
+
+enum QueueSend {
+    Sent,
+    Pending(Message),
+    Disconnected(mpsc::SendError),
+}
+
+fn try_send_to_peer_queue(send_queue: &PeerSendQueue, message: Message) -> QueueSend {
+    let Some(mut send_queue) = send_queue.try_lock() else {
+        return QueueSend::Pending(message);
+    };
+    match send_queue.try_send(message) {
+        Ok(()) => QueueSend::Sent,
+        Err(error) if error.is_full() => QueueSend::Pending(error.into_inner()),
+        Err(error) => QueueSend::Disconnected(error.into_send_error()),
+    }
 }
 
 async fn send_to_peer_queue(
-    send_queue: &mut mpsc::Sender<Message>,
+    send_queue: &PeerSendQueue,
     message: Message,
 ) -> Result<(), mpsc::SendError> {
+    let mut send_queue = send_queue.lock().await;
     match send_queue.try_send(message) {
         Ok(()) => Ok(()),
         Err(error) if error.is_full() => send_queue.send(error.into_inner()).await,
@@ -288,14 +363,9 @@ impl MultiPeerBackend for GenericSocketBackend {
     async fn peer_connected(self: Arc<Self>, peer_id: &PeerIdentity, io: FramedIo) {
         let (recv_queue, send_queue) = io.into_parts();
         let (queue_sender, queue_receiver) = mpsc::channel(PEER_SEND_QUEUE_CAPACITY);
-        self.peers
-            .upsert_async(
-                peer_id.clone(),
-                Peer {
-                    send_queue: queue_sender,
-                },
-            )
-            .await;
+        let peer = Peer::new(queue_sender);
+        let peer_send_queue = Arc::downgrade(&peer.send_queue);
+        self.peers.upsert_async(peer_id.clone(), peer).await;
         self.refresh_single_peer_cache();
         let writer_backend = self.clone();
         let writer_peer_id = peer_id.clone();
@@ -306,7 +376,9 @@ impl MultiPeerBackend for GenericSocketBackend {
                     writer_peer_id,
                     error
                 );
-                writer_backend.peer_disconnected(&writer_peer_id);
+                if let Some(peer_send_queue) = peer_send_queue.upgrade() {
+                    writer_backend.peer_disconnected_if_current(&writer_peer_id, &peer_send_queue);
+                }
             }
         });
         self.round_robin.push(peer_id.clone());
@@ -320,26 +392,7 @@ impl MultiPeerBackend for GenericSocketBackend {
 
     fn peer_disconnected(&self, peer_id: &PeerIdentity) {
         let peer_removed = self.peers.remove_sync(peer_id).is_some();
-        self.refresh_single_peer_cache();
-        match &self.fair_queue_inner {
-            None => {}
-            Some(inner) => {
-                inner.lock().remove(peer_id);
-            }
-        };
-
-        if peer_removed {
-            if let Some(monitor) = self.monitor().lock().as_mut() {
-                let _ = monitor.try_send(SocketEvent::Disconnected(peer_id.clone()));
-            }
-        }
-
-        // Notify reconnection task if registered
-        if let Some(mut notifier) = self.disconnect_notifiers.lock().remove(peer_id) {
-            // Use try_send to avoid blocking - if channel is full, the reconnect task
-            // will eventually notice the peer is gone
-            let _ = notifier.try_send(peer_id.clone());
-        }
+        self.finish_peer_disconnected(peer_id, peer_removed);
     }
 }
 
@@ -350,6 +403,7 @@ mod tests {
 
     use bytes::Bytes;
     use futures::StreamExt;
+    use std::time::Duration;
 
     fn message_with_frame(frame: &'static [u8]) -> Message {
         Message::Message(ZmqMessage::from(Bytes::from_static(frame)))
@@ -369,7 +423,7 @@ mod tests {
         let (send_queue, recv_queue) = mpsc::channel(8);
         backend
             .peers
-            .upsert_async(peer_id.clone(), Peer { send_queue })
+            .upsert_async(peer_id.clone(), Peer::new(send_queue))
             .await;
         backend.refresh_single_peer_cache();
         backend.round_robin.push(peer_id.clone());
@@ -449,30 +503,101 @@ mod tests {
         let peer_id: PeerIdentity = "full-peer".parse().expect("peer id");
         let (mut send_queue, mut recv_queue) = mpsc::channel(1);
         send_queue
-            .try_send(message_with_frame(b"prefilled"))
-            .expect("prefill peer queue");
+            .try_send(message_with_frame(b"prefilled-a"))
+            .expect("prefill first sender slot");
+        send_queue
+            .try_send(message_with_frame(b"prefilled-b"))
+            .expect("prefill configured queue slot");
+        assert!(send_queue
+            .try_send(message_with_frame(b"over-capacity"))
+            .expect_err("peer queue should be full")
+            .is_full());
         backend
             .peers
-            .upsert_async(peer_id.clone(), Peer { send_queue })
+            .upsert_async(peer_id.clone(), Peer::new(send_queue))
             .await;
         backend.refresh_single_peer_cache();
         backend.round_robin.push(peer_id.clone());
 
         let send_future = backend.send_round_robin(message_with_frame(b"after-full"));
-        let recv_future = async {
-            let first = recv_queue.next().await.expect("prefilled message");
-            let second = recv_queue
-                .next()
-                .await
-                .expect("message sent after capacity frees");
-            (first, second)
-        };
+        futures::pin_mut!(send_future);
+        assert!(futures::poll!(&mut send_future).is_pending());
 
-        let (send_result, (first, second)) = futures::join!(send_future, recv_future);
+        let first = recv_queue.next().await.expect("first prefilled message");
+        let second = recv_queue.next().await.expect("second prefilled message");
+        send_future
+            .await
+            .expect("send completes after capacity frees");
+        let third = recv_queue
+            .next()
+            .await
+            .expect("message sent after capacity frees");
 
-        send_result.expect("send waits for cached sender capacity");
-        assert_eq!(Bytes::from_static(b"prefilled"), first_frame(first));
-        assert_eq!(Bytes::from_static(b"after-full"), first_frame(second));
+        assert_eq!(Bytes::from_static(b"prefilled-a"), first_frame(first));
+        assert_eq!(Bytes::from_static(b"prefilled-b"), first_frame(second));
+        assert_eq!(Bytes::from_static(b"after-full"), first_frame(third));
+    }
+
+    #[crate::async_rt::test]
+    async fn test_pending_peer_send_releases_peer_map_entry() {
+        let backend =
+            GenericSocketBackend::with_options(None, SocketType::ROUTER, SocketOptions::default());
+        let blocked_peer_id: PeerIdentity = "blocked-peer".parse().expect("peer id");
+        let (mut blocked_sender, mut blocked_receiver) = mpsc::channel(1);
+        blocked_sender
+            .try_send(message_with_frame(b"prefilled-a"))
+            .expect("prefill first sender slot");
+        blocked_sender
+            .try_send(message_with_frame(b"prefilled-b"))
+            .expect("prefill configured queue slot");
+        assert!(blocked_sender
+            .try_send(message_with_frame(b"over-capacity"))
+            .expect_err("peer queue should be full")
+            .is_full());
+        backend
+            .peers
+            .upsert_async(blocked_peer_id.clone(), Peer::new(blocked_sender))
+            .await;
+
+        let healthy_peer_id: PeerIdentity = "healthy-peer".parse().expect("peer id");
+        let (healthy_sender, _healthy_receiver) = mpsc::channel(1);
+        backend
+            .peers
+            .upsert_async(healthy_peer_id, Peer::new(healthy_sender))
+            .await;
+        backend.refresh_single_peer_cache();
+
+        let send_future = backend.send_to_peer(&blocked_peer_id, message_with_frame(b"after-full"));
+        futures::pin_mut!(send_future);
+        assert!(futures::poll!(&mut send_future).is_pending());
+
+        let lookup_result = async_rt::task::timeout(
+            Duration::from_secs(1),
+            backend.peers.read_async(&blocked_peer_id, |_, _peer| ()),
+        )
+        .await
+        .expect("a pending send must not retain the peer map entry");
+        assert_eq!(Some(()), lookup_result);
+
+        let first = blocked_receiver
+            .next()
+            .await
+            .expect("first prefilled message");
+        let second = blocked_receiver
+            .next()
+            .await
+            .expect("second prefilled message");
+        send_future
+            .await
+            .expect("send completes after capacity frees");
+        let third = blocked_receiver
+            .next()
+            .await
+            .expect("message sent after capacity frees");
+
+        assert_eq!(Bytes::from_static(b"prefilled-a"), first_frame(first));
+        assert_eq!(Bytes::from_static(b"prefilled-b"), first_frame(second));
+        assert_eq!(Bytes::from_static(b"after-full"), first_frame(third));
     }
 
     #[crate::async_rt::test]
@@ -484,7 +609,7 @@ mod tests {
         drop(recv_queue);
         backend
             .peers
-            .upsert_async(peer_id.clone(), Peer { send_queue })
+            .upsert_async(peer_id.clone(), Peer::new(send_queue))
             .await;
         backend.refresh_single_peer_cache();
         backend.round_robin.push(peer_id.clone());
@@ -497,6 +622,36 @@ mod tests {
         assert!(matches!(error, ZmqError::BufferFull(_)));
         assert_eq!(0, backend.peer_count.load(Ordering::Acquire));
         assert!(backend.single_peer.lock().is_none());
+        assert!(backend.peers.get_async(&peer_id).await.is_none());
+    }
+
+    #[crate::async_rt::test]
+    async fn test_stale_send_failure_keeps_replacement_peer() {
+        let backend =
+            GenericSocketBackend::with_options(None, SocketType::ROUTER, SocketOptions::default());
+        let peer_id: PeerIdentity = "replacement-peer".parse().expect("peer id");
+
+        let (old_sender, _old_receiver) = mpsc::channel(1);
+        let old_peer = Peer::new(old_sender);
+        let old_send_queue = old_peer.send_queue.clone();
+        backend.peers.upsert_async(peer_id.clone(), old_peer).await;
+
+        let (new_sender, _new_receiver) = mpsc::channel(1);
+        let new_peer = Peer::new(new_sender);
+        let new_send_queue = new_peer.send_queue.clone();
+        backend.peers.upsert_async(peer_id.clone(), new_peer).await;
+        backend.refresh_single_peer_cache();
+
+        backend.peer_disconnected_if_current(&peer_id, &old_send_queue);
+        let replacement_is_current = backend
+            .peers
+            .read_async(&peer_id, |_, peer| {
+                Arc::ptr_eq(&peer.send_queue, &new_send_queue)
+            })
+            .await;
+        assert_eq!(Some(true), replacement_is_current);
+
+        backend.peer_disconnected_if_current(&peer_id, &new_send_queue);
         assert!(backend.peers.get_async(&peer_id).await.is_none());
     }
 
