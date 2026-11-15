@@ -3,10 +3,12 @@ use std::time::Duration;
 #[cfg(target_family = "unix")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use futures::StreamExt;
+use futures::{AsyncReadExt, StreamExt};
 use zeromq::__async_rt as async_rt;
 use zeromq::prelude::{Socket, SocketRecv, SocketSend};
-use zeromq::{DealerSocket, Endpoint, Host, RouterSocket, SocketEvent, ZmqMessage};
+use zeromq::{
+    DealerSocket, Endpoint, Host, RouterSocket, SocketEvent, SocketOptions, ZmqError, ZmqMessage,
+};
 
 #[async_rt::test]
 async fn adopts_tcp_listener_and_accepts_connections() {
@@ -40,6 +42,44 @@ async fn adopts_tcp_listener_and_accepts_connections() {
 
     assert!(router.close().await.is_empty());
     assert!(dealer.close().await.is_empty());
+}
+
+#[async_rt::test]
+async fn accepted_peer_that_never_sends_a_greeting_times_out() {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let handshake_timeout = Duration::from_millis(50);
+    let mut options = SocketOptions::default();
+    options.handshake_timeout(handshake_timeout);
+
+    let mut router = RouterSocket::with_options(options);
+    let mut monitor = router.monitor();
+    router.bind_listener(listener).await.unwrap();
+    let mut client = async_io::Async::new(std::net::TcpStream::connect(address).unwrap()).unwrap();
+
+    let mut greeting = [0; 64];
+    client.read_exact(&mut greeting).await.unwrap();
+    let event = async_rt::task::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Some(SocketEvent::AcceptFailed(error)) = monitor.next().await {
+                break error;
+            }
+        }
+    })
+    .await
+    .expect("timeout waiting for failed handshake event");
+    assert!(
+        matches!(event, ZmqError::HandshakeTimeout(timeout) if timeout == handshake_timeout),
+        "{event:?}"
+    );
+
+    let mut byte = [0];
+    let read = async_rt::task::timeout(Duration::from_secs(2), client.read(&mut byte))
+        .await
+        .expect("server did not close the timed-out connection")
+        .unwrap();
+    assert_eq!(read, 0);
+    assert!(router.close().await.is_empty());
 }
 
 #[cfg(target_family = "unix")]
