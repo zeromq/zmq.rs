@@ -31,6 +31,8 @@ pub struct ZmqFramedRead {
     inner: Box<dyn FrameableRead>,
     codec: ZmqCodec,
     buffer: BytesMut,
+    // Bytes after this offset are initialized read space, not decoder input.
+    pending_read_start: Option<usize>,
     read_chunk_size: usize,
     // Configuration is shared; adaptation state belongs to this connection.
     options: Arc<SocketOptions>,
@@ -43,6 +45,7 @@ impl ZmqFramedRead {
             inner,
             codec: ZmqCodec::with_options(&options),
             buffer: BytesMut::with_capacity(options.read_buffer_initial_size),
+            pending_read_start: None,
             read_chunk_size: options.read_buffer_initial_size,
             options,
             short_reads: 0,
@@ -54,7 +57,7 @@ impl ZmqFramedRead {
         cx: &mut Context<'_>,
         min_read_size: usize,
     ) -> Poll<io::Result<usize>> {
-        let start = self.buffer.len();
+        let start = self.pending_read_start.take().unwrap_or(self.buffer.len());
         let read_size = self
             .read_chunk_size
             .max(min_read_size)
@@ -63,6 +66,8 @@ impl ZmqFramedRead {
         // futures::AsyncRead requires an initialized &mut [u8]. Grow BytesMut
         // first, then trim back to the actual read length so the read path does
         // not need a scratch buffer and a second data copy.
+        // Pending keeps the initialized tail; resuming the same read makes
+        // resize a no-op until the transport reports bytes or an error.
         // The decoder checks frame length + maximum chunk size at the wire
         // boundary, so preparing this slice cannot overflow its length.
         self.buffer.resize(start + read_size, 0);
@@ -97,7 +102,7 @@ impl ZmqFramedRead {
                 Poll::Ready(Err(error))
             }
             Poll::Pending => {
-                self.buffer.truncate(start);
+                self.pending_read_start = Some(start);
                 Poll::Pending
             }
         }
@@ -112,12 +117,17 @@ impl Stream for ZmqFramedRead {
 
         // Consume buffered data first; read from the socket only when the
         // current buffer cannot produce a full message.
-        if let Some(item) = this.codec.decode(&mut this.buffer)? {
-            return Poll::Ready(Some(Ok(item)));
+        // A pending read already exhausted decoder input. Its initialized tail
+        // must stay hidden until the transport reports how many bytes it read.
+        if this.pending_read_start.is_none() {
+            if let Some(item) = this.codec.decode(&mut this.buffer)? {
+                return Poll::Ready(Some(Ok(item)));
+            }
         }
 
         loop {
-            let min_read_size = this.codec.bytes_needed(this.buffer.len());
+            let buffered_len = this.pending_read_start.unwrap_or(this.buffer.len());
+            let min_read_size = this.codec.bytes_needed(buffered_len);
             let n = ready!(this.poll_read_into_buffer(cx, min_read_size))?;
             let ended = n == 0;
             match this.codec.decode(&mut this.buffer)? {
@@ -172,6 +182,7 @@ impl FramedIo {
 
 #[cfg(test)]
 mod tests {
+    mod pending_read;
     mod read_buffer;
     mod socket_options;
 
